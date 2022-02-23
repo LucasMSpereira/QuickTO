@@ -36,7 +36,7 @@ for n in raw_inp.nodesets["FemConstraintDisplacement"]
     @test raw_inp.node_coords[n][3] == 0
 end
 
-fieldnames(typeof(raw_inp))
+println(fieldnames(typeof(raw_inp)))
 println(raw_inp.node_coords)
 typeof(raw_inp.node_coords)
 cube.dh.grid.cells
@@ -47,3 +47,4 @@ raw_inp.dloads
 raw_inp.cloads
 raw_inp.cells
 raw_inp.nodedbcs
+raw_inp.node_coords
