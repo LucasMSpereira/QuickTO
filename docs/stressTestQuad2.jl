@@ -1,5 +1,7 @@
-using Ferrite, TopOpt, Parameters, LinearAlgebra
+using Ferrite, TopOpt, Parameters, LinearAlgebra, Nonconvex
 using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent;
+import GLMakie, Nonconvex
+Nonconvex.@load NLopt
 
 #
 
@@ -51,16 +53,18 @@ using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent;
 
   end
 
-  function quad(x,y,vec; pa = 1)
-      quad=zeros(y,x)
-      for iel in 1:length(vec)
-      # Line of current element
-      i=floor(Int32,(iel-1)/x)+1
-      # Column of current element
-      j=iel-floor(Int32,(iel-1)/x)*x
-      pa == 2 ? quad[y-i+1,j]=vec[iel] : quad[i,j]=vec[iel]
+  function quad(nelx,nely,vec)
+    # nelx = number of elements along x axis (number of columns in matrix)
+    # nely = number of elements along y axis (number of lines in matrix)
+    # vec = vector of scalars, each one associated to an element.
+      # this vector is already ordered according to element IDs
+    quad=zeros(nely,nelx)
+    for i in 1:nely
+      for j in 1:nelx
+        global quad[nely-(i-1),j] = vec[(i-1)*nelx+1+(j-1)]
       end
-      return quad'
+    end
+    return quad
   end
 
   function custom(FEAparams)
@@ -176,7 +180,11 @@ el = 1
   # obtain gradient of displacements interpolated on the center of the element
   global centerDispGrad[el] = function_symmetric_gradient(cellValue, 1, disp[celldofs(cell)])
   # use gradient components to build strain vector ([εₓ ε_y γ_xy])
-  global ε = [centerDispGrad[el][1,1], centerDispGrad[el][2,2], centerDispGrad[el][1,2]+centerDispGrad[el][2,1]]
+  global ε = [
+    centerDispGrad[el][1,1]
+    centerDispGrad[el][2,2]
+    centerDispGrad[el][1,2]+centerDispGrad[el][2,1]
+  ]
   # use constitutive model to calculate stresses in the center of current element
   global stress[el] = dee*ε
   σ = [
@@ -189,4 +197,3 @@ el = 1
   vm[el] = sqrt(stress[el]'*[1 -0.5 0; -0.5 1 0; 0 0 3]*stress[el])
   global el += 1
 end
-[println("$(vm[el]) $(vm[el+1]) $(vm[el+2]) $(vm[el+3])") for el in 1:4:nels];
