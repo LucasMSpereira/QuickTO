@@ -2,35 +2,49 @@ using Makie, TopOpt, Parameters, StatProfilerHTML, Printf, HDF5, Statistics
 using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent;
 import GLMakie, Nonconvex
 Nonconvex.@load NLopt;
-include(".\\functionsQuickTO2.jl")
+include("./functionsQuickTO2.jl")
+include("./testFunctions.jl")
 
 # random folder name
 folderName = string(rand(0:9999))
-mkpath("C:\\Users\\LucasKaoid\\Desktop\\datasets\\$(folderName)\\fotos")
+mkpath("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/fotos")
 
 # struct with general parameters
 @with_kw mutable struct FEAparameters
     forces::Int = 2 # number of forces
-    quants::Int = 30 # number of problems
+    quants::Int = 60 # number of problems
     problems::Any = Array{Any}(undef, quants) # store FEA problem structs
     V::Array{Real} = [0.3+rand()*0.6 for i in 1:quants] # volume fraction
-    meshSize::Tuple{Int, Int} = (20, 20) # Size of rectangular mesh
+    meshSize::Tuple{Int, Int} = (40, 40) # Size of rectangular mesh
     elementIDarray::Array{Int} = [i for i in 1:prod(meshSize)] # Vector that lists element IDs
     # matrix with element IDs in their respective position in the mesh
     elementIDmatrix::Array{Int,2} = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
     # hdf5 file to store data
-    fileID = createFile2(quants, folderName, meshSize...)
+    fileID = createFile(quants, folderName, meshSize...)
 end
 FEAparams = FEAparameters()
 
-function loopTO(FEAparameters)
+function loopTO(FEAparameters, elType)
     # Loop for each TO problem
+
+    # toy grid to get mesh info before problem is actually built
+    if elType == "CPS4"
+        grid = generate_grid(Quadrilateral, FEAparameters.meshSize)
+    elseif elType == "CPS8"
+        grid = generate_grid(QuadraticQuadrilateral, FEAparameters.meshSize)
+    end
+    numCellNodes = length(grid.cells[1].nodes)
 
     nels = prod(FEAparameters.meshSize) # number of elements in the mesh
     # nodeCoords = Vector of tuples with node coordinates
         # cells = Vector of tuples of integers. Each line refers to an element
         # and lists the IDs of its nodes
-    nodeCoords, cells = mshData(FEAparameters.meshSize)
+    if elType == "CPS4"
+        nodeCoords, cells = mshData(FEAparameters.meshSize)
+    elseif elType == "CPS8"
+        nodeCoords, cells = mshDataQuadratic(FEAparameters.meshSize)
+    end
+    
     # Similar to nodeSets, but refers to groups of cells (FEA elements) 
     cellSets = Dict(
         "SolidMaterialSolid" => FEAparameters.elementIDarray,
@@ -38,9 +52,12 @@ function loopTO(FEAparameters)
         "Evolumes"           => FEAparameters.elementIDarray
     )
     
-    tempo = zeros(FEAparameters.quants)
-    for i in 1:FEAparameters.quants
+    tempo = zeros(FEAparameters.quants+1)
+    i = 1
+    tries = 0
+    while i <= FEAparameters.quants
         tempo[i] = @elapsed begin
+        tries += 1
         print("problem $i - ")
 
         # integer matrix representing displacement boundary conditions (supports):
@@ -55,25 +72,25 @@ function loopTO(FEAparameters)
                 # node IDs that can be later referenced by the name in the string
             if rand() > 0.5
                 # "clamp" a side
-                nodeSets, dispBC = simplePins!2("rand", dispBC, FEAparams)
+                nodeSets, dispBC = simplePins!("rand", dispBC, FEAparams)
             else
                 # position pins randomly
-                nodeSets, dispBC = randPins!2(nels, FEAparams, dispBC)
+                nodeSets, dispBC = randPins!(nels, FEAparams, dispBC, grid)
             end
             
             # lpos has the IDs of the loaded nodes.
             # each line in "forces" contains [forceLine forceCol forceXcomponent forceYcomponent]
-            lpos, forces = loadPos2(nels, dispBC, FEAparameters)
+            lpos, forces = loadPos(nels, dispBC, FEAparameters, grid)
             # Dictionary mapping integers to vectors of floats. The vector
                 # represents a force applied to the node with
                 # the respective integer ID.
             cLoads = Dict(lpos[1] => forces[1,3:4])
-            [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:4];
-            if length(lpos) > 4
-                for pos in 5:length(lpos)
-                    pos == 5 && (global ll = 2)
+            [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
+            if length(lpos) > numCellNodes+1
+                for pos in (numCellNodes+1):length(lpos)
+                    pos == (numCellNodes+1) && (global ll = 2)
                     merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
-                    pos % 4 == 0 && (global ll += 1)
+                    pos % numCellNodes == 0 && (global ll += 1)
                 end
             end
             
@@ -90,7 +107,7 @@ function loopTO(FEAparameters)
             
             # Create TopOpt problem from inpCont struct
             problem = InpStiffness(InpContent(
-                nodeCoords, "CPS4", cells, nodeSets, cellSets, FEAparameters.V[i]*210e3, 0.3,
+                nodeCoords, elType, cells, nodeSets, cellSets,  FEAparameters.V[i]*210e3, 0.3,
                 0.0, Dict("supps" => [(1, 0.0), (2, 0.0)]), cLoads,
                 Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)))
 
@@ -102,9 +119,20 @@ function loopTO(FEAparameters)
         print("FEA - ")
         solver = FEASolver(Direct, problem; xmin=1e-6, penalty=TopOpt.PowerPenalty(3.0))
         solver()
-        # disp = copy(solver.u)
-        disp = solver.u
+        disp = copy(solver.u)
+        # disp = solver.u
 
+        # calculate conditional values (scalars and princpal stress components)
+        vm, σ, principals, strainEnergy = calcConds(nels, FEAparameters, disp, i, FEAparameters.V[i]*210e3, 0.3, numCellNodes)
+
+        # check for problematic sample.
+        # if that's the case, discard it and go to next iteration
+        # sampleQuality = checkSample(size(forces,1), vm, i, 3, forces)
+        # if !sampleQuality
+        #     println("SAMPLE DISCARDED")
+        #     continue
+        # end
+        
         #### write data to file
         print("Writing initial data - ")
         # write volume fraction to file
@@ -114,9 +142,9 @@ function loopTO(FEAparameters)
         # write forces to file
         FEAparameters.fileID["inputs"]["forces"][:,:,i] = forces
         # write displacements to file
-        writeDisp(FEAparameters.fileID, i, disp, FEAparameters)
+        writeDisp(FEAparameters.fileID, i, disp, FEAparameters, numCellNodes)
         # write stresses to file and verify material linearity
-        writeStresses(nels, FEAparameters, disp, i, FEAparameters.V[i]*210e3, 0.3)
+        writeConds(FEAparameters.fileID, vm, σ, principals, strainEnergy, i)
 
         # Definitions for optimizer
         comp = TopOpt.Compliance(problem, solver) # compliance
@@ -137,57 +165,36 @@ function loopTO(FEAparameters)
         # write topology to file
         FEAparameters.fileID["topologies"][:, :, i] = quad(FEAparameters.meshSize..., optimizer.minimizer)
 
-    end
-    end
+        i += 1
 
-    return tempo
+    end
+    end
+    println()
+    return tempo, tries
 
 end
 
-tempo = loopTO(FEAparams)
+tempo, tries = loopTO(FEAparams, "CPS4")
 
 # time stats
 # println(round.(tempo'))
 totalTime  = sum(tempo)
-println("total time: $(round(totalTime)) s; $(round(totalTime/3600;digits=1)) h; $(round(totalTime/86400;digits=1)) day(s)")
-println("mean time: $(round(mean(tempo);digits=1)) s")
-println("std of time: $(round(std(tempo);digits=1)) s")
+println(
+    "total time: $(round(totalTime)) s; $(round(totalTime/3600;digits=1)) h; $(round(totalTime/86400;digits=1)) day(s)         ",
+    "mean time: $(round(mean(tempo);digits=1)) s         ",
+    "std of time: $(round(std(tempo);digits=1)) s"
+)
+
+println("Discard percentage = $(round((1-FEAparams.quants/tries)*100;digits=1))%")
 
 # close file
 close(FEAparams.fileID)
 
 # save plots of samples
-# @time plotSample2(FEAparams.quants, folderName, FEAparams)
-@time plotSampleTest2(FEAparams.quants, folderName, FEAparams)
+# @time plotSample(FEAparams.quants, folderName, FEAparams)
+# @time plotSampleTest(FEAparams.quants, folderName, FEAparams)
+
+# [println("$(i-1)\t$(round(tempo[i];digits=3))") for i in keys(tempo)]
 
 println("folder name: $folderName")
 
-#= 
-    # id = h5open("C:\\Users\\LucasKaoid\\Desktop\\datasets\\quickTOdata2-700", "r")
-    # topo = read(id["topologies"])
-    # inputs = read(id["inputs"])
-    # forces = inputs["forces"]
-    # bc = inputs["dispBoundConds"]
-    # vf = inputs["VF"]
-
-    # conds = read(id["conditions"])
-    # disp = conds["disp"]
-    # en = conds["energy"]
-    # prin = conds["principalStress"]
-    # stress = conds["stress_xy"]
-    # vm = conds["vonMises"]
-    # close(id)
-
-    # fig = Figure(resolution=(1400,700))
-    # heatmap(1:140,50:-1:1,vm[:,:,97]')
-    # findmax([:,:,97])
-
-    # BCs = [bc[:,:,i] for i in 1:700]
-    # uniBC = unique(BCs)
-    # length(uniBC)
-    # filter(x[1,3]->x, BCs)
-
-=#
-
-# bizarre: 3 
-# normal: 4 5 8 9 10 12 13 15 17 19 20 21 22 23 28 29 30

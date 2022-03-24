@@ -6,7 +6,7 @@ include(".\\functionsQuickTO2.jl")
 
 folderName = "680" # choose dataset
 i = 4 # base problem from dataset
-mkpath("C:\\Users\\LucasKaoid\\Desktop\\datasets\\$(folderName)\\fotos\\sample $i")
+mkpath("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/fotos/sample $i")
 
 @with_kw mutable struct FEAparametersTest
   quants::Int = 30 # number of problems
@@ -104,8 +104,8 @@ FEAparams.problems[i] = problem
 # FEA
 solver = FEASolver(Direct, problem; xmin=1e-6, penalty=TopOpt.PowerPenalty(3.0))
 solver()
-# disp = copy(solver.u)
-disp = solver.u
+disp = copy(solver.u)
+# disp = solver.u
 
 # Definitions for optimizer
 comp = TopOpt.Compliance(problem, solver) # compliance
