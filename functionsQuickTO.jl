@@ -79,7 +79,6 @@ end
 
 # check if sample was generated correctly (solved the FEA problem it was given and didn't swap loads)
 function checkSample(numForces, vals, sample, quants, forces)
-  # @show sample
   sProds = zeros(numForces)
   grads = zeros(2,numForces)
   avgs = similar(sProds)
@@ -89,39 +88,27 @@ function checkSample(numForces, vals, sample, quants, forces)
   end
   # calculate dot product between normalized gradient and respective normalized load to check for alignment between the two
   [sProds[f] = dot((grads[:,f]/norm(grads[:,f])),(forces[f,3:4]/norm(forces[f,3:4]))) for f in 1:numForces]
-  # print("dot products: ")
-  # [print("$(round(sProds[i];digits=3))\t") for i in 1:numForces]
-  # println("\tΣ|dotProds|: $(round(sum(abs.(sProds));digits=3))")
-  # print("scalar avgs: ")
-  # [print("$(round(avgs[i];digits=3))\t") for i in 1:numForces]
-  # println()
   # ratio of averages of neighborhood values of scalar field
   vmRatio = avgs[1]/avgs[2]
-  # print("vmRatio: $(round(vmRatio;digits=3))     ")
   # ratio of load norms
   loadRatio = norm(forces[1,3:4])/norm(forces[2,3:4])
-  # print("loadRatio: $(round(loadRatio;digits=3))      ")
   # ratio of the two ratios above
   ratioRatio = vmRatio/loadRatio
-  # println("ratioRatio: $(round(ratioRatio;digits=3))")
-  sense = false
   magnitude = false
   # test alignment
-  alignment = sum(abs.(sProds)) > 1.7
-  # alignment ? print("PASSED alignment       ") : print("FAILED alignment       ")
+  alignment = sum(abs.(sProds)) > 1.8
   if alignment
     # test scalar neighborhood averages against force norms
-    magnitude = (vmRatio/loadRatio < 1.5) && (vmRatio/loadRatio > 0.55)
-    # magnitude ? println("PASSED magnitude") : println("FAILED magnitude")
+    magnitude = (ratioRatio < 1.5) && (ratioRatio > 0.55)
   end
-  # println()
   return alignment*magnitude
 end
 
 # Create hdf5 file. Store data in a more efficient way
-function createFile(quants, folderName, nelx,nely)
+function createFile(quants, sec, runID, nelx,nely)
   # create file
-  quickTOdata = h5open("C:/Users/LucasKaoid/Desktop/datasets/$folderName/$(folderName)data", "w")
+  # quickTOdata = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/$runID $sec $quants", "w")
+  quickTOdata = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/$(Threads.threadid())", "w")
   # shape of most data info
   initializer = zeros(nely, nelx, quants)
   # organize data into folders/groups
@@ -156,19 +143,19 @@ function estimateGrads(vals, quants, iCenter, jCenter)
   Δy = zeros(quants)
   avgs = 0.0
   # pad original matrix with zeros along its boundaries to avoid index problems with kernel
-  maxDelta = convert(Int,(2*(quants+1) - 1 -1)/2)
-  ss = size(vals,2)
-  vals = vcat(vals, zeros(maxDelta,ss))
-  vals = vcat(zeros(maxDelta,ss), vals)
-  vals = hcat(zeros(ss+2*maxDelta,maxDelta), vals)
-  vals = hcat(vals,zeros(ss+2*maxDelta,maxDelta))
+  cols = size(vals,2)
+  lines = size(vals,1)
+  vals = vcat(vals, zeros(quants,cols))
+  vals = vcat(zeros(quants,cols), vals)
+  vals = hcat(zeros(lines+2*quants,quants), vals)
+  vals = hcat(vals,zeros(lines+2*quants,quants))
   for circle in 1:quants
     # size of internal matrix
     side = 2*(circle+1) - 1
     # variation in indices
     delta = convert(Int,(side-1)/2)
     # build internal matrix
-    mat = vals[(iCenter-delta+maxDelta):(iCenter+delta+maxDelta),(jCenter-delta+maxDelta):(jCenter+delta+maxDelta)]
+    mat = vals[(iCenter-delta+quants):(iCenter+delta+quants),(jCenter-delta+quants):(jCenter+delta+quants)]
     # calculate average neighborhood values
     circle == quants && (avgs = mean(filter(!iszero,mat)))
     # nullify previous internal matrix/center element
@@ -261,7 +248,7 @@ function loadPos(nels, dispBC, FEAparams, grid)
     end
   end
   # Generate point load component values
-  randLoads = (-ones(length(loadElements),2) + 2*rand(length(loadElements),2))*100
+  randLoads = (-ones(length(loadElements),2) + 2*rand(length(loadElements),2))*90
   # Build matrix with positions and components of forces
   forces = [
     loadPoss[1][1] loadPoss[1][2] randLoads[1,1] randLoads[1,2]
@@ -338,112 +325,117 @@ function mshDataQuadratic(meshSize)
 end
 
 # create figure to vizualize sample
-function plotSample(sample, folderName, FEAparams)
-  # open file and read data to be plotted
-  id = h5open("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/$(folderName)data2", "r")
-  global top = read(id["topologies"])
-  global forces = read(id["inputs"]["forces"])
-  global supps = read(id["inputs"]["dispBoundConds"])
-  global vf = read(id["inputs"]["VF"])
-  global vm = read(id["conditions"]["vonMises"])
-  close(id)
-  # create makie figure and set it up
+function plotSample(FEAparams, runID)
   print("Generating image of samples: ")
-  lines = size(top)[1]
-  quantForces = size(forces)[1]
+  lines = FEAparams.meshSize[2]
+  quantForces = 2
   colSize = 500
-  for i in 1:sample
-    # only generate images for a fraction of samples
-    rand() > 0.1 && continue
-    print("$i   ")
-    fig = Figure(resolution = (1400, 700));
-    colsize!(fig.layout, 1, Fixed(colSize))
-    # display(fig)
-    # labels for first line of grid
-    Label(fig[1, 1], "supports", textsize = 20)
-    Label(fig[1, 2], "force positions", textsize = 20)
-    colsize!(fig.layout, 2, Fixed(colSize))
-    # plot support(s) and force locations
-    supports = zeros(FEAparams.meshSize)'
-    if supps[:,:,i][1,3] > 3
+  for sec in 1:FEAparams.section
+    # open file and read data to be plotted
+    id = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/$runID $sec $(FEAparams.quants)", "r")
+    global top = read(id["topologies"])
+    global forces = read(id["inputs"]["forces"])
+    global supps = read(id["inputs"]["dispBoundConds"])
+    global vf = read(id["inputs"]["VF"])
+    global vm = read(id["conditions"]["vonMises"])
+    close(id)
+    for i in 1:FEAparams.quants
+      # only generate images for a fraction of samples
+      rand() > 0.05 && continue
+      print("$i\t")
+      # create makie figure and set it up
+      fig = Figure(resolution = (1400, 700));
+      colsize!(fig.layout, 1, Fixed(colSize))
+      # labels for first line of grid
+      Label(fig[1, 1], "supports", textsize = 20)
+      Label(fig[1, 2], "force positions", textsize = 20)
+      colsize!(fig.layout, 2, Fixed(colSize))
+      supports = zeros(FEAparams.meshSize)'
+      if supps[:,:,i][1,3] > 3
 
 
-      if supps[:,:,i][1,3] == 4
-        # left
-        supports[:,1] .= 3
-      elseif supps[:,:,i][1,3] == 5
-        # bottom
-        supports[end,:] .= 3
-      elseif supps[:,:,i][1,3] == 6
-        # right
-        supports[:,end] .= 3
-      elseif supps[:,:,i][1,3] == 7
-        # top
-        supports[1,:] .= 3
+        if supps[:,:,i][1,3] == 4
+          # left
+          supports[:,1] .= 3
+        elseif supps[:,:,i][1,3] == 5
+          # bottom
+          supports[end,:] .= 3
+        elseif supps[:,:,i][1,3] == 6
+          # right
+          supports[:,end] .= 3
+        elseif supps[:,:,i][1,3] == 7
+          # top
+          supports[1,:] .= 3
+        end
+
+
+      else
+
+        [supports[supps[:,:,i][m, 1], supps[:,:,i][m, 2]] = 3 for m in 1:size(supps[:,:,i])[1]]
+
       end
+      # plot supports
+      heatmap(fig[2,1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,supports')
+      # plot forces
+      global loadXcoord = zeros(quantForces)
+      global loadYcoord = zeros(quantForces)
+      for l in 1:quantForces
+        global loadXcoord[l] = forces[:,:,i][l,2]
+        global loadYcoord[l] = lines - forces[:,:,i][l,1] + 1
+      end
+      # norm of weakest force. will be used to scale force vectors in arrows!() command
+      fmin = 0.1*minimum(sqrt.((forces[:,:,i][:,3]).^2+(forces[:,:,i][:,4]).^2))
+      axis = Axis(fig[2,2])
+      xlims!(axis, -round(0.1*FEAparams.meshSize[1]), round(1.1*FEAparams.meshSize[1]))
+      ylims!(axis, -round(0.1*FEAparams.meshSize[2]), round(1.1*FEAparams.meshSize[2]))
+      arrows!(
+        axis, loadXcoord, loadYcoord,
+        forces[:,:,i][:,3], forces[:,:,i][:,4];
+        lengthscale = 1/fmin
+      )
+      # text with values of force components
+      l = text(
+          fig[2,3],
+          "Forces (N):\n1: $(round(Int,forces[:,:,i][1, 3])); $(round(Int,forces[:,:,i][1, 4]))\n2: $(round(Int,forces[:,:,i][2, 3])); $(round(Int,forces[:,:,i][2, 4]))";
+          # position = Point2f0(50.0, 50.0)
+      )
 
-
-    else
-
-      [supports[supps[:,:,i][m, 1], supps[:,:,i][m, 2]] = 3 for m in 1:size(supps[:,:,i])[1]]
-
+      #
+          l.axis.attributes.xgridvisible = false
+          l.axis.attributes.ygridvisible = false
+          l.axis.attributes.rightspinevisible = false
+          l.axis.attributes.leftspinevisible = false
+          l.axis.attributes.topspinevisible = false
+          l.axis.attributes.bottomspinevisible = false
+          l.axis.attributes.xticksvisible = false
+          l.axis.attributes.yticksvisible = false
+          l.axis.attributes.xlabelvisible = false
+          l.axis.attributes.ylabelvisible = false
+          l.axis.attributes.titlevisible  = false
+          l.axis.attributes.xticklabelsvisible = false
+          l.axis.attributes.yticklabelsvisible = false
+          l.axis.attributes.tellheight = false
+          l.axis.attributes.tellwidth = false
+          l.axis.attributes.halign = :center
+          l.axis.attributes.width = 300
+          # l = Label(fig[2,3], "JOOOOOOOJ\nJOOOOOJOJOJOJ"; tellheight = false, tellwidth = false, halign = :left)
+      #
+      
+      # labels for second line of grid
+      Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", textsize = 20)
+      Label(fig[3, 2], "von Mises (MPa)", textsize = 20)
+      # plot final topology
+      heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top[:,:,i]')
+      # plot von Mises
+      _,hm = heatmap(fig[4, 2],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm[:,:,i]')
+      # setup colorbar for von Mises
+      bigVal = round(maximum(vm[:,:,i]))
+      t = floor(0.2*bigVal)
+      t == 0 && (t = 1)
+      Colorbar(fig[4, 3], hm, ticks = 0:t:bigVal)
+      # save image file
+      save("C:/Users/LucasKaoid/Desktop/datasets/data/fotos/$runID/$sec $i.png", fig)
     end
-    heatmap(fig[2, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,supports')
-    global loadXcoord = zeros(quantForces)
-    global loadYcoord = zeros(quantForces)
-    for l in 1:quantForces
-      global loadXcoord[l] = forces[:,:,i][l,2]
-      global loadYcoord[l] = lines - forces[:,:,i][l,1] + 1
-    end
-    # norm of weakest force. will be used to scale force vectors in arrows!() command
-    fmin = 0.1*minimum(sqrt.((forces[:,:,i][:,3]).^2+(forces[:,:,i][:,4]).^2))
-    axis = Axis(fig[2,2])
-    xlims!(axis, -round(0.1*FEAparams.meshSize[1]), round(1.1*FEAparams.meshSize[1]))
-    ylims!(axis, -round(0.1*FEAparams.meshSize[2]), round(1.1*FEAparams.meshSize[2]))
-    arrows!(
-      axis, loadXcoord, loadYcoord,
-      forces[:,:,i][:,3], forces[:,:,i][:,4];
-      lengthscale = 1/fmin
-    )
-    # labels for second line of grid
-    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", textsize = 20)
-    Label(fig[3, 2], "von Mises (MPa)", textsize = 20)
-    # plot final topology and von Mises, indicating final volume fraction
-    heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top[:,:,i]')
-    _,hm = heatmap(fig[4, 2],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm[:,:,i]')
-    bigVal = round(maximum(vm[:,:,i]))
-    t = round(0.2*bigVal)
-    t == 0 && (t = 1)
-    Colorbar(fig[4, 3], hm, ticks = 0:t:bigVal)
-    # text with values of force components
-    l = text(
-        fig[2,3],
-        "Forces (N):\n1: $(round(Int,forces[:,:,i][1, 3])); $(round(Int,forces[:,:,i][1, 4]))\n2: $(round(Int,forces[:,:,i][2, 3])); $(round(Int,forces[:,:,i][2, 4]))";
-        # position = Point2f0(50.0, 50.0)
-    )
-
-    #
-        l.axis.attributes.xgridvisible = false
-        l.axis.attributes.ygridvisible = false
-        l.axis.attributes.rightspinevisible = false
-        l.axis.attributes.leftspinevisible = false
-        l.axis.attributes.topspinevisible = false
-        l.axis.attributes.bottomspinevisible = false
-        l.axis.attributes.xticksvisible = false
-        l.axis.attributes.yticksvisible = false
-        l.axis.attributes.xlabelvisible = false
-        l.axis.attributes.ylabelvisible = false
-        l.axis.attributes.titlevisible  = false
-        l.axis.attributes.xticklabelsvisible = false
-        l.axis.attributes.yticklabelsvisible = false
-        l.axis.attributes.tellheight = false
-        l.axis.attributes.tellwidth = false
-        l.axis.attributes.halign = :center
-        l.axis.attributes.width = 300
-        # l = Label(fig[2,3], "JOOOOOOOJ\nJOOOOOJOJOJOJ"; tellheight = false, tellwidth = false, halign = :left)
-    #
-    
-    save("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/fotos/sample $i.png", fig)
   end
   println()
 end
@@ -583,7 +575,7 @@ function writeDisp(quickTOdata, problemID, disp, FEAparams, numCellNode)
 end
 
 # write stresses, principal components and strain energy density to file
-function writeConds(fileID, vm, σ, principals, strainEnergy, problemID)
+function writeConds(fileID, vm, σ, principals, strainEnergy, problemID, FEAparams)
 
   fileID["conditions"]["vonMises"][:,:,problemID] = vm
   fileID["conditions"]["stress_xy"][:, :, problemID] = quad(FEAparams.meshSize...,σ)
