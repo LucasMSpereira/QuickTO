@@ -2,6 +2,45 @@
 
 using Ferrite, Parameters, HDF5, LinearAlgebra, Glob
 
+# template to combine multiple hdf5 files into a new one
+function combineFiles(pathRef)
+  # get list of intermediate hdf5 analysis files
+  files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/analysis")
+  # create new file to store everything
+  new = h5open("C:/Users/LucasKaoid/Desktop/datasets/post/"*pathRef, "w")
+  count = 0 # global sample counter
+  globalDS = []; globalSec = []; globalSID = []; globalRes = []
+  for file in keys(files) # loop in files
+    # open current file and read data
+    id = h5open(files[file], "r")
+    ds = read(id["dataset"])
+    sec = read(id["section"])
+    sample = read(id["sampleID"])
+    res = read(id["result"])
+    close(id) # close current file
+    IDs = findall(res .> 0) # get IDs of samples of interest in current file
+    quants = length(IDs) # number of samples of interest in current file
+    globalDS = vcat(globalDS, ds[IDs]) # dataset ID of samples
+    globalSec = vcat(globalSec, sec[IDs]) # section ID of samples
+    globalSID = vcat(globalSID, sample[IDs]) # IDs of samples
+    globalRes = vcat(globalRes, res[IDs]) # results of samples
+    count += quants # update global counter
+    @show count
+  end
+  # initialize fields in new file
+  create_dataset(new, "dataset", zeros(Int, count))
+  create_dataset(new, "section", zeros(Int, count))
+  create_dataset(new, "sampleID", zeros(Int, count))
+  create_dataset(new, "intermPercent", zeros(count))
+  for gg in 1:count
+    new["dataset"][gg] = globalDS[gg] # pass dataset ID of samples to new file
+    new["section"][gg] = globalSec[gg] # pass section ID of samples to new file
+    new["sampleID"][gg] = globalSID[gg] # pass sample ID to new file
+    new["intermPercent"][gg] = globalRes[gg] # store respective percentage of elements with  intermediate density
+  end
+  close(new) # close new file
+end
+
 # Create hdf5 file. Store data in a more efficient way
 function createFile(quants, sec, runID, nelx,nely)
   # create file
@@ -25,33 +64,51 @@ function createFile(quants, sec, runID, nelx,nely)
 end
 
 # Find subgroup of dataset that meets certain criterion (e.g. plasticity, VF range etc)
-function filterDataset(func, id)
-  files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id") # get list of file names
+function processDataset(func, id, numFiles)
+  if numFiles == "end"
+    files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id") # get list of file names
+  else
+    numFiles = parse(Int, numFiles)
+    files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id")[1:numFiles] # get list of file names
+  end
   nSamples = numSample(files) # amount of samples in folder
   ##### custom hdf5 file for current analysis ###
-    resultsFile = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/$(rand(0:99999))", "w")
-    create_dataset(resultsFile, "datasetSection", zeros(Int, nSamples))
+    resultsFile = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/analysis/$(rand(0:99999))", "w")
+    create_dataset(resultsFile, "dataset", zeros(Int, nSamples))
+    create_dataset(resultsFile, "section", zeros(Int, nSamples))
     create_dataset(resultsFile, "sampleID", zeros(Int, nSamples))
   #####
   count = 0
+  timeElapsed = 0.0
   # loop in files
   @time for file in keys(files)
     forces, supps, vf, disp, top = getDataFSVDT(files[file]) # get data from file
-    dataset, section = getIDs(files[file]) # dataset ID and section strings
+    dataset, section = getIDs(files[file]) # dataset and section IDs
     # loop in samples of current file
     for sample in 1:length(vf)
-      count += 1
-      # apply function to each sample and save alongside ID in "results" vector
-      resultsFile["datasetSection"][count] = parse(Int,dataset*section)
-      resultsFile["sampleID"][count] = sample
-      res = func(forces[:,:,sample], supps[:,:,sample], vf[sample], disp[:,:,2*sample-1 : 2*sample], top[:,:,sample])
-      if count == 1
-        create_dataset(resultsFile, "result", Array{typeof(res)}(undef, nSamples))
-        resultsFile["result"][1] = res
-      else
-        resultsFile["result"][count] = res
+      time = @elapsed begin
+        count += 1
+        # apply function to each sample and save alongside ID in "results" vector
+        resultsFile["dataset"][count] = dataset
+        resultsFile["section"][count] = section
+        resultsFile["sampleID"][count] = sample
+        res = func(
+          forces[:,:,sample], supps[:,:,sample], vf[sample], disp[:,:,2*sample-1 : 2*sample], top[:,:,sample],
+          dataset, section, sample
+        )
+        if count == 1
+          create_dataset(resultsFile, "result", Array{typeof(res)}(undef, nSamples))
+          resultsFile["result"][1] = res
+        else
+          resultsFile["result"][count] = res
+        end
       end
-      println("$dataset $section $sample/$(length(vf))        $count/$nSamples               $( round(Int, count/nSamples*100) )%")
+      timeElapsed += time
+      str = [
+        "$( round(Int, count/nSamples*100) )%    "
+        "Time: $(round(Int, timeElapsed/60)) min"
+      ]
+      println(prod(str))
     end
   end
   close(resultsFile)
@@ -69,146 +126,36 @@ function getDataFSVDT(file)
   return forces, supps, vf, disp, top
 end
 
-# Returns total number of samples across files in list
-numSample(files) = sum([parse(Int, split(files[g][findlast(x->x=='\\', files[g])+1:end])[3]) for g in keys(files)])
-
-# create figure to vizualize samples
-function plotSamples(FEAparams)
-  # Vector of strings with paths to each dataset file
-  files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data")
-  lines = FEAparams.meshSize[2]
-  quantForces = 2
-  colSize = 500
-  count = 0
-  for file in keys(files)
-  # open file and read data to be plotted
-    forces, supps, vf, disp, top = getDataFSVDT(files[file])
-    file == 1 && (FEAparams.problems[1] = rebuildProblem(vf[1], supps[:,:,1], forces[:,:,1]))
-    dataset, section = getIDs(files[file])
-    mkpath("C:/Users/LucasKaoid/Desktop/datasets/fotos/$dataset")
-    for i in 1:size(top,3)
-      # only generate images for a fraction of samples
-      rand() > 0.01 && continue
-      count += 1
-      vm = calcVM(prod(FEAparams.meshSize), FEAparams, disp[:,:,(2*i-1):(2*i)], 210e3*vf[i], 0.3)
-      println("image $count            $( round(Int, file/length(files)*100) )%")
-      # create makie figure and set it up
-      fig = Figure(resolution = (1400, 700));
-      colsize!(fig.layout, 1, Fixed(colSize))
-      # labels for first line of grid
-      Label(fig[1, 1], "Supports", textsize = 20)
-      Label(fig[1, 2], "Force positions", textsize = 20)
-      colsize!(fig.layout, 2, Fixed(colSize))
-      supports = zeros(FEAparams.meshSize)'
-      if supps[:,:,i][1,3] > 3
-
-
-        if supps[:,:,i][1,3] == 4
-          # left
-          supports[:,1] .= 3
-        elseif supps[:,:,i][1,3] == 5
-          # bottom
-          supports[end,:] .= 3
-        elseif supps[:,:,i][1,3] == 6
-          # right
-          supports[:,end] .= 3
-        elseif supps[:,:,i][1,3] == 7
-          # top
-          supports[1,:] .= 3
-        end
-
-
-      else
-
-        [supports[supps[:,:,i][m, 1], supps[:,:,i][m, 2]] = 3 for m in 1:size(supps[:,:,i])[1]]
-
-      end
-      # plot supports
-      heatmap(fig[2,1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,supports')
-      # plot forces
-      loadXcoord = zeros(quantForces)
-      loadYcoord = zeros(quantForces)
-      for l in 1:quantForces
-        loadXcoord[l] = forces[:,:,i][l,2]
-        loadYcoord[l] = lines - forces[:,:,i][l,1] + 1
-      end
-      # norm of weakest force. will be used to scale force vectors in arrows!() command
-      fmin = 0.1*minimum(sqrt.((forces[:,:,i][:,3]).^2+(forces[:,:,i][:,4]).^2))
-      axis = Axis(fig[2,2])
-      xlims!(axis, -round(0.1*FEAparams.meshSize[1]), round(1.1*FEAparams.meshSize[1]))
-      ylims!(axis, -round(0.1*FEAparams.meshSize[2]), round(1.1*FEAparams.meshSize[2]))
-      arrows!(
-        axis, loadXcoord, loadYcoord,
-        forces[:,:,i][:,3], forces[:,:,i][:,4];
-        lengthscale = 1/fmin
-      )
-      # text with values of force components
-      f1 = "Forces (N):\n1: $(round(Int,forces[:,:,i][1, 3])); $(round(Int,forces[:,:,i][1, 4]))\n"
-      f2 = "2: $(round(Int,forces[:,:,i][2, 3])); $(round(Int,forces[:,:,i][2, 4]))"
-      l = text(
-          fig[2,3],
-          f1*f2;
-      )
-
-      #
-          l.axis.attributes.xgridvisible = false
-          l.axis.attributes.ygridvisible = false
-          l.axis.attributes.rightspinevisible = false
-          l.axis.attributes.leftspinevisible = false
-          l.axis.attributes.topspinevisible = false
-          l.axis.attributes.bottomspinevisible = false
-          l.axis.attributes.xticksvisible = false
-          l.axis.attributes.yticksvisible = false
-          l.axis.attributes.xlabelvisible = false
-          l.axis.attributes.ylabelvisible = false
-          l.axis.attributes.titlevisible  = false
-          l.axis.attributes.xticklabelsvisible = false
-          l.axis.attributes.yticklabelsvisible = false
-          l.axis.attributes.tellheight = false
-          l.axis.attributes.tellwidth = false
-          l.axis.attributes.halign = :center
-          l.axis.attributes.width = 300
-      #
-      
-      # labels for second line of grid
-      Label(fig[3, 1], "Topology VF = $(round(vf[i];digits=3))", textsize = 20)
-      Label(fig[3, 2], "von Mises (MPa)", textsize = 20)
-      # plot final topology
-      heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top[:,:,i]')
-      # plot von Mises
-      _,hm = heatmap(fig[4, 2],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm')
-      # setup colorbar for von Mises
-      bigVal = ceil(maximum(vm))
-      t = floor(0.2*bigVal)
-      t == 0 && (t = 1)
-      Colorbar(fig[4, 3], hm, ticks = 0:t:bigVal)
-      # save image file
-      save("C:/Users/LucasKaoid/Desktop/datasets/fotos/$dataset/$(section * " " * string(i)).png", fig)
-    end
+#=
+"Reference files" store contextual info about certain samples (plastification, non-binary topology etc.).
+These files also store the info needed to locate each of these samples in the dataset.
+This function removes these samples from a folder of the dataset.
+=#
+function remSamples(id, pathRef)
+  files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id") # get list of file names in folder "id"
+  ds = []; sID = []; sec = [] # initialize some arrays
+  # open and read reference file
+  h5open("C:/Users/LucasKaoid/Desktop/datasets/post/"*pathRef, "r") do f
+    data = read.(HDF5.get_datasets(f))
+    ds = data[1]
+    sID = data[3]
+    sec = data[4]
   end
-  println()
-end
-
-# remove plastic samples from dataset
-function remPlast(id)
-  files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id") # get list of file names
-  # get plastic samples info
-  plastic = h5open("C:/Users/LucasKaoid/Desktop/datasets/post/plastification/plastic", "r")
-  pDSsec = read(plastic["datasetSection"])
-  pID = read(plastic["sampleID"])
-  close(plastic)
-  count = 0
-  # loop in files
-  @time for file in keys(files)
-    stringDSsection = getIDs(files[file]) # check if current file is in list of plastic samples
-    if parse(Int, prod(stringDSsection)) in pDSsec
-      # positions in "plastic" file that refer to samples of the current dataset
-      plasticPos = findall(x -> x == parse(Int, prod(stringDSsection)), pDSsec)
-      plasticQuant = length(plasticPos)
+  @time for file in keys(files) # loop in files
+    currentDS, currentSec = getIDs(files[file]) # get dataset and section IDs of current file
+    pos = [] # vector to store positions in reference file that refer to samples of the current dataset file
+    # loop in reference file to get positions refering to current dataset file
+    for sample in keys(ds)
+      if currentDS == ds[sample] && currentSec == sec[sample]
+        pos = vcat(pos, sample)
+      end
+    end
+    # check if reference file references current file
+    if length(pos) > 0
       force, supps, vf, disp, topo = getDataFSVDT(files[file]) # get data from current file
-      newQuant = size(topo,3) - plasticQuant # quantity of samples in new file
+      newQuant = size(topo,3) - length(pos) # quantity of samples in new file
       # create new file
-      new = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/$id/$(stringDSsection[1]) $(stringDSsection[2]) $newQuant", "w")
+      new = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/$id/$currentDS $currentSec $newQuant", "w")
       initializer = zeros(size(topo,1), size(topo,2), newQuant) # common shape of sample data
       # initialize fields inside new file
       create_group(new, "inputs")
@@ -217,25 +164,23 @@ function remPlast(id)
       create_dataset(new["inputs"], "dispBoundConds", zeros(Int, (3,3,newQuant)))
       create_dataset(new["inputs"], "forces", zeros(2,4,newQuant))
       create_dataset(new, "disp", zeros(size(disp,1), size(disp,2), 2*newQuant))
-      # IDs of samples that will be copied (elastic samples)
-      a = filter!(x -> x > 0, [in(i, pID[plasticPos]) ? 0 : i for i in 1:size(topo,3)])
-      # Copy elastic data to new file
+      # IDs of samples that will be copied (i.e. are not referenced)
+      keep = filter!(x -> x > 0, [in(i, sID[pos]) ? 0 : i for i in 1:size(topo,3)])
+      # Copy part of data to new file
       for f in 1:newQuant
-        new["topologies"][:,:,f] = topo[:,:,a[f]]
-        new["inputs"]["VF"][f] = vf[a[f]]
-        new["inputs"]["dispBoundConds"][:,:,f] = supps[:,:,a[f]]
-        new["inputs"]["forces"][:,:,f] = force[:,:,a[f]]
-        new["disp"][:,:,2*f-1] = disp[:,:,2*a[f]-1]
-        new["disp"][:,:,2*f] = disp[:,:,2*a[f]]
+        new["topologies"][:,:,f] = topo[:,:,keep[f]]
+        new["inputs"]["VF"][f] = vf[keep[f]]
+        new["inputs"]["dispBoundConds"][:,:,f] = supps[:,:,keep[f]]
+        new["inputs"]["forces"][:,:,f] = force[:,:,keep[f]]
+        new["disp"][:,:,2*f-1] = disp[:,:,2*keep[f]-1]
+        new["disp"][:,:,2*f] = disp[:,:,2*keep[f]]
       end
-      println("$(stringDSsection[1]) $(stringDSsection[2])        $file/$(length(files))       $( round(Int, file/length(files)*100) )%")
+      println("$currentDS $currentSec      $( round(Int, file/length(files)*100) )% ")
       close(new)
     else
-      println("SKIPPED $(stringDSsection[1]) $(stringDSsection[2])")
-      count += 1
+      println("SKIPPED $currentDS $currentSec")
     end
   end
-  println(count)
 end
 
 # write displacements to file

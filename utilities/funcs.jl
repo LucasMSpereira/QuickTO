@@ -44,8 +44,6 @@ function checkSample(numForces, vals, sample, quants, forces)
   return alignment*magnitude
 end
 
-
-
 # estimate scalar gradient around element in mesh
 function estimateGrads(vals, quants, iCenter, jCenter)
   peaks = Array{Any}(undef,quants)
@@ -89,9 +87,12 @@ end
 
 # Get section and dataset IDs from sample
 function getIDs(pathing)
-  s = split(pathing[findlast(x->x=='\\', pathing)+1:end])
+  s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
   return s[1], s[2]
 end
+
+# Returns total number of samples across files in list
+numSample(files) = sum([parse(Int, split(files[g][findlast(x->x=='\\', files[g])+1:end])[3]) for g in keys(files)])
 
 # reshape vectors with element quantity to reflect mesh shape
 function quad(nelx,nely,vec)
@@ -119,4 +120,24 @@ function randDiffInt(n, val)
     end
   end
   return randVec
+end
+
+# auxiliary print function
+showVal(x) = println(round.(x;digits=4))
+
+# Identify non-binary topologies
+function getNonBinaryTopos(forces, supps, vf, disp, top)
+  bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
+  boundPercent = 3 # allowed percentage of elements with intermediate densities
+  intermQuant = length(filter(
+      x -> (x > 0.5 - bound) && (x < 0.5 + bound),
+      top
+  ))
+  intermPercent = intermQuant/length(top)*100
+  # return intermPercent
+  if intermPercent > boundPercent
+      return intermPercent
+  else
+      return 0.0
+  end
 end

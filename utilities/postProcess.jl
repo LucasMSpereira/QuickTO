@@ -127,7 +127,3 @@ function calcVM(nels, FEAparams, disp, e, v)
   end
   return vm
 end
-
-function plotTopoIntermidiate(forces, supps, vf, disp, top)
-  
-end

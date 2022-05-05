@@ -184,8 +184,6 @@ end
     section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
 end
 FEAparams = FEAparameters()
-# include toy problem in "problems" field to get mesh references
-FEAparams = problem!(FEAparams)
 
 # Identify current run
 # runID = rand(0:99999)
@@ -199,12 +197,3 @@ FEAparams = problem!(FEAparams)
 
 # save plots of samples
 # @time plotSamples(FEAparams)
-
-# Generic function to be applied to every sample
-function func(forces, supps, vf, disp, top)
-    
-    
-
-    return
-end
-println("call 'filterDataset(func, id)' where 'id' is name of folder")

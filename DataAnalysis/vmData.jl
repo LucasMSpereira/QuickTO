@@ -1,33 +1,5 @@
 using Glob, HDF5, StatsPlots, Statistics, DataFrames, IndexedTables
-
-#=
-
-  files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data")[7:end] # get list of file names
-  new = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/yield", "w") # new file to store everything
-  nSamples = 138600 # size of dataset
-  # fields in new file
-  create_dataset(new, "datasetSection", zeros(Int, nSamples))
-  create_dataset(new, "sampleID", zeros(Int, nSamples))
-  create_dataset(new, "vm", zeros(nSamples))
-  # global sample counter
-  count = 0
-  for file in keys(files)
-      @show file
-      id = h5open(files[file], "r") # open current file
-      # get data from current file
-      ds = read(id["datasetSection"])
-      sampleID = read(id["sampleID"])
-      res = read(id["result"])
-      # pass to new file
-      new["datasetSection"][count+1:count+length(ds)] = ds
-      new["sampleID"][count+1:count+length(ds)] = sampleID
-      new["vm"][count+1:count+length(ds)] = res
-      close(id) # close current file being read
-      count += length(ds) # update global counter
-  end
-  close(new) # close and save new file
-
-=#
+include("C:/Users/LucasKaoid/Meu Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/QTOutils.jl")
 
 new = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/yield", "r") # open new file
 # get data (new referring to the entire dataset)
@@ -35,8 +7,6 @@ ds = read(new["datasetSection"])
 sampleID = read(new["sampleID"])
 vm = read(new["vm"]) # (maximum von Mises of sample)/250
 close(new) # close new file
-
-showVal(x) = println(round.(x;digits=4)) # print function
 
 ##### Statistics
 @show mean(vm) # 0.35267
