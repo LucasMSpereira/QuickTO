@@ -26,43 +26,27 @@ end
 
 # Function to be applied to every sample
 function func(forces, supps, vf, disp, top, dataset, section, sample)
-
-  
-
-  return getNonBinaryTopos(forces, supps, vf, disp, top)
-
+  return topoFEA(forces, supps, vf, top)
 end
 
 println(
   "call 'processDataset(func, id, numFiles)'.
   'func' - function to be applied to every sample
   'id' - name of folder
-  'numFiles' - string with number of files to analyze in that folder, or 'end'"
+  'numFiles' - string with number of files to analyze in that folder, or 'end'
+    to analyze all"
 )
 
-@time [remSamples(f, "intermediateDensities/intermediateTopos") for f in 2:6]
-combineFiles("intermediateDensities/intermediateTopos")
-@time [processDataset(func, g, "end") for g in 1:6];
-
-file = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/analysis/37679", "r")
-data = read.(HDF5.get_datasets(file))
+file = h5open("C:/Users/LucasKaoid/Desktop/datasets/post/geomNonLinear/geomNonLinear", "r")
+ds = read(file["dataset"])
+res = read(file["result"])
+sID = read(file["sampleID"])
+sec = read(file["section"])
 close(file)
 
-IDrem = findall(data[2] .> 0)
-a = [data[h][IDrem] for h in keys(data)]
+pset = PointSet(rand(Point2, 100))
+@time chul = hull(pset, GrahamScan())
 
-resultsFile = h5open("C:/Users/LucasKaoid/Desktop/datasets/post/intermediateDensities/asdf", "w")
-create_dataset(resultsFile, "dataset", zeros(Int, length(IDrem)))
-create_dataset(resultsFile, "section", zeros(Int, length(IDrem)))
-create_dataset(resultsFile, "sampleID", zeros(Int, length(IDrem)))
-create_dataset(resultsFile, "res", zeros(length(IDrem)))
-
-for sample in keys(IDrem)
-  resultsFile["dataset"][sample] = a[1][sample]
-  resultsFile["res"][sample] = a[2][sample]
-  resultsFile["section"][sample] = a[3][sample]
-  resultsFile["sampleID"][sample] = a[4][sample]
-end
-close(resultsFile)
-
-processDataset(func, 6, "end")
+fig = GLMakie.Figure(resolution = (800, 400))
+viz(fig[1,1], chul)
+viz!(fig[1,1], pset, color = :black)

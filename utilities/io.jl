@@ -6,8 +6,6 @@ using Ferrite, Parameters, HDF5, LinearAlgebra, Glob
 function combineFiles(pathRef)
   # get list of intermediate hdf5 analysis files
   files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/analysis")
-  # create new file to store everything
-  new = h5open("C:/Users/LucasKaoid/Desktop/datasets/post/"*pathRef, "w")
   count = 0 # global sample counter
   globalDS = []; globalSec = []; globalSID = []; globalRes = []
   for file in keys(files) # loop in files
@@ -18,7 +16,7 @@ function combineFiles(pathRef)
     sample = read(id["sampleID"])
     res = read(id["result"])
     close(id) # close current file
-    IDs = findall(res .> 0) # get IDs of samples of interest in current file
+    IDs = 1:length(ds) # get IDs of samples of interest in current file (criterion changes with context)
     quants = length(IDs) # number of samples of interest in current file
     globalDS = vcat(globalDS, ds[IDs]) # dataset ID of samples
     globalSec = vcat(globalSec, sec[IDs]) # section ID of samples
@@ -27,16 +25,18 @@ function combineFiles(pathRef)
     count += quants # update global counter
     @show count
   end
+  new = h5open("C:/Users/LucasKaoid/Desktop/datasets/post/"*pathRef, "w") # create new file to store everything
   # initialize fields in new file
   create_dataset(new, "dataset", zeros(Int, count))
   create_dataset(new, "section", zeros(Int, count))
   create_dataset(new, "sampleID", zeros(Int, count))
-  create_dataset(new, "intermPercent", zeros(count))
+  create_dataset(new, "result", zeros(count))
+  # fill new file with data of interest
   for gg in 1:count
-    new["dataset"][gg] = globalDS[gg] # pass dataset ID of samples to new file
-    new["section"][gg] = globalSec[gg] # pass section ID of samples to new file
-    new["sampleID"][gg] = globalSID[gg] # pass sample ID to new file
-    new["intermPercent"][gg] = globalRes[gg] # store respective percentage of elements with  intermediate density
+    new["dataset"][gg] = globalDS[gg] # dataset ID
+    new["section"][gg] = globalSec[gg] # section ID
+    new["sampleID"][gg] = globalSID[gg] # sample
+    new["result"][gg] = globalRes[gg] # sample ID
   end
   close(new) # close new file
 end
@@ -63,7 +63,8 @@ function createFile(quants, sec, runID, nelx,nely)
   return quickTOdata
 end
 
-# Find subgroup of dataset that meets certain criterion (e.g. plasticity, VF range etc)
+# Access folder "id". Apply function "func" to all samples in "numFiles" HDF5 files.
+# Store results in new HDF5 file referring to the analysis of folder "id"
 function processDataset(func, id, numFiles)
   if numFiles == "end"
     files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id") # get list of file names
@@ -71,7 +72,7 @@ function processDataset(func, id, numFiles)
     numFiles = parse(Int, numFiles)
     files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id")[1:numFiles] # get list of file names
   end
-  nSamples = numSample(files) # amount of samples in folder
+  nSamples = numSample(files) # total amount of samples
   ##### custom hdf5 file for current analysis ###
     resultsFile = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/analysis/$(rand(0:99999))", "w")
     create_dataset(resultsFile, "dataset", zeros(Int, nSamples))

@@ -357,3 +357,29 @@ function simplePinsQuad!(type, dispBC, FEAparams)
   end
   return nodeSet, dispBC
 end
+
+# FEA analysis of final topology
+function topoFEA(forces, supps, vf, top)
+  problem = rebuildProblem(vf, supps, forces) # rebuild original FEA problem from sample
+  solver = FEASolver(Direct, problem; xmin=1e-6, penalty=TopOpt.PowerPenalty(3.0)) # build solver
+  comp = TopOpt.Compliance(problem, solver) # compliance
+  filter = DensityFilter(solver; rmin=3.0) # filtering to avoid checkerboard
+  obj = x -> comp(filter(x)); # objective
+  meshSize = (140, 50) # size of mesh
+  nEle = prod(meshSize) # number of elements
+  elementIDmatrix = convert.(Int, quad(meshSize...,[i for i in 1:nEle])); # matrix with element IDs in the right positions
+  dens = [top[findfirst(x -> x == ele, elementIDmatrix)] for ele in 1:nEle]
+  objVal = obj(dens)
+  disp = solver.u
+  dispX = []
+  dispY = []
+  for dof in keys(disp)
+    if isodd(dof)
+      dispX = vcat(dispX, disp[dof])
+    else
+      dispY = vcat(dispY, disp[dof])
+    end
+  end
+  return maximum(sqrt.(dispX.^2 + dispY.^2))
+  
+end
