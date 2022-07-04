@@ -1,4 +1,4 @@
-using Glob, HDF5, StatsPlots, Statistics, DataFrames, IndexedTables
+using StatsPlots, DataFrames, IndexedTables
 include("C:/Users/LucasKaoid/Meu Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/QTOutils.jl")
 
 new = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/yield", "r") # open new file

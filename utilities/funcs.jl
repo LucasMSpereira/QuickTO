@@ -1,7 +1,5 @@
 # General functions
 
-using Ferrite, Parameters, HDF5, LinearAlgebra, Glob
-
 function centerCoords(nels, problem)
   cellValue = CellVectorValues(QuadratureRule{2, RefCube}(2), Lagrange{2,RefCube,1}())
   centerPos = Array{Any}(undef, nels)
@@ -42,6 +40,47 @@ function checkSample(numForces, vals, sample, quants, forces)
     magnitude = (ratioRatio < 1.5) && (ratioRatio > 0.55)
   end
   return alignment*magnitude
+end
+
+# identify samples with structural disconnection in final topology
+function disconnections(topology, dataset, section, sample)
+  # make sample topology binary
+  topo = map(
+    x -> x >= 0.5 ? 1 : 0,
+    topology
+  )
+  # matrix with element IDs in mesh position
+  elementIDmatrix = convert.(Int, quad(size(topo, 2), size(topo, 1), [i for i in 1:length(topo[:, :, 1])]))
+  # solid elements closest to each corner (bottom left, then counter-clockwise)
+  extremeEles = cornerPos(topo)
+  # "adjacency graph" between solid elements
+  g = adjSolid(topo, elementIDmatrix)
+  # node IDs in graph referring to extreme elements
+  nodeID = [g[string(elementIDmatrix[extremeEles[ele]]), :id] for ele in 1:length(extremeEles)]
+  # possible pairs of extreme elements
+  combsExtEles = collect(combinations(nodeID, 2))
+  # A* paths between possible pairs of extreme elements
+  paths = [a_star(g, combsExtEles[i]...) for i in 1:length(combsExtEles)]
+  if prod(length.(paths)) == 0
+    # Get list of elements visited in each path
+    pathLists = pathEleList.(filter(x -> length(x) != 0, paths))
+    topo[extremeEles] .+= 3 # indicate extreme elements in plot
+    # IDs of nodes in paths connecting extreme elements (without repetition)
+    if sum(length.(pathLists)) > 0
+      nodePathsID = unique(cat(pathLists...; dims = 1))
+      # List of element IDs in paths connecting extreme elements (without repetition)
+      elementPathsID = [parse(Int, get_prop(g, nodePathsID[node], :id)) for node in keys(nodePathsID)]
+      # Mesh positions of elements in paths connecting extreme elements (without repetition)
+      elePathsPos = [findfirst(x -> x == elementPathsID[ele], elementIDmatrix) for ele in 1:length(elementPathsID)]
+      topo[elePathsPos] .+= 2 # indicate elements in paths in plot
+    end
+    # create plot
+    fig = Figure(;resolution = (1200, 400));
+    heatmap(fig[1, 1], 1:size(topo, 1), size(topo, 2):-1:1, topo');
+    # save image file
+    save("C:/Users/LucasKaoid/Desktop/datasets/post/disconnection/problems imgs/$dataset $section $(string(sample)).png", fig)
+  end
+  return prod(length.(paths))
 end
 
 # estimate scalar gradient around element in mesh
@@ -140,4 +179,100 @@ function getNonBinaryTopos(forces, supps, vf, disp, top)
   else
       return 0.0
   end
+end
+
+# get topologies in file and make them binary
+function binTopo(filePath)
+  return 
+end
+
+# among solid elements, get elements closest to each corner
+function cornerPos(topo)
+  # list with positions of elements closest to each corner (same order as loop below)
+  closeEles = Array{CartesianIndex{2}}(undef, 4)
+  # loop in corners
+  for corner in ["bottomLeft" "bottomRight" "topRight" "topLeft"]
+    # matrix to store distance of each active element to current corner
+    dists = fill(1e12, size(topo))
+    # get position of current corner
+    corner == "bottomLeft" && (cornerPos = (size(topo, 1), 1))
+    corner == "bottomRight" && (cornerPos = size(topo))
+    corner == "topRight" && (cornerPos = (1, size(topo, 2)))
+    corner == "topLeft" && (cornerPos = (1, 1))
+    # loop in topology matrix
+    for ele in keys(topo)
+      # in distance matrix, position of active element is filled
+      # with the respective (index) distance to current corner
+      if topo[ele] == 1
+        dists[ele] = sqrt(
+          (ele[2] - cornerPos[2]) ^ 2 + (ele[1] - cornerPos[1]) ^ 2
+        )
+      end
+    end
+    # include position of closest element to current corner in list
+    corner == "bottomLeft" && (closeEles[1] = findmin(dists)[2])
+    corner == "bottomRight" && (closeEles[2] = findmin(dists)[2])
+    corner == "topRight" && (closeEles[3] = findmin(dists)[2])
+    corner == "topLeft" && (closeEles[4] = findmin(dists)[2])
+  end
+  return closeEles
+end
+
+# return "adjacency graph" of solid elements
+function adjSolid(topo, elementIDmatrix)
+  # index positions of solid elements in binary topology
+  solids = findall(x -> x == 1, topo)
+  numSolids = length(solids)
+  # initialize connectivity matrix
+  connect = zeros(Int, (4, numSolids))
+  # build element conectivity matrix (right-top-left-bottom)
+  for ele in 1:numSolids
+    if solids[ele][2] + 1 <= size(topo, 2) && topo[solids[ele][1], solids[ele][2] + 1] == 1
+      # right
+      connect[1, ele] = elementIDmatrix[solids[ele][1], solids[ele][2] + 1]
+    end
+    if solids[ele][1] - 1 >= 1 && topo[solids[ele][1] - 1, solids[ele][2]] == 1
+      # top
+      connect[2, ele] = elementIDmatrix[solids[ele][1] - 1, solids[ele][2]]
+    end
+    if solids[ele][2] - 1 >= 1 && topo[solids[ele][1], solids[ele][2] - 1] == 1
+      # left
+      connect[3, ele] = elementIDmatrix[solids[ele][1], solids[ele][2] - 1]
+    end
+    if solids[ele][1] + 1 <= size(topo, 1) && topo[solids[ele][1] + 1, solids[ele][2]] == 1
+      # bottom
+      connect[4, ele] = elementIDmatrix[solids[ele][1] + 1, solids[ele][2]]
+    end
+  end
+  ### graph
+  # initialize graph with vertices referring to solid elements
+  g = MetaGraph(SimpleGraph(numSolids, 0))
+  # include respective element ID in each node
+  [set_prop!(g, node, :id, string(elementIDmatrix[solids[node]])) for node in 1:numSolids]
+  set_indexing_prop!(g, :id) # use this property as index
+  # add edges to the graph, according to neighborhood relationships between solid elements
+  # loop in solid elements
+  for ele in 1:numSolids
+    # loop in neighbors of current solid element
+    for neighbor in 1:size(connect, 1)
+      # check if there's a neighbor in current direction
+      if connect[neighbor, ele] != 0
+        add_edge!(
+          g,
+          g[string(elementIDmatrix[solids[ele]]), :id],
+          g[string(connect[neighbor, ele]), :id]
+        )
+      end
+    end
+  end
+  return g
+end
+
+# get list of elements visited by a path
+function pathEleList(aStar)
+  list = zeros(Int, length(aStar) + 1)
+  for ele in keys(list)
+    ele == length(list) ? (list[ele] = aStar[ele - 1].dst) : (list[ele] = aStar[ele].src)
+  end
+  return list
 end

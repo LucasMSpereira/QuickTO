@@ -1,7 +1,5 @@
 # Functions that involve opening/closing/saving files
 
-using Ferrite, Parameters, HDF5, LinearAlgebra, Glob
-
 # template to combine multiple hdf5 files into a new one
 function combineFiles(pathRef)
   # get list of intermediate hdf5 analysis files
@@ -36,7 +34,7 @@ function combineFiles(pathRef)
     new["dataset"][gg] = globalDS[gg] # dataset ID
     new["section"][gg] = globalSec[gg] # section ID
     new["sampleID"][gg] = globalSID[gg] # sample
-    new["result"][gg] = globalRes[gg] # sample ID
+    new["result"][gg] = globalRes[gg] # result value of sample
   end
   close(new) # close new file
 end
@@ -65,7 +63,7 @@ end
 
 # Access folder "id". Apply function "func" to all samples in "numFiles" HDF5 files.
 # Store results in new HDF5 file referring to the analysis of folder "id"
-function processDataset(func, id, numFiles)
+function processDataset(func, id; numFiles = "end")
   if numFiles == "end"
     files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id") # get list of file names
   else
@@ -87,7 +85,7 @@ function processDataset(func, id, numFiles)
     dataset, section = getIDs(files[file]) # dataset and section IDs
     # loop in samples of current file
     for sample in 1:length(vf)
-      time = @elapsed begin
+      timeElapsed += @elapsed begin
         count += 1
         # apply function to each sample and save alongside ID in "results" vector
         resultsFile["dataset"][count] = dataset
@@ -104,7 +102,6 @@ function processDataset(func, id, numFiles)
           resultsFile["result"][count] = res
         end
       end
-      timeElapsed += time
       str = [
         "$( round(Int, count/nSamples*100) )%    "
         "Time: $(round(Int, timeElapsed/60)) min"
@@ -128,7 +125,8 @@ function getDataFSVDT(file)
 end
 
 #=
-"Reference files" store contextual info about certain samples (plastification, non-binary topology etc.).
+"Reference files" (created by the function 'combineFiles') store contextual info
+about certain samples (plastification, non-binary topology etc.).
 These files also store the info needed to locate each of these samples in the dataset.
 This function removes these samples from a folder of the dataset.
 =#
@@ -157,10 +155,9 @@ function remSamples(id, pathRef)
       newQuant = size(topo,3) - length(pos) # quantity of samples in new file
       # create new file
       new = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/$id/$currentDS $currentSec $newQuant", "w")
-      initializer = zeros(size(topo,1), size(topo,2), newQuant) # common shape of sample data
       # initialize fields inside new file
       create_group(new, "inputs")
-      create_dataset(new, "topologies", initializer)
+      create_dataset(new, "topologies", zeros(size(topo,1), size(topo,2), newQuant))
       create_dataset(new["inputs"], "VF", zeros(newQuant))
       create_dataset(new["inputs"], "dispBoundConds", zeros(Int, (3,3,newQuant)))
       create_dataset(new["inputs"], "forces", zeros(2,4,newQuant))

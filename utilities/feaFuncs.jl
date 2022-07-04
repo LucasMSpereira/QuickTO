@@ -1,6 +1,33 @@
 # Functions related to the FEA problem
 
-using Ferrite, Parameters, HDF5, LinearAlgebra, Glob
+# determine stress-strain relationship dee according to 2D stress type
+function deeMat(state, e, v)
+  if state == "strain"
+    # plane strain
+    dee = e*(1 - v)/((1 + v)*(1 - 2 * v))*
+      [1 v/(1 - v) 0;
+      v/(1 - v) 1 0;
+      0 0 (1 - 2*v)/(2*(1 - v))]
+  
+  elseif state == "stress"
+    # plane stress
+    dee = e/(1-v^2)*[
+    1 v 0
+    v 1 0
+    0 0 (1-v)/2
+    ]
+  elseif state == "axisymmetric"
+    
+    dee = e*(1 - v)/((1 + v)*(1 - 2 * v))*
+    [1 v/(1 - v) 0 v/(1 - v);
+    v/(1 - v) 1 0 v/(1 - v);
+    0 0 (1 - 2*v)/(2*(1 - v)) 0;
+    v/(1 - v) v/(1 - v) 0 1]
+  else
+    println("Invalid stress state.")
+  end
+  return dee
+end
 
 # Generate nodeIDs used to position point loads
 # However, original article "applied loads and supports to elements", not nodes

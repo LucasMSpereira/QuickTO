@@ -51,13 +51,8 @@ function loopTO(FEAparameters, elType, runID)
                 print("Section $sec/$(FEAparameters.section)           ")
                 print("Sample $i/$(FEAparameters.quants)            ")
                 println("Progress: $(round(Int, (i+(sec-1)*FEAparameters.section)/(FEAparameters.quants*FEAparameters.section)*100))%")
-                # print("Attempts $tries             ")
-                # print("Discard rate: $(round(Int, (1-i/tries)*100))%          ")
-                # print("Total time: $(round(sum(tempo)/3600;digits=1)) h            ")
-                # println("Average sample time: $(round(Int, sum(tempo)/i)) s")
                 
                 # integer matrix representing displacement boundary conditions (supports):
-                # 0: free element
                 # 1: element restricted in the x direction ("roller")
                 # 2: element restricted in the y direction ("roller")
                 # 3: element restricted in both directions ("pinned"/"clamped")
@@ -130,19 +125,6 @@ function loopTO(FEAparameters, elType, runID)
                     continue
                 end
                 
-                #### write data to file
-                # volume fraction
-                fileID["inputs"]["VF"][i] = FEAparameters.V[i]
-                # displacement boundary conditions
-                fileID["inputs"]["dispBoundConds"][:,:,i] = dispBC
-                # forces
-                fileID["inputs"]["forces"][:,:,i] = forces
-                # norm of interpolated displacement of element center
-                # writeDisp(fileID, i, disp, FEAparameters, numCellNodes)
-                writeDispComps(fileID, i, disp, FEAparameters, numCellNodes)
-                # write stresses to file
-                # writeConds(fileID, vm, σ, principals, strainEnergy, i, FEAparameters)
-                
                 # Definitions for optimizer
                 comp = TopOpt.Compliance(problem, solver) # compliance
                 filter = DensityFilter(solver; rmin=3.0) # filtering to avoid checkerboard
@@ -157,6 +139,15 @@ function loopTO(FEAparameters, elType, runID)
                 Nonconvex.add_ineq_constraint!(model, constr) # add (volume) constraint
                 optimizer = Nonconvex.optimize(model, NLoptAlg(:LD_MMA), x0; options=NLoptOptions()) # find optimum
                 
+                #### write data to file
+                # volume fraction
+                fileID["inputs"]["VF"][i] = FEAparameters.V[i]
+                # displacement boundary conditions
+                fileID["inputs"]["dispBoundConds"][:,:,i] = dispBC
+                # forces
+                fileID["inputs"]["forces"][:,:,i] = forces
+                # norm of interpolated displacement of element center
+                writeDispComps(fileID, i, disp, FEAparameters, numCellNodes)
                 # write topology to file
                 fileID["topologies"][:, :, i] = quad(FEAparameters.meshSize..., optimizer.minimizer)
                 

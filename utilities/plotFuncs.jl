@@ -1,24 +1,29 @@
 # Functions to generate/save plots
 
 # create figure to vizualize sample
-function plotSample(FEAparams)
+function plotSample(FEAparams, id)
   # Vector of strings with paths to each dataset file
-  files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data")
-  lines = FEAparams.meshSize[2]
+  files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id")
   quantForces = 2
   colSize = 500
   count = 0
   for file in keys(files)
-  # open file and read data to be plotted
+    # open file and read data to be plotted
     forces, supps, vf, disp, top = getDataFSVDT(files[file])
+    # toy problem for references
     file == 1 && (FEAparams.problems[1] = rebuildProblem(vf[1], supps[:,:,1], forces[:,:,1]))
+    # get dataset and section IDs of current file
     dataset, section = getIDs(files[file])
+    # create folder to store images
     mkpath("C:/Users/LucasKaoid/Desktop/datasets/fotos/$dataset")
+    # loop in samples inside current file
     for i in 1:size(top,3)
       # only generate images for a fraction of samples
       rand() > 0.01 && continue
-      count += 1
+      count += 1 # update global counter
+      # get von Mises field
       vm = calcVM(prod(FEAparams.meshSize), FEAparams, disp[:,:,(2*i-1):(2*i)], 210e3*vf[i], 0.3)
+      # Print progress information
       println("image $count            $( round(Int, file/length(files)*100) )%")
       # create makie figure and set it up
       fig = Figure(resolution = (1400, 700));
@@ -27,6 +32,7 @@ function plotSample(FEAparams)
       Label(fig[1, 1], "Supports", textsize = 20)
       Label(fig[1, 2], "Force positions", textsize = 20)
       colsize!(fig.layout, 2, Fixed(colSize))
+      # Initialize support information variable
       supports = zeros(FEAparams.meshSize)'
       if supps[:,:,i][1,3] > 3
 
@@ -53,16 +59,19 @@ function plotSample(FEAparams)
       end
       # plot supports
       heatmap(fig[2,1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,supports')
-      # plot forces
+      ### plot forces
       loadXcoord = zeros(quantForces)
       loadYcoord = zeros(quantForces)
+      # Get loads positions
       for l in 1:quantForces
         loadXcoord[l] = forces[:,:,i][l,2]
-        loadYcoord[l] = lines - forces[:,:,i][l,1] + 1
+        loadYcoord[l] = FEAparams.meshSize[2] - forces[:,:,i][l,1] + 1
       end
+      # create and setup plotting axis
       axis = Axis(fig[2,2])
       xlims!(axis, -round(0.1*FEAparams.meshSize[1]), round(1.1*FEAparams.meshSize[1]))
       ylims!(axis, -round(0.1*FEAparams.meshSize[2]), round(1.1*FEAparams.meshSize[2]))
+      # Plot loads as arrows
       arrows!(
         axis, loadXcoord, loadYcoord,
         forces[:,3], forces[:,4];
@@ -119,7 +128,6 @@ end
 # test bounds for detecting topologies with too many intermediate densities
 function plotTopoIntermediate(forces, supps, vf, top, FEAparams, bound)
   
-  lines = FEAparams.meshSize[2]
   quantForces = 2
   colSize = 500
   count = 0
@@ -162,7 +170,7 @@ function plotTopoIntermediate(forces, supps, vf, top, FEAparams, bound)
   loadYcoord = zeros(quantForces)
   for l in 1:quantForces
     loadXcoord[l] = forces[l,2]
-    loadYcoord[l] = lines - forces[l,1] + 1
+    loadYcoord[l] = FEAparams.meshSize[2] - forces[l,1] + 1
   end
   axis = Axis(fig[2,2])
   xlims!(axis, -round(0.1*FEAparams.meshSize[1]), round(1.1*FEAparams.meshSize[1]))

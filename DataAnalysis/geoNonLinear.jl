@@ -1,4 +1,3 @@
-using Glob, GLMakie, Statistics
 include("C:/Users/LucasKaoid/Meu Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/QTOutils.jl")
 
 function gNlinPlots(precision)
@@ -25,6 +24,14 @@ function gNlinPlots(precision)
   lines!(ax1, ticks, [quantile(res, ticks[i]) for i in keys(ticks)])
   n = 60  # greatest n values
   lines!(ax2, 1:n, sort(res; rev = true)[1:n])
+
+  ####### quantiles
+  println("\nQuantiles")
+  precision = 0.1
+  for i in 0:precision:1
+    print(round(Int,i*100), "%\t")
+    showVal(quantile(res, i))
+  end
   
   ### Percentage of total dataset
   nSamples = 0 # count total amount of samples in dataset
@@ -33,7 +40,6 @@ function gNlinPlots(precision)
     files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$folder")
     nSamples += numSample(files) # accumulate amount of samples across folder
   end
-  println("\nPercentage of dataset: $(round(quant/nSamples*100;digits=1))%")
   ### Plots
   # fig = Figure(resolution = (1400, 700), fontsize = 20)
   # axBox = Axis(
@@ -50,7 +56,7 @@ function gNlinPlots(precision)
   # )
   # b = boxplot!(fig[1, 1], ones(Int, quant), res; range = 1.5, gap = 0.1, color = :mediumseagreen)
   # h = hist!(fig[1, 2], res; bins = 10, normalization = :probability, color = :mediumseagreen)
-  save("geoNonLinear.png", quantFig)
+  # save("geoNonLinear.png", quantFig)
 
 end
 @elapsed gNlinPlots(0.001)

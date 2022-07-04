@@ -1,4 +1,3 @@
-using Glob, GLMakie, Statistics
 include("C:/Users/LucasKaoid/Meu Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/QTOutils.jl")
 
 function nbtPlots()
