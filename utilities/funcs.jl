@@ -80,6 +80,12 @@ function disconnections(topology, dataset, section, sample)
     # save image file
     save("C:/Users/LucasKaoid/Desktop/datasets/post/disconnection/problems imgs/$dataset $section $(string(sample)).png", fig)
   end
+  #=
+    product of lengths of A* paths connecting extreme elements
+    in binary version of final topology. If null, this sample
+    suffers from structural disconnection and a heatmap plot
+    will be generated
+  =#
   return prod(length.(paths))
 end
 
@@ -124,10 +130,43 @@ function estimateGrads(vals, quants, iCenter, jCenter)
 
 end
 
-# Get section and dataset IDs from sample
+# Get section and dataset IDs of sample
 function getIDs(pathing)
   s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
   return s[1], s[2]
+end
+
+# test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
+function isoFeats(force, supp, topo)
+  pos = [
+      Int(force[1, 1]) Int(force[1, 2])
+      Int(force[2, 1]) Int(force[2, 2])
+      supp[1, 1] supp[1, 2]
+      supp[2, 1] supp[2, 2]
+      supp[3, 1] supp[3, 2]
+    ]
+  # pad topology with zeros on all sides
+  topoPad = vcat(topo, zeros(size(topo, 2))')
+  topoPad = vcat(zeros(size(topoPad, 2))', topoPad)
+  topoPad = hcat(zeros(size(topoPad, 1)), topoPad)
+  topoPad = hcat(topoPad, zeros(size(topoPad, 1)))
+  # total density in neighborhood of each feature
+  neighborDens = zeros(size(pos, 1))
+  # loop in features
+  for feat in 1:size(pos, 1)
+    # 3 elements in line above feature
+    neighborDens[feat] += sum(topoPad[pos[feat, 1] - 1 + 1, pos[feat, 2] - 1  + 1:pos[feat, 2] + 1  + 1])
+    # elements in each side of the feature
+    neighborDens[feat] += topoPad[pos[feat, 1]  + 1, pos[feat, 2] - 1  + 1]
+    neighborDens[feat] += topoPad[pos[feat, 1]  + 1, pos[feat, 2] + 1  + 1]
+    # 3 elements in line below feature
+    neighborDens[feat] += sum(topoPad[pos[feat, 1] + 1  + 1, pos[feat, 2] - 1  + 1:pos[feat, 2] + 1  + 1])
+  end
+  length(unique(pos[3:5, :])) == 1 && (neighborDens[3:5] .+= 1)
+  # test density surrounding each feature against lower bound of 0.5/8 = 0.0625
+  # i.e. surrounding density must accumulate to at least 0.5.
+  # if at least one feature is isolated, function will return false
+  return all(neighborDens .> 0.0625)
 end
 
 # Returns total number of samples across files in list
