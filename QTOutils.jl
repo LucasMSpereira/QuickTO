@@ -1,13 +1,14 @@
-using Glob, Ferrite, LinearAlgebra, Makie, TopOpt, Graphs, MetaGraphs
-using Parameters, Printf, HDF5, Statistics, GLMakie, Combinatorics
+# Packages
+println("Definitions...")
+using Glob, Ferrite, LinearAlgebra, Makie, TopOpt, Graphs, MetaGraphs, Flux
+using Parameters, Printf, HDF5, Statistics, Combinatorics, MultivariateStats
+using ProgressMeter, Random, TensorBoardLogger, MLDatasets, BSON, CUDA
+using StatsBase, CairoMakie, MLUtils, Hyperopt, Dates
 using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
 import Nonconvex
-Nonconvex.@load NLopt;
+Nonconvex.@load NLopt
+CairoMakie.activate!()
 
-# function definitions
-include("./utilities/feaFuncs.jl")
-include("./utilities/funcs.jl")
-include("./utilities/io.jl")
-include("./utilities/postProcess.jl")
-include("./utilities/testFunctions.jl")
-include("./utilities/plotFuncs.jl")
+# function definitions in "utilities" folder
+include.(glob("*", "./utilities/"));
+println("Done with definitions.")

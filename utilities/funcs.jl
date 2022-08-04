@@ -16,7 +16,7 @@ function centerCoords(nels, problem)
 end
 
 # check if sample was generated correctly (solved the FEA problem it was given and didn't swap loads)
-function checkSample(numForces, vals, sample, quants, forces)
+function checkSample(numForces, vals, quants, forces)
   sProds = zeros(numForces)
   grads = zeros(2,numForces)
   avgs = similar(sProds)
@@ -87,6 +87,18 @@ function disconnections(topology, dataset, section, sample)
     will be generated
   =#
   return prod(length.(paths))
+end
+
+function dispVec(disp)
+  # rearrange disp into vector
+  dispX = reshape(disp[end:-1:1,:,1]',(1,:))
+  dispY = reshape(disp[end:-1:1,:,2]',(1,:))
+  disps = zeros(length(dispX)*2)
+  for i in 1:length(dispX)
+    disps[2*i-1] = dispX[i]
+    disps[2*i] = dispY[i]
+  end
+  return disps
 end
 
 # estimate scalar gradient around element in mesh
@@ -202,6 +214,9 @@ end
 
 # auxiliary print function
 showVal(x) = println(round.(x;digits=4))
+
+# statistical summary of a numerical array
+statsum(arr) = summarystats(vec(reshape(arr, (1, :))))
 
 # Identify non-binary topologies
 function getNonBinaryTopos(forces, supps, vf, disp, top)

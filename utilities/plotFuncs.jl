@@ -77,7 +77,7 @@ function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, s
   elseif goal == "display"
     display(fig)
   else
-    println("\n\nWrong goal for plotOneSample().\n\n")
+    println("\n\nWrong goal for plotSample().\n\n")
   end
 end
 
@@ -202,8 +202,7 @@ function plotTopoIntermediate(forces, supps, vf, top, FEAparams, bound)
 
 end
 
-
-
+# plot von Mises field
 function plotVM(FEAparams, disp, vf, fig)
   # get von Mises field
   vm = calcVM(prod(FEAparams.meshSize), FEAparams, disp, 210e3*vf, 0.3)
