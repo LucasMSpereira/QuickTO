@@ -218,6 +218,8 @@ showVal(x) = println(round.(x;digits=4))
 # statistical summary of a numerical array
 statsum(arr) = summarystats(vec(reshape(arr, (1, :))))
 
+timeNow() = replace(string(ceil(now(), Dates.Second)), ":"=>"-")
+
 # Identify non-binary topologies
 function getNonBinaryTopos(forces, supps, vf, disp, top)
   bound = 0.35 # densities within 0.5 +/- bound are considered intermediate

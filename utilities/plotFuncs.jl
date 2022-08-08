@@ -27,27 +27,37 @@ function plotForce(FEAparams, forces, fig)
       fig[2,3],
       f1*f2;
   )
-
-  #
-      l.axis.attributes.xgridvisible = false
-      l.axis.attributes.ygridvisible = false
-      l.axis.attributes.rightspinevisible = false
-      l.axis.attributes.leftspinevisible = false
-      l.axis.attributes.topspinevisible = false
-      l.axis.attributes.bottomspinevisible = false
-      l.axis.attributes.xticksvisible = false
-      l.axis.attributes.yticksvisible = false
-      l.axis.attributes.xlabelvisible = false
-      l.axis.attributes.ylabelvisible = false
-      l.axis.attributes.titlevisible  = false
-      l.axis.attributes.xticklabelsvisible = false
-      l.axis.attributes.yticklabelsvisible = false
-      l.axis.attributes.tellheight = false
-      l.axis.attributes.tellwidth = false
-      l.axis.attributes.halign = :center
-      l.axis.attributes.width = 300
-  #
+  textConfig(l)
   
+end
+
+# Line plots of evaluation histories
+function plotLearnTries(trainParams, tries; drawLegend = true)
+  f = Figure(resolution = (1000, 700));
+  ax = Axis(f[1:2, 1], xlabel = "Validation epochs", ylabel = "Loss", title = timeNow())
+  colsize!(f.layout, 1, Fixed(600))
+  runs = [lines!(convert.(Float32, trainParams[run].evaluations)) for run in 1:length(tries)]
+  if trainParams[1].schedule != 0
+    decayPerValidation = trainParams[1].schedule/trainParams[1].evalFreq
+    vlines!(ax, decayPerValidation:decayPerValidation:length(trainParams[1].evaluations))
+  end
+  drawLegend && Legend(f[2, 2], runs, string.(tries))
+  minimaText = []
+  for i in 1:length(trainParams)
+    valMin = findmin(trainParams[i].evaluations)
+    minimaText = vcat(
+      minimaText, "$i) Loss: $(valMin[1]) Epoch: $(valMin[2])"
+      )
+  end
+  if length(trainParams) > 1
+    minimaText[1:end-1] .= minimaText[1:end-1].*["\n" for i in 1:length(minimaText) - 1]
+  else
+    minimaText[1] = minimaText[1]*"\n"
+  end
+  t = text(f[1,2], prod(minimaText); textsize = 15, align = (0.5, 0.0))
+  textConfig(t)
+  colsize!(f.layout, 2, Fixed(300))
+  Makie.save("./networks/trainingPlots/$(timeNow()).pdf", f)
 end
 
 # create figure to vizualize sample
@@ -172,27 +182,7 @@ function plotTopoIntermediate(forces, supps, vf, top, FEAparams, bound)
       fig[4,2],
       intermPercent;
   )
-
-  #
-      l.axis.attributes.xgridvisible = false
-      l.axis.attributes.ygridvisible = false
-      l.axis.attributes.rightspinevisible = false
-      l.axis.attributes.leftspinevisible = false
-      l.axis.attributes.topspinevisible = false
-      l.axis.attributes.bottomspinevisible = false
-      l.axis.attributes.xticksvisible = false
-      l.axis.attributes.yticksvisible = false
-      l.axis.attributes.xlabelvisible = false
-      l.axis.attributes.ylabelvisible = false
-      l.axis.attributes.titlevisible  = false
-      l.axis.attributes.xticklabelsvisible = false
-      l.axis.attributes.yticklabelsvisible = false
-      l.axis.attributes.tellheight = false
-      l.axis.attributes.tellwidth = false
-      l.axis.attributes.halign = :center
-      l.axis.attributes.width = 300
-  #
-  
+  textConfig(l)
   # labels for second line of grid
   Label(fig[3, 1], "Topology VF = $(round(vf;digits=3))", textsize = 20)
   # plot final topology
@@ -213,4 +203,25 @@ function plotVM(FEAparams, disp, vf, fig)
   t = floor(0.2*bigVal)
   t == 0 && (t = 1)
   Colorbar(fig[4, 3], hm, ticks = 0:t:bigVal)
+end
+
+# Setup text element for plotting
+function textConfig(l)
+  l.axis.attributes.xgridvisible = false
+  l.axis.attributes.ygridvisible = false
+  l.axis.attributes.rightspinevisible = false
+  l.axis.attributes.leftspinevisible = false
+  l.axis.attributes.topspinevisible = false
+  l.axis.attributes.bottomspinevisible = false
+  l.axis.attributes.xticksvisible = false
+  l.axis.attributes.yticksvisible = false
+  l.axis.attributes.xlabelvisible = false
+  l.axis.attributes.ylabelvisible = false
+  l.axis.attributes.titlevisible  = false
+  l.axis.attributes.xticklabelsvisible = false
+  l.axis.attributes.yticklabelsvisible = false
+  l.axis.attributes.tellheight = false
+  l.axis.attributes.tellwidth = false
+  l.axis.attributes.halign = :center
+  l.axis.attributes.width = 300
 end
