@@ -1,7 +1,7 @@
 include("C:/Users/LucasKaoid/Meu Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/QTOutils.jl")
 
 #### Get data
-if false
+if true
   @with_kw mutable struct FEAparameters
     quants::Int = 1 # number of TO problems per section
     V::Array{Real} = [0.4+rand()*0.5 for i in 1:quants] # volume fractions
@@ -14,30 +14,16 @@ if false
   end
   FEAparams = FEAparameters()
 
-  @time stressCNNdata(1, 3, FEAparams)
+  # @time stressCNNdata(1, 3, FEAparams)
 end
 
 ### CNN
 
 ## get train data
-h5file = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/stressCNNdata/stressCNNdata", "r") # open hdf5 file
-datasets = HDF5.get_datasets(h5file) # get datasets references
-forceData = HDF5.read(datasets[1]) # read force data (2x4 Float matrix per sample)
-# reshape to 8xN float matrix. each col refers to a sample
-forceMat = convert.(Float32, hcat([vec(reshape(forceData[:, :, i], (1, :))) for i in 1:size(forceData, 3)]...))
-# forceMat = standardize(ZScoreTransform, forceMat; dims = 2)
-vm = convert.(Float32, reshape(HDF5.read(datasets[3]), 50, 140, 1, :))
-# for line in 1:size(vm, 1)
-#   for col in 1:size(vm, 2)
-#     vm[line, col, 1, :] .= standardize(ZScoreTransform, vm[line, col, 1, :]; dims = 1)
-#   end
-# end
-# prin = HDF5.read(datasets[2])
-# principals = Array{Any}(undef, size(vm, 3))
-# [principals[c] = prin[:, :, 2*c-1 : 2*c] for c in 1:size(vm, 3)]
-close(h5file)
+forceData, forceMat, vm, principals = getStressCNNdata("C:/Users/LucasKaoid/Desktop/datasets/data/stressCNNdata/stressCNNdata")
+
 ## separate data for training and validation
-ba = 10; sep = 0.85 # batch size and train/validation separation
+ba = 20; sep = 0.85 # batch size and train/validation separation
 # vm
 vmDataTrain, vmDataValidate = splitobs((vm, forceMat); at = sep)
 # principals
@@ -49,10 +35,10 @@ vmDataTrain, vmDataValidate = splitobs((vm, forceMat); at = sep)
 # of the training data of the current fold
 vmTrainLoader = DataLoader((data = vmDataTrain[1], label = vmDataTrain[2]); batchsize = ba, shuffle = true, parallel = true)
 vmValidateLoader = DataLoader((data = vmDataValidate[1], label = vmDataValidate[2]); batchsize = ba, shuffle = true, parallel = true)
-# Training parameters
 
-rates = [1e-4, 1e-6, 1e-8]
-params = [epochTrainConfig(; epochs = 30, schedule = 0, decay = 0, evalFreq = 2, evaluations = []) for i in 1:length(rates)]
-testRates!(rates, params)
-plotLearnTries(params, rates; drawLegend = true)
-mean(params[3].evaluations)
+@load "./networks/models/adam1e-6.bson" cpu_model
+ssample = rand(1:size(forceData, 3))
+plotVMtest(FEAparams, vm[:, :, 1, ssample], forceData[:, :, ssample], cpu_model, "modelName"; folder = "")
+stressCNNtestPlots(
+  10, "./networks/trainingPlots/adam1e-6 tests", vm, forceData, "adam1e-6 tests", FEAparams, cpu_model
+)

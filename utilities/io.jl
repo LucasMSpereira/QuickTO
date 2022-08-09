@@ -39,6 +39,12 @@ function combineFiles(pathRef)
   close(new) # close new file
 end
 
+function combinePDFs(path, finalName)
+  files = glob("*", path)
+  read(`$(Poppler_jll.pdfunite()) $(files) $(path)/$finalName.pdf`, String) # join pdfs together
+  rm.(files)
+end
+
 # Create hdf5 file. Store data in a more efficient way
 function createFile(quants, sec, runID, nelx,nely)
   # create file
@@ -120,6 +126,22 @@ function getDataFSVDT(file)
   disp = read(id["disp"])
   close(id)
   return forces, supps, vf, disp, top
+end
+
+function getStressCNNdata(path)
+  h5file = h5open(path, "r") # open hdf5 file
+  datasets = HDF5.get_datasets(h5file) # get references to datasets
+  # read force data (2x4 Float matrix per sample)
+  forceData = convert.(Float32, HDF5.read(datasets[1])) # 2  x 4 x nSamples of Float32s
+  # reshape to forces 8 x nSamples float matrix. each col refers to a sample
+  forceMat = hcat([vec(reshape(forceData[:, :, i], (1, :))) for i in 1:size(forceData, 3)]...)
+  # Get VM data, reshape to 50 x 140 x 1 x nSamples and convert to Float32
+  vm = convert.(Float32, reshape(HDF5.read(datasets[3]), 50, 140, 1, :))
+  prin = HDF5.read(datasets[2])
+  principals = Array{Any}(undef, size(vm, 3))
+  [principals[c] = prin[:, :, 2*c-1 : 2*c] for c in 1:size(vm, 3)]
+  close(h5file)
+  return forceData, forceMat, vm, principals
 end
 
 # inspect contents of HDF5 file

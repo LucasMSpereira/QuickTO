@@ -201,15 +201,30 @@ end
 
 # generate vector with n random and different integer values between 1 and val
 function randDiffInt(n, val)
-  global randVec = zeros(Int, n)
+  randVec = zeros(Int, n)
   randVec[1] = rand(1:val)
   for ind in 2:n
-    global randVec[ind] = rand(1:val)
+    randVec[ind] = rand(1:val)
     while in(randVec[ind], randVec[1:ind-1])
-      global randVec[ind] = rand(1:val)
+      randVec[ind] = rand(1:val)
     end
   end
   return randVec
+end
+
+# Reshape output from stressCNN
+function reshapeForces(predForces)
+  forces = zeros(Float32, (2, 4))
+  for col in 1:Int(length(predForces)/2)
+    forces[:, col] .= predForces[2*col - 1 : 2*col]
+  end
+  return forces
+end
+
+function sciNotation(num::Real, printDigits::Int)
+  base10 = floor(log10(num))
+  mantissa = round(num/10^base10; digits = printDigits)
+  return "$(mantissa)E$(Int(base10))"
 end
 
 # auxiliary print function

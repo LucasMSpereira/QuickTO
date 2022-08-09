@@ -50,9 +50,9 @@ function crossVal(data, numFolds, activ, epochs, batch, opt, save)
     println("Fold validation: $(meanEval)")
     # Save model including mean evaluation loss in the BSON file's name
     if save == "eval"
-      BSON.@save "./networks/models/$(replace(string(round( meanEval; digits = 6 )), "." => "-")).bson" cpu_model
+      @save "./networks/models/$(replace(string(round( meanEval; digits = 6 )), "." => "-")).bson" cpu_model
     elseif save == "time"
-      BSON.@save "./networks/models/$(timeNow()).bson" cpu_model
+      @save "./networks/models/$(timeNow()).bson" cpu_model
     else
       throw("Wrong 'save' specification in crossVal()")
     end
@@ -61,52 +61,34 @@ end
 
 # Evaluate model and print performance. To be called occasionally
 function epochEval!(validateDataLoader, mlModel, trainParams, epoch, learnRate)
-  meanEvalLoss = []
+  meanEvalLoss = zeros(Int(length(validateDataLoader.data.data.indices[end])/validateDataLoader.batchsize))
   # Go through validation dataset
   # Batches are used for GPU memory purposes
+  count = 0
   for (x, y) in validateDataLoader
-    meanEvalLoss = vcat(meanEvalLoss, Flux.mse(mlModel(gpu(x)), gpu(y)))
+    count += 1
+    meanEvalLoss[count] = Flux.mse(mlModel(gpu(x)), gpu(y))
   end
   # Keep history of evaluations
   trainParams.evaluations = vcat(trainParams.evaluations, mean(meanEvalLoss))
   # Print info
   if length(trainParams.evaluations) > 1
-    @printf "Epoch %i\tΔ(Validation loss): %.6e\tLearning rate: %.0e\t" epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1]) learnRate
+    @printf "Epoch %i     Δ(Validation loss): %.3e     Learning rate: %.0e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1]) learnRate
   else
-    @printf "Epoch %i\tValidation loss: %.6e\tLearning rate: %.0e\t" epoch trainParams.evaluations[end] learnRate
+    @printf "Epoch %i     Validation loss: %.3e     Learning rate: %.0e     " epoch trainParams.evaluations[end] learnRate
   end
   typeof(trainParams) == epochTrainConfig && println()
 end
 
-mutable struct epochTrainConfig
-  epochs::Int64 # Total number of training epochs
-  schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  decay::Float64 # Factor applied to current learning rate (in case of scheduling)
-  evalFreq::Int64 # Evaluation frequency in epochs
-  evaluations::Array{Any} # History of evaluation losses
-end
-epochTrainConfig(
-  ; epochs, schedule, decay, evalFreq, evaluations
-) = epochTrainConfig(epochs, schedule, decay, evalFreq, evaluations)
-
-# Check for early stop: percentage increase relative to
-# minimum validation loss so far
+# Check for early stop: if validation loss didn't
+# decrease enough in the last few validations
 function earlyStopCheck(trainParams)
-  minValidLoss = minimum(trainParams.evaluations)
-  return (trainParams.evaluations[end] - minValidLoss) / minValidLoss * 100
+  currentValidLoss = trainParams.evaluations[end]
+  pastValidLoss = trainParams.evaluations[end - trainParams.earlyStopQuant]
+  # Return boolean that signals if training should stop
+  valLossPercentDrop = (currentValidLoss - pastValidLoss)/pastValidLoss*100 
+  return valLossPercentDrop, valLossPercentDrop > -trainParams.earlyStopPercent
 end
-
-mutable struct earlyStopTrainConfig
-  schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  decay::Float64 # Factor applied to current learning rate (in case of scheduling)
-  evalFreq::Int64 # Evaluation frequency in epochs
-  evaluations::Array{Any} # History of evaluation losses
-  # Percentage increase relative to minimum evaluation loss that triggers early stopping
-  earlyStop::Float32
-end
-earlyStopTrainConfig(
-  ; schedule, decay, evalFreq, evaluations, earlyStop
-) = earlyStopTrainConfig(schedule, decay, evalFreq, evaluations, earlyStop)
 
 function mlBOHB()
   function f(k, channel, activ)
@@ -135,11 +117,13 @@ function mlBOHB()
 end
 
 # test different learning rates
-function testRates!(rates, trainConfigs)
+function testRates!(rates, trainConfigs, trianLoader, validateLoader, opt)
+  # Multiple instances to store histories
   for (rate, parameters) in zip(rates, trainConfigs)
-    stressCNN = buildModel(leakyrelu)
-    trainEpochs!(stressCNN, vmTrainLoader, vmValidateLoader, Adam(rate), parameters)
+    model = buildModel(leakyrelu)
+    trainEpochs!(model, trianLoader, validateLoader, opt(rate), parameters)
   end
+  return trainConfigs
 end
 
 #= Train ML model with early stopping.
@@ -155,18 +139,25 @@ function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trai
     # Batch training and parameter update
     batchTrain!(trainDataLoader, mlModel, opt)
     # Evaluate model and print info at certain epoch intervals
-    epoch % trainParams.evalFreq == 0 && epochEval!(validateDataLoader, mlModel, trainParams, epoch, opt.eta)
-    # Early stopping
-    if length(trainParams.evaluations) > 0
-      esCriterion = earlyStopCheck(trainParams)
-      epoch % trainParams.evalFreq == 0 && @printf "Early stop: %.1f%%/%.1f%%\n" esCriterion trainParams.earlyStop
-      if esCriterion > trainParams.earlyStop
-        println("EARLY STOPPING")
-        break
+    if epoch % trainParams.evalFreq == 0
+      epochEval!(validateDataLoader, mlModel, trainParams, epoch, opt.eta)
+      # Early stopping
+      if length(trainParams.evaluations) > trainParams.earlyStopQuant
+        # Check for early stop criterion
+        valLossPercentDrop, stopTraining = earlyStopCheck(trainParams)
+        epoch % trainParams.evalFreq == 0 && @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
+        if stopTraining
+          println("EARLY STOPPING")
+          break
+        end
+      else
+        println("No early stop check.")
       end
     end
     epoch += 1
   end
+  cpu_model = cpu(mlModel)
+  @save "./networks/models/$(timeNow()).bson" cpu_model
 end
 
 #= Train ML model for certain number of epochs.
@@ -185,5 +176,27 @@ function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainPa
     # Evaluate model and print info at certain epoch intervals
     epoch % trainParams.evalFreq == 0 && epochEval!(validateDataLoader, mlModel, trainParams, epoch, opt.eta)
   end
+  cpu_model = cpu(mlModel)
+  @save "./networks/models/$(timeNow()).bson" cpu_model
 end
 
+@with_kw mutable struct earlyStopTrainConfig
+  evalFreq::Int64 # Evaluation frequency in epochs
+  decay::Float64 = 0.0 # Factor applied to current learning rate (in case of scheduling)
+  schedule::Int64 = 0 # Learning rate adjustment interval in epochs. 0 for no scheduling
+  evaluations::Array{Any} = [] # History of evaluation losses
+  # Interval of most recent validations used for early stop criterion
+  earlyStopQuant::Int32 = 5
+  # Minimal percentage drop in loss in the last "earlyStopQuant" validations
+  earlyStopPercent::Float32 = 1
+end
+earlyStopTrainConfig(evalFreq; decay, schedule, evaluations, earlyStopQuant, earlyStopPercent) = earlyStopTrainConfig(schedule, decay, evalFreq, evaluations, earlyStopQuant, earlyStopPercent)
+
+@with_kw mutable struct epochTrainConfig
+  epochs::Int64 # Total number of training epochs
+  evalFreq::Int64 # Evaluation frequency in epochs
+  schedule::Int64 = 0 # Learning rate adjustment interval in epochs. 0 for no scheduling
+  decay::Float64 = 0.0 # Factor applied to current learning rate (in case of scheduling)
+  evaluations::Array{Any} = [] # History of evaluation losses
+end
+epochTrainConfig(epochs, evalFreq; schedule, decay, evaluations) = epochTrainConfig(epochs, evalFreq, schedule, decay, evaluations)
