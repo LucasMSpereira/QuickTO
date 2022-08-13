@@ -12,19 +12,20 @@ function batchTrain!(trainDataLoader, mlModel, opt)
 end
 
 # Model structure
-function buildModel(activ)
-  return Chain(
+function convMaxPoolBN(kernel, activ, ch)
+  # kernel size of 1-5
+  module1 = Chain(
     BatchNorm(1),
-    Conv((3, 3), 1 => 8, activ),
-    MaxPool((3,3)),
-    BatchNorm(8),
-    Conv((5, 5), 8 => 16, activ),
-    MaxPool((3,3)),
-    BatchNorm(16),
-    flatten,
-    Dense(896 => 450),
-    Dense(450 => 8),
-  ) |> gpu
+    Conv(kernel, 1 => ch, activ), # outputsize logic: 1 + (L - k)
+    MaxPool(kernel), # floor(L/k)
+    BatchNorm(ch),
+    Conv(kernel, ch => 2*ch, activ),
+    MaxPool(kernel),
+    BatchNorm(2*ch),
+    flatten)
+  m1size = prod(Flux.outputsize(module1, (50, 140, 1, 1)))
+  module2 = Chain(Dense(m1size => m1size÷2), Dense(m1size÷2 => 8))
+  return Chain(module1, module2) |> gpu
 end
 
 #= k-fold cross-validation: number of folds in which training/validation
@@ -59,25 +60,33 @@ function crossVal(data, numFolds, activ, epochs, batch, opt, save)
   end
 end
 
-# Evaluate model and print performance. To be called occasionally
-function epochEval!(validateDataLoader, mlModel, trainParams, epoch, learnRate)
-  meanEvalLoss = zeros(Int(length(validateDataLoader.data.data.indices[end])/validateDataLoader.batchsize))
+# Evaluate (validation or test) model and print performance. To be called occasionally
+function epochEval!(evalDataLoader, mlModel, trainParams, epoch, learnRate; test = false)
+  Flux.trainmode!(mlModel, false)
+  meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data.data.indices[end])/evalDataLoader.batchsize))
   # Go through validation dataset
   # Batches are used for GPU memory purposes
   count = 0
-  for (x, y) in validateDataLoader
+  for (x, y) in evalDataLoader
     count += 1
     meanEvalLoss[count] = Flux.mse(mlModel(gpu(x)), gpu(y))
   end
-  # Keep history of evaluations
-  trainParams.evaluations = vcat(trainParams.evaluations, mean(meanEvalLoss))
-  # Print info
-  if length(trainParams.evaluations) > 1
-    @printf "Epoch %i     Δ(Validation loss): %.3e     Learning rate: %.0e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1]) learnRate
+  trainmode!(mlModel, true)
+  # If function was called in a validation context
+  if !test
+    # Keep history of evaluations
+    trainParams.evaluations = vcat(trainParams.evaluations, mean(meanEvalLoss))
+    # Print info
+    if length(trainParams.evaluations) > 1
+      @printf "Epoch %i     Δ(Validation loss): %.3e     Learning rate: %.0e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1]) learnRate
+    else
+      @printf "Epoch %i     Validation loss: %.3e     Learning rate: %.0e     " epoch trainParams.evaluations[end] learnRate
+    end
+    typeof(trainParams) == epochTrainConfig && println()
   else
-    @printf "Epoch %i     Validation loss: %.3e     Learning rate: %.0e     " epoch trainParams.evaluations[end] learnRate
+    # If function was called in a test context
+    return mean(meanEvalLoss)
   end
-  typeof(trainParams) == epochTrainConfig && println()
 end
 
 # Check for early stop: if validation loss didn't
@@ -90,30 +99,39 @@ function earlyStopCheck(trainParams)
   return valLossPercentDrop, valLossPercentDrop > -trainParams.earlyStopPercent
 end
 
-function mlBOHB()
-  function f(k, channel, activ)
-    global dd += 1
-    model = Chain(
-      Conv((k, k), 1 => channel, activ)
-    )
-    obj = mean(model(mat))
-    println("$dd $channel $activ $k $obj")
-    return obj
-  end
-  mat = rand(50, 50, 1, 1)
-  begin
-    dd = 0
-    HOHB = @hyperopt for i = 10,
-        # List of possibilities of parameters
-        sampler = Hyperband(R=50, η=3, inner = BOHB()),
-        channel = [1, 2],
-        activ = [relu, selu, swish],
-        k = [2, 3]
-        
-      ob = vec([f(k, channel, activ)])
-
+# Test hyperparameter combinations (grid search)
+function hyperGrid(architecture::Function, kernelSizes::Array{Int}, activFunctions, channels::Array{Int}, data, FEparams)
+  # Number of combinations
+  numCombs = length(kernelSizes)*length(activFunctions)*length(channels)
+  println("\nTesting $numCombs combinations of hyperparameters.")
+  comb = 0
+  # Store history of test performances
+  history = ["0" 0.0]
+  # Test combinations
+  for k in kernelSizes, activ in activFunctions, ch in channels
+    comb += 1
+    # Name used to save files related to current model
+    currentModelName = "$k-$activ-$ch"
+    println("\nCombination $comb/$numCombs - kernel size: ($k, $k)    activation function: $activ    channels: 1 => $ch => $(2*ch)")
+    # build model with current combinations of hyperparameters
+    model = architecture((k, k), activ, ch)
+    params = earlyStopTrainConfig(15; earlyStopPercent = 0.5) # initialize training parameters
+    # Train current model with early-stopping
+    trainEarlyStop!(model, data[1:2]..., Flux.Optimise.RMSProp(1e-5), params; modelName = currentModelName, saveModel = false)
+    # Avg. loss in test of current model
+    currentTest = epochEval!(data[3], model, params, 1, 1e-5; test = true)
+    # Save model if first combination of hyperparameters or new best performance in tests
+    if comb == 1 || (currentTest < minimum(history[:, 2]))
+      comb == 1 ? println("Saving first model and report...") : println("New best in test! Saving model and report...")
+      comb > size(history, 2) ? (history = vcat(history, [currentModelName currentTest])) : (history[comb, 1] = currentModelName; history[comb, 2] = currentTest)
+      hyperGridSave(currentModelName, params, 1e-5, data[3].data.data.parent, reshape(data[3].data.label.parent, (2, 4, :)), FEparams, model)
+      cpu_model = cpu(model) # transfer model back to cpu
+      @save "./networks/models/$currentModelName/$currentModelName.bson" cpu_model # save model
+    else
+      println("Model not saved.")
     end
   end
+  return history
 end
 
 # test different learning rates
@@ -129,9 +147,9 @@ end
 #= Train ML model with early stopping.
 In predetermined intervals of epochs, evaluate the current
 model and print validation loss.=#
-function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trainParams)
+function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trainParams; modelName = timeNow(), saveModel = true)
   # Training epochs loop
-  @show opt.eta
+  println("Early-stop training...")
   epoch = 1
   while true
     # In case of learning rate scheduling, apply decay at certain interval of epochs
@@ -139,13 +157,13 @@ function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trai
     # Batch training and parameter update
     batchTrain!(trainDataLoader, mlModel, opt)
     # Evaluate model and print info at certain epoch intervals
-    if epoch % trainParams.evalFreq == 0
+    if epoch % trainParams.validFreq == 0
       epochEval!(validateDataLoader, mlModel, trainParams, epoch, opt.eta)
       # Early stopping
       if length(trainParams.evaluations) > trainParams.earlyStopQuant
         # Check for early stop criterion
         valLossPercentDrop, stopTraining = earlyStopCheck(trainParams)
-        epoch % trainParams.evalFreq == 0 && @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
+        @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
         if stopTraining
           println("EARLY STOPPING")
           break
@@ -156,8 +174,10 @@ function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trai
     end
     epoch += 1
   end
-  cpu_model = cpu(mlModel)
-  @save "./networks/models/$(timeNow()).bson" cpu_model
+  if saveModel
+    cpu_model = cpu(mlModel)
+    @save "./networks/models/$modelName.bson" cpu_model
+  end
 end
 
 #= Train ML model for certain number of epochs.
@@ -174,29 +194,29 @@ function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainPa
     # Batch training and parameter update
     batchTrain!(trainDataLoader, mlModel, opt)
     # Evaluate model and print info at certain epoch intervals
-    epoch % trainParams.evalFreq == 0 && epochEval!(validateDataLoader, mlModel, trainParams, epoch, opt.eta)
+    epoch % trainParams.validFreq == 0 && epochEval!(validateDataLoader, mlModel, trainParams, epoch, opt.eta)
   end
   cpu_model = cpu(mlModel)
   @save "./networks/models/$(timeNow()).bson" cpu_model
 end
 
-@with_kw mutable struct earlyStopTrainConfig
-  evalFreq::Int64 # Evaluation frequency in epochs
-  decay::Float64 = 0.0 # Factor applied to current learning rate (in case of scheduling)
-  schedule::Int64 = 0 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  evaluations::Array{Any} = [] # History of evaluation losses
+mutable struct earlyStopTrainConfig
+  validFreq::Int64 # Evaluation frequency in epochs
+  decay::Float64 # Factor applied to current learning rate (in case of scheduling)
+  schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
+  evaluations::Array{Any} # History of evaluation losses
   # Interval of most recent validations used for early stop criterion
-  earlyStopQuant::Int32 = 5
+  earlyStopQuant::Int32
   # Minimal percentage drop in loss in the last "earlyStopQuant" validations
-  earlyStopPercent::Float32 = 1
+  earlyStopPercent::Float32
 end
-earlyStopTrainConfig(evalFreq; decay, schedule, evaluations, earlyStopQuant, earlyStopPercent) = earlyStopTrainConfig(schedule, decay, evalFreq, evaluations, earlyStopQuant, earlyStopPercent)
+earlyStopTrainConfig(validFreq; decay=0.0, schedule=0, evaluations=[], earlyStopQuant=5, earlyStopPercent=1) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations, earlyStopQuant, earlyStopPercent)
 
-@with_kw mutable struct epochTrainConfig
+mutable struct epochTrainConfig
   epochs::Int64 # Total number of training epochs
-  evalFreq::Int64 # Evaluation frequency in epochs
-  schedule::Int64 = 0 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  decay::Float64 = 0.0 # Factor applied to current learning rate (in case of scheduling)
-  evaluations::Array{Any} = [] # History of evaluation losses
+  validFreq::Int64 # Evaluation frequency in epochs
+  schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
+  decay::Float64 # Factor applied to current learning rate (in case of scheduling)
+  evaluations::Array{Any} # History of evaluation losses
 end
-epochTrainConfig(epochs, evalFreq; schedule, decay, evaluations) = epochTrainConfig(epochs, evalFreq, schedule, decay, evaluations)
+epochTrainConfig(epochs, validFreq; schedule=0, decay=0.0, evaluations=[]) = epochTrainConfig(epochs, validFreq, schedule, decay, evaluations)

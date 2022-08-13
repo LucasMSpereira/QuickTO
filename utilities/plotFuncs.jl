@@ -1,5 +1,14 @@
 # Functions to generate/save plots
 
+# Generate pdf with validation history and test plots for hyperparameter grid search
+function hyperGridSave(currentModelName, trainParams, tries, vm, forceData, FEparams, MLmodel)
+  # Create folder for current model
+  mkpath("./networks/models/$currentModelName")
+  plotLearnTries([trainParams], [tries]; drawLegend = false, name = currentModelName*"valLoss", path = "./networks/models/$currentModelName")
+  # Create test plots and unite all PDF files in folder
+  stressCNNtestPlots(10, "./networks/models/$currentModelName", vm, forceData, currentModelName, FEparams, MLmodel)
+end
+
 # plot forces
 function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
@@ -49,10 +58,9 @@ function plotForce(
 end
 
 # Line plots of evaluation histories
-function plotLearnTries(trainParams, tries; drawLegend = true)
-  println("Generating pdf of learning plot...")
+function plotLearnTries(trainParams, tries; drawLegend = true, name = timeNow(), path = "./networks/trainingPlots")
   f = Figure(resolution = (1050, 700));
-  ax = Axis(f[1:2, 1], xlabel = "Validation epochs", ylabel = "Loss", title = timeNow())
+  ax = Axis(f[1:2, 1], xlabel = "Validation epochs", ylabel = "Loss", title = name)
   colsize!(f.layout, 1, Fixed(600))
   runs = [lines!(convert.(Float32, trainParams[run].evaluations)) for run in 1:length(tries)]
   if trainParams[1].schedule != 0
@@ -75,7 +83,7 @@ function plotLearnTries(trainParams, tries; drawLegend = true)
   t = text(f[1,2], prod(minimaText); textsize = 15, align = (0.5, 0.0))
   textConfig(t)
   colsize!(f.layout, 2, Fixed(300))
-  Makie.save("./networks/trainingPlots/$(timeNow()).pdf", f)
+  Makie.save("$path/$name.pdf", f)
 end
 
 # create figure to vizualize sample
@@ -227,7 +235,7 @@ end
 # Visually compare model predictions against truth
 function plotVMtest(FEparams, vm, trueForces, model, modelName; folder = "")
   # Reshape output of stressCNN to match dataset format
-  predForces = model(convert.(Float32, reshape(vm, (size(vm)..., 1, 1))))
+  predForces = cpu(model(gpu(convert.(Float32, reshape(vm, (size(vm)..., 1, 1))))))
   # create makie figure and set it up
   fig = Figure(resolution = (1000, 700), fontsize = 20);
   axHeight = 200 # axis height for vm and forces
@@ -250,8 +258,8 @@ function plotVMtest(FEparams, vm, trueForces, model, modelName; folder = "")
   end
 end
 
-# Use a trained model to predict samples and make plots comparing with ground truth
-# In the end, combine plots into single pdf file
+# Use a trained model to predict samples and make plots comparing
+# with ground truth. In the end, combine plots into single pdf file
 function stressCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel)
   for sample in randDiffInt(quant, size(forceData, 3))
     plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0; folder = path)

@@ -347,3 +347,16 @@ function pathEleList(aStar)
   end
   return list
 end
+
+# Struct with simulation parameters
+@with_kw mutable struct FEAparameters
+  quants::Int = 1 # number of TO problems per section
+  V::Array{Real} = [0.4+rand()*0.5 for i in 1:quants] # volume fractions
+  problems::Any = Array{Any}(undef, quants) # store FEA problem structs
+  meshSize::Tuple{Int, Int} = (140, 50) # Size of rectangular mesh
+  elementIDarray::Array{Int} = [i for i in 1:prod(meshSize)] # Vector that lists element IDs
+  # matrix with element IDs in their respective position in the mesh
+  elementIDmatrix::Array{Int,2} = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
+  section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
+end
+FEAparams = FEAparameters()

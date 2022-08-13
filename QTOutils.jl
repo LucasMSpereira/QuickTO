@@ -1,9 +1,9 @@
 # Packages
 println("Definitions...")
-using Glob, Ferrite, LinearAlgebra, Makie, TopOpt, Graphs, MetaGraphs, Flux
-using Parameters, Printf, HDF5, Statistics, Combinatorics, MultivariateStats
-using ProgressMeter, Random, TensorBoardLogger, MLDatasets, CUDA
-using StatsBase, CairoMakie, MLUtils, Hyperopt, Dates, UnPack, Poppler_jll
+using Glob, Ferrite, LinearAlgebra, Makie, TopOpt, Graphs
+using Parameters, Printf, HDF5, Statistics, Combinatorics
+using ProgressMeter, Random, CUDA, Poppler_jll, MultivariateStats
+using StatsBase, CairoMakie, MLUtils, Dates, MetaGraphs, Flux
 using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
 using BSON: @load, @save
 import Nonconvex

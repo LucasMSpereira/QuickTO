@@ -1,6 +1,6 @@
 # Functions that involve opening/closing/saving files
 
-# template to combine multiple hdf5 files into a new one
+# template to combine multiple dataset hdf5 files into a new one
 function combineFiles(pathRef)
   # get list of intermediate hdf5 analysis files
   files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/analysis")
@@ -43,6 +43,42 @@ function combinePDFs(path, finalName)
   files = glob("*", path)
   read(`$(Poppler_jll.pdfunite()) $(files) $(path)/$finalName.pdf`, String) # join pdfs together
   rm.(files)
+end
+
+# combine files for stressCNN dataset
+function combineStressCNNdata(path)
+  files = glob("*", path)
+  count = 0 # global sample counter
+  # initialize "global" variables
+  globalF = zeros(2, 4, 1); globalPrin = zeros(50, 140, 1); globalVM = zeros(50, 140, 1)
+  for file in keys(files) # loop in files
+    # open current file and read data
+    id = h5open(files[file], "r")
+    force = read(id["forces"]); prin = read(id["principals"]); vm = read(id["vm"])
+    close(id) # close current file
+    quants = size(force, 3) # amount of new samples
+    # concatenate file data with "global" arrays
+    globalF = cat(globalF, force; dims = 3)
+    globalPrin = cat(globalPrin, prin; dims = 3)
+    globalVM = cat(globalVM, vm; dims = 3)
+    count += quants # update global counter
+    @show count
+  end
+  # discard null initial data
+  globalF = globalF[:, :, 2:end]; globalPrin = globalPrin[:, :, 2:end]; globalVM = globalVM[:, :, 2:end]
+  # create new file to store everything
+  new = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/stressCNNdata/stressCNNdata", "w")
+  # initialize fields in new file
+  create_dataset(new, "forces", zeros(2, 4, count))
+  create_dataset(new, "principals", zeros(50, 140, 2*count))
+  create_dataset(new, "vm", zeros(50, 140, count))
+  # fill new file with data
+  for sample in 1:count
+    new["forces"][:, :, sample] = globalF[:, :, sample]
+    new["principals"][:, :, 2*sample-1 : 2*sample] = globalPrin[:, :, 2*sample-1 : 2*sample]
+    new["vm"][:, :, sample] = globalVM[:, :, sample]
+  end
+  close(new) # close and save new file
 end
 
 # Create hdf5 file. Store data in a more efficient way
@@ -148,10 +184,10 @@ end
 function HDF5inspect(HDF5path)
   h5file = h5open(HDF5path, "r") # open file
   datasets = HDF5.get_datasets(h5file) # datasets in file
-  data = copy(HDF5.read.(datasets)) # get file data as vector of contents of datasets
+  data = HDF5.read.(datasets) # get file data as vector of contents of datasets
   for ds in 1:size(data, 1)
     println("\nDataset $ds $(HDF5.name(datasets[ds])[2:end]) $(size(data[ds]))\n")
-    statsum(data[ds])
+    println(statsum(data[ds]))
   end
   close(h5file)
 end
@@ -226,7 +262,6 @@ end
 
 # get data ready to train stress CNN
 function stressCNNdata(id, numFiles, FEAparams)
-
   files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id") # get list of file names
   nSamples = numSample(files[1:numFiles]) # total number of samples
   @show nSamples
@@ -246,12 +281,11 @@ function stressCNNdata(id, numFiles, FEAparams)
     nels = prod(FEAparams.meshSize) # number of elements in mesh
     # loop in samples of current file
     @showprogress 1 "File $file/$numFiles" for sample in 1:length(vf)
-    # @showprogress 1 "File $file/$numFiles" for sample in 1:5
+    # for sample in 1:length(vf)
       # get VM and principal stress fields for current sample
       sampleVM, _, samplePrincipals, _ = calcConds(
         nels, FEAparams, dispFile[:, :, 2 * sample - 1 : 2 * sample],
-        1, 210e3 * vf[sample], 0.33, numCellNodes
-      )
+        1, 210e3 * vf[sample], 0.33, numCellNodes)
       if file == 1 && sample == 1
         global vm = copy(sampleVM)
         global principals = copy(samplePrincipals)
