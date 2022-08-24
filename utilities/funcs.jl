@@ -215,8 +215,14 @@ end
 # Reshape output from stressCNN
 function reshapeForces(predForces)
   forces = zeros(Float32, (2, 4))
-  for col in 1:Int(length(predForces)/2)
-    forces[:, col] .= predForces[2*col - 1 : 2*col]
+  if length(predForces) != 4
+    for col in 1:Int(length(predForces)/2)
+      forces[:, col] .= predForces[2*col - 1 : 2*col]
+    end
+  else # if multi-output
+    for col in eachindex(predForces)
+      forces[:, col] .= predForces[col]
+    end
   end
   return forces
 end
@@ -231,7 +237,7 @@ end
 showVal(x) = println(round.(x;digits=4))
 
 # statistical summary of a numerical array
-statsum(arr) = summarystats(vec(reshape(arr, (1, :))))
+statsum(arr) = println(summarystats(vec(reshape(arr, (1, :)))))
 
 timeNow() = replace(string(ceil(now(), Dates.Second)), ":"=>"-")
 

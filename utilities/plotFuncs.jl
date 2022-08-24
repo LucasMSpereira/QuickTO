@@ -1,12 +1,38 @@
 # Functions to generate/save plots
 
-# Generate pdf with validation history and test plots for hyperparameter grid search
-function hyperGridSave(currentModelName, trainParams, tries, vm, forceData, FEparams, MLmodel)
-  # Create folder for current model
-  mkpath("./networks/models/$currentModelName")
-  plotLearnTries([trainParams], [tries]; drawLegend = false, name = currentModelName*"valLoss", path = "./networks/models/$currentModelName")
-  # Create test plots and unite all PDF files in folder
-  stressCNNtestPlots(10, "./networks/models/$currentModelName", vm, forceData, currentModelName, FEparams, MLmodel)
+# Generate pdf with list of hyperparameters used to train model.
+# To be used in hyperGridSave
+function parameterList(model, opt, lossFun, path; multiLossArch = false)
+  # create makie figure and set it up
+  fig = Figure(resolution = (1400, 700), fontsize = 20);
+  currentLine = 1 # count lines
+  labelHeight = 10
+  Label(fig[currentLine, 1], "NN Architecture:"; height = labelHeight)
+  # Strings describing each layer
+  if multiLossArch
+    layerString = []
+    [vcat(layerString, string(model.layers[1].layers[l])) for l in 1:length(model.layers[1].layers)]
+    [vcat(layerString, string(model.layers[2].paths[p])) for p in 1:length(model.layers[2].paths)]
+  else
+    layerString = [string(model.layers[m].layers[l]) for m in 1:length(model.layers) for l in 1:length(model.layers[m].layers)]
+  end
+  layerString = convert.(String, layerString)
+  # Individually include layer strings as labels
+  for line in 1:length(layerString)
+    Label(fig[currentLine, 2], layerString[line]; height = labelHeight)
+    currentLine += 1 # Update current line
+  end
+  Label(fig[currentLine, 1], "Optimizer:"; height = labelHeight)
+  Label(fig[currentLine, 2], string(typeof(opt)); height = labelHeight)
+  currentLine += 1 # Update current line
+  Label(fig[currentLine, 2], sciNotation(opt.eta, 0); height = labelHeight)
+  currentLine += 1 # Update current line
+  Label(fig[currentLine, 1], "Loss function"; height = labelHeight)
+  Label(fig[currentLine, 2], string(lossFun); height = labelHeight)
+  currentLine += 1 # Update current line
+  Label(fig[currentLine, 1], "# parameters:"; height = labelHeight)
+  Label(fig[currentLine, 2], string(sum(length, Flux.params(model))); height = labelHeight)
+  Makie.save("$path/$(rand(1:999999)).pdf", fig)
 end
 
 # plot forces
@@ -64,7 +90,7 @@ function plotLearnTries(trainParams, tries; drawLegend = true, name = timeNow(),
   colsize!(f.layout, 1, Fixed(600))
   runs = [lines!(convert.(Float32, trainParams[run].evaluations)) for run in 1:length(tries)]
   if trainParams[1].schedule != 0
-    decayPerValidation = trainParams[1].schedule/trainParams[1].evalFreq
+    decayPerValidation = ceil(Int, trainParams[1].schedule/trainParams[1].validFreq)
     vlines!(ax, decayPerValidation:decayPerValidation:length(trainParams[1].evaluations))
   end
   drawLegend && Legend(f[2, 2], runs, string.(tries))
@@ -232,10 +258,12 @@ function plotVM(FEAparams, disp, vf, fig, figPos)
 end
 
 # Make plot for VM model test
-# Visually compare model predictions against truth
-function plotVMtest(FEparams, vm, trueForces, model, modelName; folder = "")
+# Visually compare ML model predictions against truth
+  function plotVMtest(FEparams, vm, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0)
   # Reshape output of stressCNN to match dataset format
   predForces = cpu(model(gpu(convert.(Float32, reshape(vm, (size(vm)..., 1, 1))))))
+  # Denormalize force vectors if necessary
+  maxDenormalize != 0 && (predForces *= maxDenormalize)
   # create makie figure and set it up
   fig = Figure(resolution = (1000, 700), fontsize = 20);
   axHeight = 200 # axis height for vm and forces
@@ -249,22 +277,35 @@ function plotVMtest(FEparams, vm, trueForces, model, modelName; folder = "")
   Label(fig[1, 1], "von Mises field"; tellheight = :false)
   Label(fig[2, 1], "Force positions"; tellheight = :false)
   (colsize!(fig.layout, i, Fixed(500)) for i in 1:2)
-  Label(fig[3, 1], "Loss: "*sciNotation(Flux.mse(predForces, reshape(trueForces, (1, :))'), 3); align = (-1, 0.5), tellheight = :false)
-  if length(folder) == 0
-    Makie.save("./networks/trainingPlots/$modelName test.pdf", fig) # save figure created
+  Label(fig[3, 1], "Loss: "*sciNotation(lossFun(predForces, reshape(trueForces, (1, :))'), 3);
+  align = (-1, 0.5), tellheight = :false)
+  if length(folder) == 0 # save figure created
+    Makie.save("./networks/trainingPlots/$modelName test.pdf", fig)
   else
-    mkpath(folder)
-    Makie.save("$folder/$(rand(1:999999)).pdf", fig) # save figure created
+    Makie.save("$folder/$(rand(1:999999)).pdf", fig)
   end
 end
 
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
-function stressCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel)
+function stressCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
   for sample in randDiffInt(quant, size(forceData, 3))
-    plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0; folder = path)
+    plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
   end
   combinePDFs(path, finalName)
+end
+
+# Generate pdf with tests using model that was trained on normalized data
+function testNormalizedData(modelPath::String, vm, forceData, quant::Int64, FEparams::FEAparameters, lossFun)
+  files = glob("*", modelPath)
+  @load filter(x -> x[end-3:end] == "bson", files) cpu_model
+  mkpath(modelPath*"/normalizedTests")
+  for sample in randDiffInt(quant, size(forceData, 3))
+    plotVMtest(
+      FEparams, vm[:, :, 1, sample], forceData[:, :, sample], gpu(cpu_model), 0, lossFun;
+      folder = modelPath, maxDenormalize = maxForceMat)
+  end
+  combinePDFs(path, "finalName")
 end
 
 # Setup text element for plotting

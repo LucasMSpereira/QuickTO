@@ -39,10 +39,11 @@ function combineFiles(pathRef)
   close(new) # close new file
 end
 
+# Combine pdf files into one
 function combinePDFs(path, finalName)
-  files = glob("*", path)
-  read(`$(Poppler_jll.pdfunite()) $(files) $(path)/$finalName.pdf`, String) # join pdfs together
-  rm.(files)
+  PDFfiles = filter(x -> x[end-2:end] == "pdf", glob("*", path))
+  read(`$(Poppler_jll.pdfunite()) $(PDFfiles) $(path)/$finalName.pdf`, String) # join pdfs together
+  rm.(PDFfiles)
 end
 
 # combine files for stressCNN dataset
@@ -111,7 +112,7 @@ function processDataset(func, id; numFiles = "end")
     files = glob("*", "C:/Users/LucasKaoid/Desktop/datasets/data/$id")[1:numFiles] # get list of file names
   end
   nSamples = numSample(files) # total amount of samples
-  ##### custom hdf5 file for current analysis ###
+  ##### hdf5 file for current analysis ###
     resultsFile = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/analysis/$(rand(0:99999))", "w")
     create_dataset(resultsFile, "dataset", zeros(Int, nSamples))
     create_dataset(resultsFile, "section", zeros(Int, nSamples))
@@ -164,11 +165,11 @@ function getDataFSVDT(file)
   return forces, supps, vf, disp, top
 end
 
-function getStressCNNdata(path)
+function getStressCNNdata(path; multiOut = false)
   h5file = h5open(path, "r") # open hdf5 file
   datasets = HDF5.get_datasets(h5file) # get references to datasets
   # read force data (2x4 Float matrix per sample)
-  forceData = convert.(Float32, HDF5.read(datasets[1])) # 2  x 4 x nSamples of Float32s
+  forceData = convert.(Float32, HDF5.read(datasets[1])) # 2 x 4 x nSamples of Float32
   # reshape to forces 8 x nSamples float matrix. each col refers to a sample
   forceMat = hcat([vec(reshape(forceData[:, :, i], (1, :))) for i in 1:size(forceData, 3)]...)
   # Get VM data, reshape to 50 x 140 x 1 x nSamples and convert to Float32
@@ -177,6 +178,20 @@ function getStressCNNdata(path)
   principals = Array{Any}(undef, size(vm, 3))
   [principals[c] = prin[:, :, 2*c-1 : 2*c] for c in 1:size(vm, 3)]
   close(h5file)
+  # reshape force data for models with multiple outputs
+  if multiOut
+    xPositions = zeros(Float32, (2, size(forceData, 3)))
+    yPositions = similar(xPositions)
+    firstComponents = similar(xPositions)
+    secondComponents = similar(xPositions)
+    for sample in 1:size(forceData, 3)
+      xPositions[:, sample] .= forceData[:, 1, sample]
+      yPositions[:, sample] .= forceData[:, 2, sample]
+      firstComponents[:, sample] .= forceData[:, 3, sample]
+      secondComponents[:, sample] .= forceData[:, 4, sample]
+    end
+    return forceData, forceMat, vm, principals, (xPositions, yPositions, firstComponents, secondComponents)
+  end
   return forceData, forceMat, vm, principals
 end
 
