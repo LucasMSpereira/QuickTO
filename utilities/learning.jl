@@ -82,8 +82,27 @@ function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test =
   end
 end
 
+# prepare data loaders for loadCNN training/validation/test using displacements
+function getDisploaders(disp, forces, numPoints, separation, batch; multiOutputs = false)
+  if numPoints != 0 # use all data or certain number of points
+    if !multiOutputs
+      dispTrain, dispValidate, dispTest = splitobs((disp[:, :, :, 1:numPoints], forces[:, 1:numPoints]); at = separation, shuffle = true)
+    else
+      dispTrain, dispValidate, dispTest = splitobs(
+        (disp[:, :, :, 1:numPoints], (forces[1][:, 1:numPoints], forces[2][:, 1:numPoints], forces[3][:, 1:numPoints], forces[4][:, 1:numPoints]));
+        at = separation, shuffle = true)
+    end
+  else
+    dispTrain, dispValidate, dispTest = splitobs((disp, forces); at = separation, shuffle = true)
+  end
+  return ( # DataLoader serves to iterate in mini-batches of the training data
+    DataLoader((data = dispTrain[1], label = dispTrain[2]); batchsize = batch, parallel = true),
+    DataLoader((data = dispValidate[1], label = dispValidate[2]); batchsize = batch, parallel = true),
+    DataLoader((data = dispTest[1], label = dispTest[2]); batchsize = batch, parallel = true))
+end
+
 # prepare data loaders for stressCNN training/validation/test
-function getLoaders(vm, forces, numPoints, separation, batch; multiOutputs = false)
+function getVMloaders(vm, forces, numPoints, separation, batch; multiOutputs = false)
   # use all data or certain number of points
   if numPoints != 0
     if !multiOutputs
@@ -114,18 +133,16 @@ function hyperGrid(
   comb = 0
   # Store history of test performances
   history = ["0" 0.0]
-  # Test combinations
+  # Test combinations of hyperparameters (grid-search)
   for k in kernelSizes, activ in activFunctions, ch in channels
     comb += 1
     println("\nCombination $comb/$numCombs - kernel size: ($k, $k)    activation function: $activ    channels: $ch")
     model = architecture((k, k), activ, ch) # build model with current combinations of hyperparameters
-    # initialize training configuration
-    params = earlyStopTrainConfig(15; earlyStopPercent = earlyStop)
+    params = earlyStopTrainConfig(15; earlyStopPercent = earlyStop) # initialize training configuration
     # Train current model with early-stopping
     trainEarlyStop!(model, data[1:2]..., optimizer, params, lossFun; saveModel = false)
-    # Avg. loss in test of current model
-    currentTest = epochEval!(data[3], model, params, 1, lossFun; test = true)
-    # Save model if first combination of hyperparameters or new best performance in tests
+    currentTest = epochEval!(data[3], model, params, 1, lossFun; test = true) # Avg. loss in test of current model
+    # Save model if first combination of hyperparameters or new best performance in tests so far
     if comb == 1 || (currentTest < minimum(history[:, 2]))
       # save model and generate pdf report with training plot tests, and info
       saveModelAndReport!(k, activ, ch, params, comb, history, model, currentTest, data[3], multiLossArch, FEparams, lossFun, optimizer)
@@ -137,13 +154,24 @@ function hyperGrid(
 end
 
 # Generate pdf with validation history and test plots for hyperparameter grid search
-function hyperGridSave(currentModelName, trainParams, vm, forceData, FEparams, MLmodel, lossFun, optimizer, multiLossArch)
+function hyperGridSave(currentModelName, trainParams, vm, forceData, FEparams, MLmodel, lossFun, optimizer, multiLossArch = false)
   # PDF with validation history plot
   plotLearnTries([trainParams], [optimizer.eta]; drawLegend = false, name = currentModelName*" valLoss", path = "./networks/models/$currentModelName")
   # PDF with list of hyperparameters
-  parameterList(MLmodel, optimizer, lossFun, "./networks/models/$currentModelName"; multiLossArch = true)
+  parameterList(MLmodel, optimizer, lossFun, "./networks/models/$currentModelName"; multiLossArch)
   # Create test plots and unite all PDF files in folder
-  stressCNNtestPlots(20, "./networks/models/$currentModelName", vm, forceData, currentModelName, FEparams, MLmodel, lossFun)
+  loadCNNtestPlots(20, "./networks/models/$currentModelName", vm, forceData, currentModelName, FEparams, MLmodel, lossFun)
+end
+
+# occasionally save model
+function intermediateSave(params, MLmodel)
+  println("Checkpoint save")
+  # Name used to save files related to current model
+  currentModelName = "$k-$activ-$ch-"*sciNotation(minimum(params.evaluations), 7)
+  # Create folder for current model
+  mkpath("./networks/models/$currentModelName")
+  cpu_model = cpu(MLmodel) # transfer model back to cpu
+  @save "./networks/models/$currentModelName/$currentModelName.bson" cpu_model # save model
 end
 
 # Loss for NN architectures with more than one output
@@ -152,6 +180,22 @@ function multiLoss(output, target; lossFun)
   # From function getLoaders with multi-output: x positions,
   # y positions, components of first load, components of second load
   return mean([lossFun(modelOut, truth) for (modelOut, truth) in zip(output, target)])
+end
+
+# Generate pdf report from saved model, including test
+# plots and architecture description
+function reportFromSavedModel(pathModel, pathReport, opt, lossFun, multiOutput, vmTestLoader, FEAparams)
+  @load pathModel cpu_model # load model from bson file
+  gpu_model = gpu(cpu_model) # transfer model to gpu
+  # PDF with list of hyperparameters
+  parameterList(gpu_model, opt, lossFun, pathReport; multiLossArch = multiOutput)
+  # shape of test targets. change in case of multiple outputs
+  testTargets = shapeTargetStressCNN(multiOutput, vmTestLoader)
+  # Create test plots and unite all PDF files in folder
+  stressCNNtestPlots(
+    20, pathReport, vmTestLoader.data.data.parent, testTargets,
+    "reportFromSavedModel", FEAparams, gpu_model, lossFun
+  )
 end
 
 # In hyperGrid() function, save model and generate pdf report
@@ -172,7 +216,7 @@ function saveModelAndReport!(k, activ, ch, params, comb, history, MLmodel, curre
   hyperGridSave(currentModelName, params, testData.data.data.parent, testTargets, FEparams, MLmodel, lossFun, optimizer, multiLossArch)
 end
 
-#= Determine sahpe of test targets when generating report
+#= Determine shape of test targets when generating report
 for stress CNN in hiperGrid() function. Shape changes
 if multi-output models are used =#
 function shapeTargetStressCNN(multiLossArch::Bool, testData)

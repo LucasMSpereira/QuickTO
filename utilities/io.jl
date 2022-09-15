@@ -102,6 +102,123 @@ function createFile(quants, sec, runID, nelx,nely)
   return quickTOdata
 end
 
+# Create displacements dataset by gathering that info in new file
+function getDispData(path)
+  files = glob("*", path)
+  count = 0 # global sample counter
+  # initialize "global" variables
+  globalF = zeros(2, 4, 1); globalDisp = zeros(51, 141, 1)
+  for file in keys(files) # loop in files
+    id = h5open(files[file], "r") # open current file
+    force = read(id["forces"]); disp = read(id["disp"]) # read data
+    close(id) # close current file
+    # concatenate file data with "global" arrays
+    globalF = cat(globalF, force; dims = 3)
+    globalDisp = cat(globalDisp, disp; dims = 3)
+    count += size(force, 3) # update global counter
+    @show count
+  end
+  # discard null initial data
+  globalF = globalF[:, :, 2:end]; globalDisp = globalDisp[:, :, 2:end]
+  # create new file to store everything
+  new = h5open("C:/Users/LucasKaoid/Desktop/datasets/data/stressCNNdata/dispData", "w")
+  # initialize fields in new file
+  create_dataset(new, "forces", zeros(2, 4, count))
+  create_dataset(new, "disp", zeros(51, 141, 2*count))
+  # fill new file with data
+  for sample in 1:count
+    new["forces"][:, :, sample] = globalF[:, :, sample]
+    new["disp"][:, :, 2*sample-1 : 2*sample] = globalDisp[:, :, 2*sample-1 : 2*sample]
+  end
+  close(new) # close and save new file
+end
+
+# Get data from dataset file
+function getDataFSVDT(file)
+  id = h5open(file, "r")
+  top = read(id["topologies"])
+  forces = read(id["inputs"]["forces"])
+  supps = read(id["inputs"]["dispBoundConds"])
+  vf = read(id["inputs"]["VF"])
+  disp = read(id["disp"])
+  close(id)
+  return forces, supps, vf, disp, top
+end
+
+# load vm and force dataset from file
+function getStressCNNdata(path; multiOut = false)
+  h5file = h5open(path, "r") # open hdf5 file
+  datasets = HDF5.get_datasets(h5file) # get references to datasets
+  # read force data (2x4 Float matrix per sample)
+  forceData = convert.(Float32, HDF5.read(datasets[1])) # 2 x 4 x nSamples of Float32
+  # reshape forces to 8 x nSamples float matrix. each col refers to a sample
+  forceMat = hcat([vec(reshape(forceData[:, :, i], (1, :))) for i in 1:size(forceData, 3)]...)
+  # Get VM data, reshape to 50 x 140 x 1 x nSamples and convert to Float32
+  vm = convert.(Float32, reshape(HDF5.read(datasets[3]), 50, 140, 1, :))
+  prin = HDF5.read(datasets[2])
+  principals = Array{Any}(undef, size(vm, 3))
+  [principals[c] = prin[:, :, 2*c-1 : 2*c] for c in 1:size(vm, 3)]
+  close(h5file)
+  # reshape force data for models with multiple outputs
+  if multiOut
+    xPositions = zeros(Float32, (2, size(forceData, 3)))
+    yPositions = similar(xPositions)
+    firstComponents = similar(xPositions)
+    secondComponents = similar(xPositions)
+    for sample in 1:size(forceData, 3)
+      xPositions[:, sample] .= forceData[:, 1, sample]
+      yPositions[:, sample] .= forceData[:, 2, sample]
+      firstComponents[:, sample] .= forceData[:, 3, sample]
+      secondComponents[:, sample] .= forceData[:, 4, sample]
+    end
+    return forceData, forceMat, vm, principals, (xPositions, yPositions, firstComponents, secondComponents)
+  end
+  return forceData, forceMat, vm, principals
+end
+
+# inspect contents of HDF5 file
+function HDF5inspect(HDF5path)
+  h5file = h5open(HDF5path, "r") # open file
+  datasets = HDF5.get_datasets(h5file) # datasets in file
+  data = HDF5.read.(datasets) # get file data as vector of contents of datasets
+  for ds in 1:size(data, 1)
+    println("\nDataset $ds $(HDF5.name(datasets[ds])[2:end]) $(size(data[ds]))\n")
+    statsum(data[ds])
+  end
+  close(h5file)
+end
+
+# load displacement dataset from file
+function loadDispData(path; multiOut = False)
+  forceData = []; forceMat = []; disp = []
+  h5open(path, "r") do h5file # open hdf5 file
+    datasets = HDF5.get_datasets(h5file) # get references to datasets
+    # read force data (2x4 Float matrix per sample)
+    forceData = convert.(Float32, HDF5.read(datasets[2])) # 2 x 4 x nSamples of Float32
+    # reshape forces to 8 x nSamples float matrix. each col refers to a sample
+    forceMat = hcat([vec(reshape(forceData[:, :, i], (1, :))) for i in axes(forceData)[3]]...)
+    # Get displacement data
+    dispRead = HDF5.read(datasets[1]) # 51 x 141 x 2*nSamples of Float32
+    disp = Array{Any}(undef, (51, 141, 2, size(forceData, 3)))
+    [disp[:, :, :, sample] .= dispRead[:, :, 2*sample-1 : 2*sample] for sample in axes(forceData)[3]]
+  end
+  # reshape force data for models with multiple outputs
+  if multiOut
+    xPositions = zeros(Float32, (2, size(forceData, 3)))
+    yPositions = similar(xPositions)
+    firstComponents = similar(xPositions)
+    secondComponents = similar(xPositions)
+    for sample in axes(forceData)[3]
+      xPositions[:, sample] .= forceData[:, 1, sample]
+      yPositions[:, sample] .= forceData[:, 2, sample]
+      firstComponents[:, sample] .= forceData[:, 3, sample]
+      secondComponents[:, sample] .= forceData[:, 4, sample]
+    end
+    return forceData, forceMat, convert.(Float32, disp), (xPositions, yPositions, firstComponents, secondComponents)
+  end
+  return forceData, forceMat, convert.(Float32, disp)
+end
+
 # Access folder "id". Apply function "func" to all samples in "numFiles" HDF5 files.
 # Store results in new HDF5 file referring to the analysis of folder "id"
 function processDataset(func, id; numFiles = "end")
@@ -143,68 +260,10 @@ function processDataset(func, id; numFiles = "end")
           resultsFile["result"][count] = res
         end
       end
-      str = [
-        "$( round(Int, count/nSamples*100) )%    "
-        "Time: $(round(Int, timeElapsed/60)) min"
-      ]
-      println(prod(str))
+      println("$( round(Int, count/nSamples*100) )%    Time: $(round(Int, timeElapsed/60)) min")
     end
   end
   close(resultsFile)
-end
-
-# Get data from dataset file
-function getDataFSVDT(file)
-  id = h5open(file, "r")
-  top = read(id["topologies"])
-  forces = read(id["inputs"]["forces"])
-  supps = read(id["inputs"]["dispBoundConds"])
-  vf = read(id["inputs"]["VF"])
-  disp = read(id["disp"])
-  close(id)
-  return forces, supps, vf, disp, top
-end
-
-function getStressCNNdata(path; multiOut = false)
-  h5file = h5open(path, "r") # open hdf5 file
-  datasets = HDF5.get_datasets(h5file) # get references to datasets
-  # read force data (2x4 Float matrix per sample)
-  forceData = convert.(Float32, HDF5.read(datasets[1])) # 2 x 4 x nSamples of Float32
-  # reshape to forces 8 x nSamples float matrix. each col refers to a sample
-  forceMat = hcat([vec(reshape(forceData[:, :, i], (1, :))) for i in 1:size(forceData, 3)]...)
-  # Get VM data, reshape to 50 x 140 x 1 x nSamples and convert to Float32
-  vm = convert.(Float32, reshape(HDF5.read(datasets[3]), 50, 140, 1, :))
-  prin = HDF5.read(datasets[2])
-  principals = Array{Any}(undef, size(vm, 3))
-  [principals[c] = prin[:, :, 2*c-1 : 2*c] for c in 1:size(vm, 3)]
-  close(h5file)
-  # reshape force data for models with multiple outputs
-  if multiOut
-    xPositions = zeros(Float32, (2, size(forceData, 3)))
-    yPositions = similar(xPositions)
-    firstComponents = similar(xPositions)
-    secondComponents = similar(xPositions)
-    for sample in 1:size(forceData, 3)
-      xPositions[:, sample] .= forceData[:, 1, sample]
-      yPositions[:, sample] .= forceData[:, 2, sample]
-      firstComponents[:, sample] .= forceData[:, 3, sample]
-      secondComponents[:, sample] .= forceData[:, 4, sample]
-    end
-    return forceData, forceMat, vm, principals, (xPositions, yPositions, firstComponents, secondComponents)
-  end
-  return forceData, forceMat, vm, principals
-end
-
-# inspect contents of HDF5 file
-function HDF5inspect(HDF5path)
-  h5file = h5open(HDF5path, "r") # open file
-  datasets = HDF5.get_datasets(h5file) # datasets in file
-  data = HDF5.read.(datasets) # get file data as vector of contents of datasets
-  for ds in 1:size(data, 1)
-    println("\nDataset $ds $(HDF5.name(datasets[ds])[2:end]) $(size(data[ds]))\n")
-    println(statsum(data[ds]))
-  end
-  close(h5file)
 end
 
 # read data from global analysis file generated by combineFiles()

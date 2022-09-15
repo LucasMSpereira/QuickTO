@@ -1,5 +1,56 @@
 # General functions
 
+# return "adjacency graph" of solid elements
+function adjSolid(topo, elementIDmatrix)
+  # index positions of solid elements in binary topology
+  solids = findall(x -> x == 1, topo)
+  numSolids = length(solids)
+  # initialize connectivity matrix
+  connect = zeros(Int, (4, numSolids))
+  # build element conectivity matrix (right-top-left-bottom)
+  for ele in 1:numSolids
+    if solids[ele][2] + 1 <= size(topo, 2) && topo[solids[ele][1], solids[ele][2] + 1] == 1
+      # right
+      connect[1, ele] = elementIDmatrix[solids[ele][1], solids[ele][2] + 1]
+    end
+    if solids[ele][1] - 1 >= 1 && topo[solids[ele][1] - 1, solids[ele][2]] == 1
+      # top
+      connect[2, ele] = elementIDmatrix[solids[ele][1] - 1, solids[ele][2]]
+    end
+    if solids[ele][2] - 1 >= 1 && topo[solids[ele][1], solids[ele][2] - 1] == 1
+      # left
+      connect[3, ele] = elementIDmatrix[solids[ele][1], solids[ele][2] - 1]
+    end
+    if solids[ele][1] + 1 <= size(topo, 1) && topo[solids[ele][1] + 1, solids[ele][2]] == 1
+      # bottom
+      connect[4, ele] = elementIDmatrix[solids[ele][1] + 1, solids[ele][2]]
+    end
+  end
+  ### graph
+  # initialize graph with vertices referring to solid elements
+  g = MetaGraph(SimpleGraph(numSolids, 0))
+  # include respective element ID in each node
+  [set_prop!(g, node, :id, string(elementIDmatrix[solids[node]])) for node in 1:numSolids]
+  set_indexing_prop!(g, :id) # use this property as index
+  # add edges to the graph, according to neighborhood relationships between solid elements
+  # loop in solid elements
+  for ele in 1:numSolids
+    # loop in neighbors of current solid element
+    for neighbor in 1:size(connect, 1)
+      # check if there's a neighbor in current direction
+      if connect[neighbor, ele] != 0
+        add_edge!(
+          g,
+          g[string(elementIDmatrix[solids[ele]]), :id],
+          g[string(connect[neighbor, ele]), :id]
+        )
+      end
+    end
+  end
+  return g
+end
+
+# get coordinates of centers of elements
 function centerCoords(nels, problem)
   cellValue = CellVectorValues(QuadratureRule{2, RefCube}(2), Lagrange{2,RefCube,1}())
   centerPos = Array{Any}(undef, nels)
@@ -40,6 +91,38 @@ function checkSample(numForces, vals, quants, forces)
     magnitude = (ratioRatio < 1.5) && (ratioRatio > 0.55)
   end
   return alignment*magnitude
+end
+
+# among solid elements, get elements closest to each corner
+function cornerPos(topo)
+  # list with positions of elements closest to each corner (same order as loop below)
+  closeEles = Array{CartesianIndex{2}}(undef, 4)
+  # loop in corners
+  for corner in ["bottomLeft" "bottomRight" "topRight" "topLeft"]
+    # matrix to store distance of each active element to current corner
+    dists = fill(1e12, size(topo))
+    # get position of current corner
+    corner == "bottomLeft" && (cornerPos = (size(topo, 1), 1))
+    corner == "bottomRight" && (cornerPos = size(topo))
+    corner == "topRight" && (cornerPos = (1, size(topo, 2)))
+    corner == "topLeft" && (cornerPos = (1, 1))
+    # loop in topology matrix
+    for ele in keys(topo)
+      # in distance matrix, position of active element is filled
+      # with the respective (index) distance to current corner
+      if topo[ele] == 1
+        dists[ele] = sqrt(
+          (ele[2] - cornerPos[2]) ^ 2 + (ele[1] - cornerPos[1]) ^ 2
+        )
+      end
+    end
+    # include position of closest element to current corner in list
+    corner == "bottomLeft" && (closeEles[1] = findmin(dists)[2])
+    corner == "bottomRight" && (closeEles[2] = findmin(dists)[2])
+    corner == "topRight" && (closeEles[3] = findmin(dists)[2])
+    corner == "topLeft" && (closeEles[4] = findmin(dists)[2])
+  end
+  return closeEles
 end
 
 # identify samples with structural disconnection in final topology
@@ -142,6 +225,23 @@ function estimateGrads(vals, quants, iCenter, jCenter)
 
 end
 
+# Identify non-binary topologies
+function getNonBinaryTopos(forces, supps, vf, disp, top)
+  bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
+  boundPercent = 3 # allowed percentage of elements with intermediate densities
+  intermQuant = length(filter(
+      x -> (x > 0.5 - bound) && (x < 0.5 + bound),
+      top
+  ))
+  intermPercent = intermQuant/length(top)*100
+  # return intermPercent
+  if intermPercent > boundPercent
+      return intermPercent
+  else
+      return 0.0
+  end
+end
+
 # Get section and dataset IDs of sample
 function getIDs(pathing)
   s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
@@ -183,6 +283,15 @@ end
 
 # Returns total number of samples across files in list
 numSample(files) = sum([parse(Int, split(files[g][findlast(x->x=='\\', files[g])+1:end])[3]) for g in keys(files)])
+
+# get list of elements visited by a path
+function pathEleList(aStar)
+  list = zeros(Int, length(aStar) + 1)
+  for ele in keys(list)
+    ele == length(list) ? (list[ele] = aStar[ele - 1].dst) : (list[ele] = aStar[ele].src)
+  end
+  return list
+end
 
 # reshape vectors with element quantity to reflect mesh shape
 function quad(nelx,nely,vec)
@@ -239,120 +348,7 @@ showVal(x) = println(round.(x;digits=4))
 # statistical summary of a numerical array
 statsum(arr) = println(summarystats(vec(reshape(arr, (1, :)))))
 
-timeNow() = replace(string(ceil(now(), Dates.Second)), ":"=>"-")
-
-# Identify non-binary topologies
-function getNonBinaryTopos(forces, supps, vf, disp, top)
-  bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
-  boundPercent = 3 # allowed percentage of elements with intermediate densities
-  intermQuant = length(filter(
-      x -> (x > 0.5 - bound) && (x < 0.5 + bound),
-      top
-  ))
-  intermPercent = intermQuant/length(top)*100
-  # return intermPercent
-  if intermPercent > boundPercent
-      return intermPercent
-  else
-      return 0.0
-  end
-end
-
-# get topologies in file and make them binary
-function binTopo(filePath)
-  return 
-end
-
-# among solid elements, get elements closest to each corner
-function cornerPos(topo)
-  # list with positions of elements closest to each corner (same order as loop below)
-  closeEles = Array{CartesianIndex{2}}(undef, 4)
-  # loop in corners
-  for corner in ["bottomLeft" "bottomRight" "topRight" "topLeft"]
-    # matrix to store distance of each active element to current corner
-    dists = fill(1e12, size(topo))
-    # get position of current corner
-    corner == "bottomLeft" && (cornerPos = (size(topo, 1), 1))
-    corner == "bottomRight" && (cornerPos = size(topo))
-    corner == "topRight" && (cornerPos = (1, size(topo, 2)))
-    corner == "topLeft" && (cornerPos = (1, 1))
-    # loop in topology matrix
-    for ele in keys(topo)
-      # in distance matrix, position of active element is filled
-      # with the respective (index) distance to current corner
-      if topo[ele] == 1
-        dists[ele] = sqrt(
-          (ele[2] - cornerPos[2]) ^ 2 + (ele[1] - cornerPos[1]) ^ 2
-        )
-      end
-    end
-    # include position of closest element to current corner in list
-    corner == "bottomLeft" && (closeEles[1] = findmin(dists)[2])
-    corner == "bottomRight" && (closeEles[2] = findmin(dists)[2])
-    corner == "topRight" && (closeEles[3] = findmin(dists)[2])
-    corner == "topLeft" && (closeEles[4] = findmin(dists)[2])
-  end
-  return closeEles
-end
-
-# return "adjacency graph" of solid elements
-function adjSolid(topo, elementIDmatrix)
-  # index positions of solid elements in binary topology
-  solids = findall(x -> x == 1, topo)
-  numSolids = length(solids)
-  # initialize connectivity matrix
-  connect = zeros(Int, (4, numSolids))
-  # build element conectivity matrix (right-top-left-bottom)
-  for ele in 1:numSolids
-    if solids[ele][2] + 1 <= size(topo, 2) && topo[solids[ele][1], solids[ele][2] + 1] == 1
-      # right
-      connect[1, ele] = elementIDmatrix[solids[ele][1], solids[ele][2] + 1]
-    end
-    if solids[ele][1] - 1 >= 1 && topo[solids[ele][1] - 1, solids[ele][2]] == 1
-      # top
-      connect[2, ele] = elementIDmatrix[solids[ele][1] - 1, solids[ele][2]]
-    end
-    if solids[ele][2] - 1 >= 1 && topo[solids[ele][1], solids[ele][2] - 1] == 1
-      # left
-      connect[3, ele] = elementIDmatrix[solids[ele][1], solids[ele][2] - 1]
-    end
-    if solids[ele][1] + 1 <= size(topo, 1) && topo[solids[ele][1] + 1, solids[ele][2]] == 1
-      # bottom
-      connect[4, ele] = elementIDmatrix[solids[ele][1] + 1, solids[ele][2]]
-    end
-  end
-  ### graph
-  # initialize graph with vertices referring to solid elements
-  g = MetaGraph(SimpleGraph(numSolids, 0))
-  # include respective element ID in each node
-  [set_prop!(g, node, :id, string(elementIDmatrix[solids[node]])) for node in 1:numSolids]
-  set_indexing_prop!(g, :id) # use this property as index
-  # add edges to the graph, according to neighborhood relationships between solid elements
-  # loop in solid elements
-  for ele in 1:numSolids
-    # loop in neighbors of current solid element
-    for neighbor in 1:size(connect, 1)
-      # check if there's a neighbor in current direction
-      if connect[neighbor, ele] != 0
-        add_edge!(
-          g,
-          g[string(elementIDmatrix[solids[ele]]), :id],
-          g[string(connect[neighbor, ele]), :id]
-        )
-      end
-    end
-  end
-  return g
-end
-
-# get list of elements visited by a path
-function pathEleList(aStar)
-  list = zeros(Int, length(aStar) + 1)
-  for ele in keys(list)
-    ele == length(list) ? (list[ele] = aStar[ele - 1].dst) : (list[ele] = aStar[ele].src)
-  end
-  return list
-end
+timeNow() = replace(string(ceil(now(), Dates.Second)), ":"=>"-") # string with current time and date
 
 # Struct with simulation parameters
 @with_kw mutable struct FEAparameters

@@ -93,14 +93,14 @@ Flux.@functor Split
 # stressCNN structure 5. Predict positions and components of loads from VM field
 function multiOutputs(kernel, activ, ch)
   module1 = Chain(
-    Conv(kernel, 1 => ch, activ; pad = SamePad()),
+    Conv(kernel, 2 => ch, activ; pad = SamePad()),
     Conv(kernel, ch => ch, activ),
     Conv(kernel, ch => 2*ch, activ),
     Conv(kernel.÷2, 2*ch => 2*ch, activ),
     Conv(kernel.÷2, 2*ch => 4*ch, activ),
     Conv(kernel.÷2, 4*ch => 4*ch, activ),
     flatten)
-  m1size = prod(Flux.outputsize(module1, (50, 140, 1, 1)))
+  m1size = prod(Flux.outputsize(module1, (51, 141, 2, 1)))
   module2 = Split(Dense(m1size => 2), Dense(m1size => 2), Dense(m1size => 2), Dense(m1size => 2))
   return Chain(module1, module2) |> gpu
 end

@@ -1,5 +1,14 @@
 # Functions to generate/save plots
 
+# Use a trained model to predict samples and make plots comparing
+# with ground truth. In the end, combine plots into single pdf file
+function loadCNNtestPlots(quant::Int, path::String, disp::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
+  for sample in randDiffInt(quant, size(forceData, 3)) # loop in random samples
+    plotDispTest(FEparams, disp[:, :, :, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
+  end
+  combinePDFs(path, finalName)
+end
+
 # Generate pdf with list of hyperparameters used to train model.
 # To be used in hyperGridSave
 function parameterList(model, opt, lossFun, path; multiLossArch = false)
@@ -18,7 +27,7 @@ function parameterList(model, opt, lossFun, path; multiLossArch = false)
   end
   layerString = convert.(String, layerString)
   # Individually include layer strings as labels
-  for line in 1:length(layerString)
+  for line in axes(layerString)[1]
     Label(fig[currentLine, 2], layerString[line]; height = labelHeight)
     currentLine += 1 # Update current line
   end
@@ -257,15 +266,12 @@ function plotVM(FEAparams, disp, vf, fig, figPos)
   Colorbar(fig[4, 3], hm, ticks = 0:t:bigVal)
 end
 
-# Make plot for VM model test
-# Visually compare ML model predictions against truth
-  function plotVMtest(FEparams, vm, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0)
+# Make plot for disp model test and visually compare ML model predictions against truth
+function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0)
   # Reshape output of stressCNN to match dataset format
-  predForces = cpu(model(gpu(convert.(Float32, reshape(vm, (size(vm)..., 1, 1))))))
-  # Denormalize force vectors if necessary
-  maxDenormalize != 0 && (predForces *= maxDenormalize)
-  # create makie figure and set it up
-  fig = Figure(resolution = (1000, 700), fontsize = 20);
+  predForces = convert.(Float32, reshape(disp, (size(disp)..., 2, 1))) |> gpu |> model |> cpu
+  maxDenormalize != 0 && (predForces *= maxDenormalize) # Denormalize force vectors if necessary
+  fig = Figure(resolution = (1000, 700), fontsize = 20) # create makie figure and set it up
   axHeight = 200 # axis height for vm and forces
   vmAxis = Axis(fig[1, 2:3]; height = axHeight)
   heatmap!(vmAxis, 1:FEparams.meshSize[1], FEparams.meshSize[2]:-1:1, vm') # plot vm
@@ -277,6 +283,38 @@ end
   Label(fig[1, 1], "von Mises field"; tellheight = :false)
   Label(fig[2, 1], "Force positions"; tellheight = :false)
   (colsize!(fig.layout, i, Fixed(500)) for i in 1:2)
+  # loss value of current prediction
+  Label(fig[3, 1], "Loss: "*sciNotation(lossFun(predForces, reshape(trueForces, (1, :))'), 3);
+  align = (-1, 0.5), tellheight = :false)
+  if length(folder) == 0 # save figure created
+    Makie.save("./networks/trainingPlots/$modelName test.pdf", fig)
+  else
+    Makie.save("$folder/$(rand(1:999999)).pdf", fig)
+  end
+end
+
+# Make plot for VM model test and visually compare ML model predictions against truth
+function plotVMtest(FEparams, input, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0)
+  # Reshape output of stressCNN to match dataset format
+  if size(input, 3) == 1
+    predForces = convert.(Float32, reshape(input, (size(input)..., 1, 1))) |> gpu |> model |> cpu
+  elseif size(input, 3) == 2
+    predForces = convert.(Float32, reshape(input, (size(input)..., 1, 1))) |> gpu |> model |> cpu
+  end
+  maxDenormalize != 0 && (predForces *= maxDenormalize) # Denormalize force vectors if necessary
+  fig = Figure(resolution = (1000, 700), fontsize = 20) # create makie figure and set it up
+  axHeight = 200 # axis height for vm and forces
+  vmAxis = Axis(fig[1, 2:3]; height = axHeight)
+  heatmap!(vmAxis, 1:FEparams.meshSize[1], FEparams.meshSize[2]:-1:1, vm') # plot vm
+  textPos = (-0.1, 0.5) # text position in final figure
+  forceAxis = plotForce(FEparams, trueForces, fig, (2, 2:3), (3, 2); alignText = textPos, axisHeight = axHeight) # plot true forces
+  # plot predicted forces
+  plotForce(FEparams, reshapeForces(predForces), fig, (2, 2:3), (3, 3); newAxis = forceAxis, paintArrow = :green, paintText = :green, alignText = textPos)
+  # Labels
+  Label(fig[1, 1], "von Mises field"; tellheight = :false)
+  Label(fig[2, 1], "Force positions"; tellheight = :false)
+  (colsize!(fig.layout, i, Fixed(500)) for i in 1:2)
+  # loss value of current prediction
   Label(fig[3, 1], "Loss: "*sciNotation(lossFun(predForces, reshape(trueForces, (1, :))'), 3);
   align = (-1, 0.5), tellheight = :false)
   if length(folder) == 0 # save figure created
@@ -289,7 +327,7 @@ end
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
 function stressCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
-  for sample in randDiffInt(quant, size(forceData, 3))
+  for sample in randDiffInt(quant, size(forceData, 3)) # loop in random samples
     plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
   end
   combinePDFs(path, finalName)
