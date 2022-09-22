@@ -342,13 +342,12 @@ function sciNotation(num::Real, printDigits::Int)
   return "$(mantissa)E$(Int(base10))"
 end
 
-# auxiliary print function
-showVal(x) = println(round.(x;digits=4))
+showVal(x) = println(round.(x; digits = 4)) # auxiliary print function
 
 # statistical summary of a numerical array
-statsum(arr) = println(summarystats(vec(reshape(arr, (1, :)))))
+statsum(arr) = reshape(arr, (1, :)) |> vec |> summarystats |> println
 
-timeNow() = replace(string(ceil(now(), Dates.Second)), ":"=>"-") # string with current time and date
+timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
 
 # Struct with simulation parameters
 @with_kw mutable struct FEAparameters

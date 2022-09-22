@@ -1,3 +1,24 @@
+# Temporary functions used for testing hypotheses and debugging
+
+function displayDispPlotTest(FEparams, disp, trueForces, model, lossFun)
+  # Reshape output of loadCNN to match dataset format
+  predForces = convert.(Float32, reshape(disp, (size(disp)..., 1))) |> gpu |> model |> cpu
+  fig = Figure(resolution = (1000, 700), fontsize = 20) # create makie figure and set it up
+  textPos = (-0.1, 0.5) # text position in final figure
+  forceAxis = plotForce(FEparams, reduce(hcat, target), fig, (1, 2:3), (2, 2); alignText = textPos, axisHeight = 200) # plot true forces
+  # plot predicted forces
+  plotForce(FEparams, reshapeForces(predForces), fig, (1, 2:3), (2, 3); newAxis = forceAxis, paintArrow = :green, paintText = :green, alignText = textPos)
+  # Labels
+  Label(fig[1, 1], "Force positions"; tellheight = :false)
+  (colsize!(fig.layout, i, Fixed(500)) for i in 1:2)
+  # loss value of current prediction
+  @show predForces; @show reshape(trueForces, (1, :))'
+  @show lossFun(predForces, reshape(trueForces, (1, :))')
+  Label(fig[2, 1], "Loss: "*sciNotation(lossFun(predForces, reshape(trueForces, (1, :))'), 3);
+  align = (-1, 0.5), tellheight = :false)
+  display(fig)
+end
+
 function loadPosTest(nels)
   # Random ID(s) to choose element(s) to be loaded
   global loadElements = rand(1:nels,2)
@@ -279,6 +300,26 @@ function plotSampleTest(sample, folderName, FEAparams)
     save("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/fotos/sample $i.png", fig)
   end
   println()
+end
+
+# print force matrices for testing
+function printForces(target, out)
+  t = reduce(hcat, target)
+  println("target")
+  [println(t[l, :]) for l in 1:2]
+  println("output")
+  o = reduce(hcat, out)
+  [println(o[l, :]) for l in 1:2]
+end
+
+# print loss calculation intermediate values
+function printLoss(lossFun, out, target)
+  print()
+  lossFun(out, target)
+  lossFun(out, target)
+  lossFun(out, target)
+  lossFun(out, target)
+  mean([ ])
 end
 
 function testSamplePlot(folderName, FEAparams, i)

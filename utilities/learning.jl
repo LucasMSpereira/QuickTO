@@ -2,7 +2,7 @@
 
 # Epoch of batch training ML model. Then take optimizer step
 function batchTrain!(trainDataLoader, mlModel, opt, lossFun)
-  for (x, y) in trainDataLoader
+  for (x, y) in trainDataLoader # each batch
     grads = Flux.gradient(Flux.params(mlModel)) do
       lossFun(mlModel(gpu(x)), gpu(y))
     end
@@ -101,7 +101,7 @@ function getDisploaders(disp, forces, numPoints, separation, batch; multiOutputs
     DataLoader((data = dispTest[1], label = dispTest[2]); batchsize = batch, parallel = true))
 end
 
-# prepare data loaders for stressCNN training/validation/test
+# prepare data loaders for loadCNN training/validation/test
 function getVMloaders(vm, forces, numPoints, separation, batch; multiOutputs = false)
   # use all data or certain number of points
   if numPoints != 0
@@ -138,7 +138,7 @@ function hyperGrid(
     comb += 1
     println("\nCombination $comb/$numCombs - kernel size: ($k, $k)    activation function: $activ    channels: $ch")
     model = architecture((k, k), activ, ch) # build model with current combinations of hyperparameters
-    params = earlyStopTrainConfig(15; earlyStopPercent = earlyStop) # initialize training configuration
+    params = earlyStopTrainConfig(15; decay = 0.5, schedule = 100, earlyStopPercent = earlyStop) # initialize training configuration
     # Train current model with early-stopping
     trainEarlyStop!(model, data[1:2]..., optimizer, params, lossFun; saveModel = false)
     currentTest = epochEval!(data[3], model, params, 1, lossFun; test = true) # Avg. loss in test of current model
@@ -154,30 +154,27 @@ function hyperGrid(
 end
 
 # Generate pdf with validation history and test plots for hyperparameter grid search
-function hyperGridSave(currentModelName, trainParams, vm, forceData, FEparams, MLmodel, lossFun, optimizer, multiLossArch = false)
+function hyperGridSave(currentModelName, trainParams, testLoader, FEparams, MLmodel, lossFun, optimizer, multiLossArch = false)
   # PDF with validation history plot
-  plotLearnTries([trainParams], [optimizer.eta]; drawLegend = false, name = currentModelName*" valLoss", path = "./networks/models/$currentModelName")
+  plotLearnTries([trainParams], [optimizer.eta]; drawLegend = false, name = "a"*currentModelName*" valLoss", path = "./networks/models/$currentModelName")
   # PDF with list of hyperparameters
   parameterList(MLmodel, optimizer, lossFun, "./networks/models/$currentModelName"; multiLossArch)
   # Create test plots and unite all PDF files in folder
-  loadCNNtestPlots(20, "./networks/models/$currentModelName", vm, forceData, currentModelName, FEparams, MLmodel, lossFun)
+  dispCNNtestPlots(20, "./networks/models/$currentModelName", testLoader, currentModelName, FEparams, MLmodel, lossFun)
 end
 
 # occasionally save model
-function intermediateSave(params, MLmodel)
+function intermediateSave(MLmodel)
   println("Checkpoint save")
-  # Name used to save files related to current model
-  currentModelName = "$k-$activ-$ch-"*sciNotation(minimum(params.evaluations), 7)
-  # Create folder for current model
-  mkpath("./networks/models/$currentModelName")
-  cpu_model = cpu(MLmodel) # transfer model back to cpu
-  @save "./networks/models/$currentModelName/$currentModelName.bson" cpu_model # save model
+  cpu_model = cpu(MLmodel) # transfer model to cpu
+  @save "./networks/models/checkpoints/$(timeNow()).bson" cpu_model # save model
+  gpu(MLmodel)
 end
 
 # Loss for NN architectures with more than one output
 function multiLoss(output, target; lossFun)
-  # Loss compares each prediction/target pair
-  # From function getLoaders with multi-output: x positions,
+  # Compares each prediction/target pair from the
+  # function getLoaders() with multi-output: x positions,
   # y positions, components of first load, components of second load
   return mean([lossFun(modelOut, truth) for (modelOut, truth) in zip(output, target)])
 end
@@ -190,9 +187,9 @@ function reportFromSavedModel(pathModel, pathReport, opt, lossFun, multiOutput, 
   # PDF with list of hyperparameters
   parameterList(gpu_model, opt, lossFun, pathReport; multiLossArch = multiOutput)
   # shape of test targets. change in case of multiple outputs
-  testTargets = shapeTargetStressCNN(multiOutput, vmTestLoader)
+  testTargets = shapeTargetloadCNN(multiOutput, vmTestLoader)
   # Create test plots and unite all PDF files in folder
-  stressCNNtestPlots(
+  loadCNNtestPlots(
     20, pathReport, vmTestLoader.data.data.parent, testTargets,
     "reportFromSavedModel", FEAparams, gpu_model, lossFun
   )
@@ -211,15 +208,15 @@ function saveModelAndReport!(k, activ, ch, params, comb, history, MLmodel, curre
   # Store test score in "history" matrix
   comb > size(history, 1) ? (history = vcat(history, [currentModelName currentTest])) : (history[comb, 1] = currentModelName; history[comb, 2] = currentTest)
   # Determine shape of test targets. Changes if using multi-output models
-  testTargets = shapeTargetStressCNN(multiLossArch, testData)
+  testTargets = shapeTargetloadCNN(multiLossArch, testData)
   # Generate pdf with validation history and visualization of tests
-  hyperGridSave(currentModelName, params, testData.data.data.parent, testTargets, FEparams, MLmodel, lossFun, optimizer, multiLossArch)
+  hyperGridSave(currentModelName, params, testData, FEparams, MLmodel, lossFun, optimizer, multiLossArch)
 end
 
 #= Determine shape of test targets when generating report
 for stress CNN in hiperGrid() function. Shape changes
 if multi-output models are used =#
-function shapeTargetStressCNN(multiLossArch::Bool, testData)
+function shapeTargetloadCNN(multiLossArch::Bool, testData)
   if multiLossArch
     testTargets = zeros(Float32, (2, 4, size(testData.data.label[1], 2)))
     for sample in 1:size(testData.data.label[1], 2)
@@ -244,7 +241,6 @@ end
 In predetermined intervals of epochs, evaluate
 the current model and print validation loss.=#
 function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun; modelName = timeNow(), saveModel = true)
-  # Training epochs loop
   epoch = 1
   while true
     # In case of learning rate scheduling, apply decay at certain interval of epochs
@@ -257,10 +253,8 @@ function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trai
     # Evaluate model and print info at certain epoch intervals
     if epoch % trainParams.validFreq == 0
       epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun)
-      # Early stopping
-      if length(trainParams.evaluations) > trainParams.earlyStopQuant
-        # Check for early stop criterion
-        valLossPercentDrop, stopTraining = earlyStopCheck(trainParams)
+      if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
+        valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
         @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
         if stopTraining
           println("EARLY STOPPING")
@@ -270,6 +264,7 @@ function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trai
         println("No early stop check.")
       end
     end
+    epoch % 300 == 0 && intermediateSave(mlModel) # intermediate save checkpoint
     epoch += 1
   end
   if saveModel
@@ -302,7 +297,7 @@ end
 
 mutable struct earlyStopTrainConfig
   validFreq::Int64 # Evaluation frequency in epochs
-  decay::Float64 # Factor applied to current learning rate (in case of scheduling)
+  decay::Float64 # If scheduling, periodically multiply learning rate by this value
   schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
   evaluations::Array{Any} # History of evaluation losses
   # Interval of most recent validations used for early stop criterion
@@ -310,13 +305,17 @@ mutable struct earlyStopTrainConfig
   # Minimal percentage drop in loss in the last "earlyStopQuant" validations
   earlyStopPercent::Float32
 end
-earlyStopTrainConfig(validFreq; decay=0.0, schedule=0, evaluations=[], earlyStopQuant=3, earlyStopPercent=1) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations, earlyStopQuant, earlyStopPercent)
+earlyStopTrainConfig(
+  validFreq; decay = 0.0, schedule = 0, evaluations = [], earlyStopQuant = 3, earlyStopPercent = 1
+) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations, earlyStopQuant, earlyStopPercent)
 
 mutable struct epochTrainConfig
   epochs::Int64 # Total number of training epochs
   validFreq::Int64 # Evaluation frequency in epochs
   schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  decay::Float64 # Factor applied to current learning rate (in case of scheduling)
+  decay::Float64 # If scheduling, periodically multiply learning rate by this value
   evaluations::Array{Any} # History of evaluation losses
 end
-epochTrainConfig(epochs, validFreq; schedule=0, decay=0.0, evaluations=[]) = epochTrainConfig(epochs, validFreq, schedule, decay, evaluations)
+epochTrainConfig(
+  epochs, validFreq; schedule = 0, decay = 0.0, evaluations = []
+) = epochTrainConfig(epochs, validFreq, schedule, decay, evaluations)

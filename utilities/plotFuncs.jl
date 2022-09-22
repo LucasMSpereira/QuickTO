@@ -2,9 +2,19 @@
 
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
-function loadCNNtestPlots(quant::Int, path::String, disp::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
-  for sample in randDiffInt(quant, size(forceData, 3)) # loop in random samples
-    plotDispTest(FEparams, disp[:, :, :, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
+function dispCNNtestPlots(quant::Int, path::String, dispTestLoader, finalName::String, FEparams, MLmodel, lossFun)
+  count = 0
+  for (disp, force) in dispTestLoader # each batch
+    for sampleInBatch in axes(disp)[end] # iterate inside batch
+      count += 1; count > quant && break # limit number of tests
+      @show count
+      println("plotDispTest, True forces:")
+      println(Tuple([force[i][:, sampleInBatch]' for i in axes(force)[1]]))
+      plotDispTest( # plot comparison between prediction and truth
+        FEparams, disp[:, :, :, sampleInBatch], Tuple([force[i][:, sampleInBatch]' for i in axes(force)[1]]),
+        MLmodel, 0, lossFun; folder = path
+      )
+    end
   end
   combinePDFs(path, finalName)
 end
@@ -19,42 +29,75 @@ function parameterList(model, opt, lossFun, path; multiLossArch = false)
   Label(fig[currentLine, 1], "NN Architecture:"; height = labelHeight)
   # Strings describing each layer
   if multiLossArch
-    layerString = []
-    [vcat(layerString, string(model.layers[1].layers[l])) for l in 1:length(model.layers[1].layers)]
-    [vcat(layerString, string(model.layers[2].paths[p])) for p in 1:length(model.layers[2].paths)]
+    layerString = [string(model.layers[1].layers[l]) for l in 1:length(model.layers[1].layers)]
+    layerString = vcat(layerString, [string(model.layers[2].paths[p]) for p in 1:length(model.layers[2].paths)])
   else
     layerString = [string(model.layers[m].layers[l]) for m in 1:length(model.layers) for l in 1:length(model.layers[m].layers)]
   end
-  layerString = convert.(String, layerString)
   # Individually include layer strings as labels
   for line in axes(layerString)[1]
     Label(fig[currentLine, 2], layerString[line]; height = labelHeight)
     currentLine += 1 # Update current line
   end
-  Label(fig[currentLine, 1], "Optimizer:"; height = labelHeight)
+  Label(fig[currentLine, 1], "Optimizer:"; height = labelHeight) # optimizer info
   Label(fig[currentLine, 2], string(typeof(opt)); height = labelHeight)
   currentLine += 1 # Update current line
   Label(fig[currentLine, 2], sciNotation(opt.eta, 0); height = labelHeight)
   currentLine += 1 # Update current line
-  Label(fig[currentLine, 1], "Loss function"; height = labelHeight)
+  Label(fig[currentLine, 1], "Loss function"; height = labelHeight) # loss function used
   Label(fig[currentLine, 2], string(lossFun); height = labelHeight)
   currentLine += 1 # Update current line
-  Label(fig[currentLine, 1], "# parameters:"; height = labelHeight)
+  Label(fig[currentLine, 1], "# parameters:"; height = labelHeight) # number of model parameters
   Label(fig[currentLine, 2], string(sum(length, Flux.params(model))); height = labelHeight)
   Makie.save("$path/$(rand(1:999999)).pdf", fig)
 end
+
+# Make plot for disp model test and visually compare ML model predictions against truth
+function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0)
+  # Reshape output of loadCNN to match dataset format
+  predForces = convert.(Float32, reshape(disp, (size(disp)..., 1))) |> gpu |> model |> cpu
+  maxDenormalize != 0 && (predForces *= maxDenormalize) # Denormalize force vectors if necessary
+  fig = Figure(resolution = (1000, 700), fontsize = 20) # create makie figure and set it up
+  axHeight = 200 # axis height for vm and forces
+  textPos = (-0.1, 0.5) # text position in final figure
+  # plot true forces
+  trueForces = Tuple([permutedims(trueForces[i], (2, 1)) for i in axes(trueForces)[1]])
+  println("plotForce")
+  @show predForces; @show trueForces
+  forceAxis = plotForce(FEparams, trueForces, fig, (1, 2:3), (2, 2); alignText = textPos, axisHeight = axHeight)
+  # plot predicted forces
+  plotForce(FEparams, predForces, fig, (1, 2:3), (2, 3);
+    newAxis = forceAxis, paintArrow = :green, paintText = :green, alignText = textPos)
+  # Labels
+  Label(fig[1, 1], "Force positions"; tellheight = :false)
+  (colsize!(fig.layout, i, Fixed(500)) for i in 1:2)
+  # loss value of current prediction
+  Label(fig[2, 1], "Loss: "*sciNotation(lossFun(predForces, trueForces), 3);
+  align = (-1, 0.5), tellheight = :false)
+  if length(folder) == 0 # save figure created
+    Makie.save("./networks/trainingPlots/$modelName test.pdf", fig)
+  else
+    Makie.save("$folder/$(rand(1:999999)).pdf", fig)
+  end
+end
+
+# a = (Float32[18.0; 46.0;;], Float32[23.0; 101.0;;], Float32[-36.78199; -8.813507;;], Float32[-41.884594; -77.45334;;])
+# typeof(a)
+# reduce(hcat, [a[i] for i in axes(a)[1]])
 
 # plot forces
 function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
   newAxis = "true", paintArrow = :black, paintText = :black, alignText = (0, 0), axisHeight = 0
 )
-  loadXcoord = zeros(size(forces, 1))
-  loadYcoord = zeros(size(forces, 1))
+  forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
+  @show forceMat
+  loadXcoord = zeros(size(forceMat, 1))
+  loadYcoord = zeros(size(forceMat, 1))
   # Get loads positions
-  for l in 1:size(forces, 1)
-    loadXcoord[l] = forces[l,2]
-    loadYcoord[l] = FEAparams.meshSize[2] - forces[l,1] + 1
+  for l in axes(forceMat)[1]
+    loadXcoord[l] = forceMat[l,2]
+    loadYcoord[l] = FEAparams.meshSize[2] - forceMat[l,1] + 1
   end
   # create and setup plotting axis
   if typeof(newAxis) == String
@@ -73,15 +116,15 @@ function plotForce(
   # Plot loads as arrows
   arrows!(
     axis, loadXcoord, loadYcoord,
-    forces[:,3], forces[:,4];
+    forceMat[:,3], forceMat[:,4];
     # norm of weakest force. will be used to scale force vectors in arrows!() command
-    lengthscale = 1 / (0.1*minimum( sqrt.( (forces[:,3]).^2 + (forces[:,4]).^2 ) )),
+    lengthscale = 1 / (0.1 * minimum( sqrt.( (forceMat[:, 3]) .^ 2 + (forceMat[:, 4]) .^ 2 ) )),
     linecolor = paintArrow,
     arrowcolor = paintArrow,
   )
   # text with values of force components
-  f1 = "Forces (N):\n1: $(round(Int,forces[1, 3])); $(round(Int,forces[1, 4]))\n"
-  f2 = "2: $(round(Int,forces[2, 3])); $(round(Int,forces[2, 4]))"
+  f1 = "Forces (N):\n1: $(round(Int, forceMat[1, 3])); $(round(Int, forceMat[1, 4]))\n"
+  f2 = "2: $(round(Int, forceMat[2, 3])); $(round(Int, forceMat[2, 4]))"
   l = text(
       fig[textPos[1], textPos[2]],
       f1*f2;
@@ -94,21 +137,21 @@ end
 
 # Line plots of evaluation histories
 function plotLearnTries(trainParams, tries; drawLegend = true, name = timeNow(), path = "./networks/trainingPlots")
-  f = Figure(resolution = (1050, 700));
+  f = Figure(resolution = (1050, 700)); # create makie figure
   ax = Axis(f[1:2, 1], xlabel = "Validation epochs", ylabel = "Loss", title = name)
   colsize!(f.layout, 1, Fixed(600))
+  # plot evaluation histories of all runs
   runs = [lines!(convert.(Float32, trainParams[run].evaluations)) for run in 1:length(tries)]
+  # if learning rate decay was used, mark epochs with vertical lines
   if trainParams[1].schedule != 0
     decayPerValidation = ceil(Int, trainParams[1].schedule/trainParams[1].validFreq)
-    vlines!(ax, decayPerValidation:decayPerValidation:length(trainParams[1].evaluations))
+    vlines!(ax, decayPerValidation:decayPerValidation:length(trainParams[1].evaluations), color = :darkslategrey, linestyle = :dash)
   end
-  drawLegend && Legend(f[2, 2], runs, string.(tries))
-  minimaText = []
-  for i in 1:length(trainParams)
+  drawLegend && Legend(f[2, 2], runs, string.(tries)) # include legend
+  minimaText = [] # label with evaluation loss minimum e corresponding epoch
+  for i in axes(trainParams)[1]
     valMin = findmin(trainParams[i].evaluations)
-    minimaText = vcat(
-      minimaText, "$i) Min. Loss: $(sciNotation(valMin[1], 3))   Epoch: $(valMin[2])"
-      )
+    minimaText = vcat(minimaText, "$i) Min. Loss: $(sciNotation(valMin[1], 3))   Epoch: $(valMin[2])")
   end
   if length(trainParams) > 1
     minimaText[1:end-1] .= minimaText[1:end-1].*["\n" for i in 1:length(minimaText) - 1]
@@ -116,9 +159,9 @@ function plotLearnTries(trainParams, tries; drawLegend = true, name = timeNow(),
     minimaText[1] = minimaText[1]*"\n"
   end
   t = text(f[1,2], prod(minimaText); textsize = 15, align = (0.5, 0.0))
-  textConfig(t)
+  textConfig(t) # setup label
   colsize!(f.layout, 2, Fixed(300))
-  Makie.save("$path/$name.pdf", f)
+  Makie.save("$path/$name.pdf", f) # save pdf with plot
 end
 
 # create figure to vizualize sample
@@ -266,36 +309,9 @@ function plotVM(FEAparams, disp, vf, fig, figPos)
   Colorbar(fig[4, 3], hm, ticks = 0:t:bigVal)
 end
 
-# Make plot for disp model test and visually compare ML model predictions against truth
-function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0)
-  # Reshape output of stressCNN to match dataset format
-  predForces = convert.(Float32, reshape(disp, (size(disp)..., 2, 1))) |> gpu |> model |> cpu
-  maxDenormalize != 0 && (predForces *= maxDenormalize) # Denormalize force vectors if necessary
-  fig = Figure(resolution = (1000, 700), fontsize = 20) # create makie figure and set it up
-  axHeight = 200 # axis height for vm and forces
-  vmAxis = Axis(fig[1, 2:3]; height = axHeight)
-  heatmap!(vmAxis, 1:FEparams.meshSize[1], FEparams.meshSize[2]:-1:1, vm') # plot vm
-  textPos = (-0.1, 0.5) # text position in final figure
-  forceAxis = plotForce(FEparams, trueForces, fig, (2, 2:3), (3, 2); alignText = textPos, axisHeight = axHeight) # plot true forces
-  # plot predicted forces
-  plotForce(FEparams, reshapeForces(predForces), fig, (2, 2:3), (3, 3); newAxis = forceAxis, paintArrow = :green, paintText = :green, alignText = textPos)
-  # Labels
-  Label(fig[1, 1], "von Mises field"; tellheight = :false)
-  Label(fig[2, 1], "Force positions"; tellheight = :false)
-  (colsize!(fig.layout, i, Fixed(500)) for i in 1:2)
-  # loss value of current prediction
-  Label(fig[3, 1], "Loss: "*sciNotation(lossFun(predForces, reshape(trueForces, (1, :))'), 3);
-  align = (-1, 0.5), tellheight = :false)
-  if length(folder) == 0 # save figure created
-    Makie.save("./networks/trainingPlots/$modelName test.pdf", fig)
-  else
-    Makie.save("$folder/$(rand(1:999999)).pdf", fig)
-  end
-end
-
 # Make plot for VM model test and visually compare ML model predictions against truth
 function plotVMtest(FEparams, input, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0)
-  # Reshape output of stressCNN to match dataset format
+  # Reshape output of loadCNN to match dataset format
   if size(input, 3) == 1
     predForces = convert.(Float32, reshape(input, (size(input)..., 1, 1))) |> gpu |> model |> cpu
   elseif size(input, 3) == 2
@@ -326,7 +342,7 @@ end
 
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
-function stressCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
+function loadCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
   for sample in randDiffInt(quant, size(forceData, 3)) # loop in random samples
     plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
   end
