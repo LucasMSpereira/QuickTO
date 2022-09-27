@@ -76,8 +76,7 @@ function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test =
       @printf "Epoch %i     Validation loss: %.3e     " epoch trainParams.evaluations[end]
     end
     typeof(trainParams) == epochTrainConfig && println()
-  else
-    # If function was called in a test context
+  else # If function was called in a test context
     return mean(meanEvalLoss)
   end
 end
@@ -129,7 +128,7 @@ function hyperGrid(
 )
   # Number of combinations
   numCombs = length(kernelSizes)*length(activFunctions)*length(channels)
-  println("\nTesting $numCombs combinations of hyperparameters.")
+  println("\nTesting $numCombs combination(s) of hyperparameters.")
   comb = 0
   # Store history of test performances
   history = ["0" 0.0]
@@ -144,8 +143,10 @@ function hyperGrid(
     currentTest = epochEval!(data[3], model, params, 1, lossFun; test = true) # Avg. loss in test of current model
     # Save model if first combination of hyperparameters or new best performance in tests so far
     if comb == 1 || (currentTest < minimum(history[:, 2]))
+      Flux.trainmode!(model, false) # disable parameter training
       # save model and generate pdf report with training plot tests, and info
       saveModelAndReport!(k, activ, ch, params, comb, history, model, currentTest, data[3], multiLossArch, FEparams, lossFun, optimizer)
+      Flux.trainmode!(model, true) # reenable parameter training
     else
       println("Model not saved.")
     end

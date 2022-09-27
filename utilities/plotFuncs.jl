@@ -7,13 +7,9 @@ function dispCNNtestPlots(quant::Int, path::String, dispTestLoader, finalName::S
   for (disp, force) in dispTestLoader # each batch
     for sampleInBatch in axes(disp)[end] # iterate inside batch
       count += 1; count > quant && break # limit number of tests
-      @show count
-      println("plotDispTest, True forces:")
-      println(Tuple([force[i][:, sampleInBatch]' for i in axes(force)[1]]))
       plotDispTest( # plot comparison between prediction and truth
         FEparams, disp[:, :, :, sampleInBatch], Tuple([force[i][:, sampleInBatch]' for i in axes(force)[1]]),
-        MLmodel, 0, lossFun; folder = path
-      )
+        MLmodel, 0, lossFun; folder = path, shiftForce = true)
     end
   end
   combinePDFs(path, finalName)
@@ -23,7 +19,7 @@ end
 # To be used in hyperGridSave
 function parameterList(model, opt, lossFun, path; multiLossArch = false)
   # create makie figure and set it up
-  fig = Figure(resolution = (1400, 700), fontsize = 20);
+  fig = Figure(resolution = (1400, 1000), fontsize = 20);
   currentLine = 1 # count lines
   labelHeight = 10
   Label(fig[currentLine, 1], "NN Architecture:"; height = labelHeight)
@@ -53,17 +49,19 @@ function parameterList(model, opt, lossFun, path; multiLossArch = false)
 end
 
 # Make plot for disp model test and visually compare ML model predictions against truth
-function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0)
+function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0, shiftForce = false)
   # Reshape output of loadCNN to match dataset format
-  predForces = convert.(Float32, reshape(disp, (size(disp)..., 1))) |> gpu |> model |> cpu
+  predForces = convert.(Float32, unsqueeze(disp, dims = ndims(disp) + 1)) |> gpu |> model |> cpu
+  if shiftForce # shift force components back to [-90; 90] range if necessary
+    (predForces[i] .-= 90 for i in 3:4)
+    (trueForces[i] .-= 90 for i in 3:4)
+  end
   maxDenormalize != 0 && (predForces *= maxDenormalize) # Denormalize force vectors if necessary
   fig = Figure(resolution = (1000, 700), fontsize = 20) # create makie figure and set it up
   axHeight = 200 # axis height for vm and forces
   textPos = (-0.1, 0.5) # text position in final figure
   # plot true forces
   trueForces = Tuple([permutedims(trueForces[i], (2, 1)) for i in axes(trueForces)[1]])
-  println("plotForce")
-  @show predForces; @show trueForces
   forceAxis = plotForce(FEparams, trueForces, fig, (1, 2:3), (2, 2); alignText = textPos, axisHeight = axHeight)
   # plot predicted forces
   plotForce(FEparams, predForces, fig, (1, 2:3), (2, 3);
@@ -81,56 +79,40 @@ function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; fol
   end
 end
 
-# a = (Float32[18.0; 46.0;;], Float32[23.0; 101.0;;], Float32[-36.78199; -8.813507;;], Float32[-41.884594; -77.45334;;])
-# typeof(a)
-# reduce(hcat, [a[i] for i in axes(a)[1]])
-
 # plot forces
 function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
   newAxis = "true", paintArrow = :black, paintText = :black, alignText = (0, 0), axisHeight = 0
 )
   forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
-  @show forceMat
-  loadXcoord = zeros(size(forceMat, 1))
-  loadYcoord = zeros(size(forceMat, 1))
-  # Get loads positions
-  for l in axes(forceMat)[1]
-    loadXcoord[l] = forceMat[l,2]
-    loadYcoord[l] = FEAparams.meshSize[2] - forceMat[l,1] + 1
+  loadXcoord = zeros(size(forceMat, 1)); loadYcoord = zeros(size(forceMat, 1))
+  for l in axes(forceMat)[1] # Get load positions
+    loadXcoord[l] = forceMat[l, 2]
+    loadYcoord[l] = FEAparams.meshSize[2] - forceMat[l, 1] + 1
   end
-  # create and setup plotting axis
-  if typeof(newAxis) == String
+  if typeof(newAxis) == String # create and setup plotting axis
     if axisHeight == 0
       axis = Axis(fig[arrowsPos[1], arrowsPos[2]])
     else
       axis = Axis(fig[arrowsPos[1], arrowsPos[2]]; height = axisHeight)
     end
-    xlims!(axis, -round(0.03*FEAparams.meshSize[1]), round(1.03*FEAparams.meshSize[1]))
-    ylims!(axis, -round(0.1*FEAparams.meshSize[2]), round(1.1*FEAparams.meshSize[2]))
+    xlims!(axis, -round(0.03 * FEAparams.meshSize[1]), round(1.03 * FEAparams.meshSize[1]))
+    ylims!(axis, -round(0.1 * FEAparams.meshSize[2]), round(1.1 * FEAparams.meshSize[2]))
     hlines!(axis, [0, FEAparams.meshSize[2]], xmin = [0.0, 0.0], xmax = [FEAparams.meshSize[1], FEAparams.meshSize[1]], color = :black)
     vlines!(axis, [0, FEAparams.meshSize[1]], ymin = [0.0, 0.0], ymax = [FEAparams.meshSize[2], FEAparams.meshSize[2]], color = :black)
   else
     axis = newAxis
   end
-  # Plot loads as arrows
-  arrows!(
-    axis, loadXcoord, loadYcoord,
-    forceMat[:,3], forceMat[:,4];
-    # norm of weakest force. will be used to scale force vectors in arrows!() command
+  arrows!( # Plot loads as arrows
+    axis, loadXcoord, loadYcoord, forceMat[:,3], forceMat[:,4];
+    # norm of weakest force. Used to scale force vectors
     lengthscale = 1 / (0.1 * minimum( sqrt.( (forceMat[:, 3]) .^ 2 + (forceMat[:, 4]) .^ 2 ) )),
-    linecolor = paintArrow,
-    arrowcolor = paintArrow,
-  )
+    linecolor = paintArrow, arrowcolor = paintArrow)
   # text with values of force components
   f1 = "Forces (N):\n1: $(round(Int, forceMat[1, 3])); $(round(Int, forceMat[1, 4]))\n"
   f2 = "2: $(round(Int, forceMat[2, 3])); $(round(Int, forceMat[2, 4]))"
-  l = text(
-      fig[textPos[1], textPos[2]],
-      f1*f2;
-      color = paintText,
-      align = alignText
-  )
+  l = text(fig[textPos[1], textPos[2]],
+      f1*f2; color = paintText, align = alignText)
   textConfig(l)
   return axis
 end
@@ -303,10 +285,10 @@ function plotVM(FEAparams, disp, vf, fig, figPos)
   # plot von Mises
   _,hm = heatmap(fig[figPos[1], figPos[2]],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm')
   # setup colorbar for von Mises
-  bigVal = 1.05*ceil(maximum(vm))
+  bigVal = 1.1*ceil(maximum(vm))
   t = floor(0.2*bigVal)
   t == 0 && (t = 1)
-  Colorbar(fig[4, 3], hm, ticks = 0:t:bigVal)
+  Colorbar(fig[figPos[1], figPos[2] + 1], hm, ticks = 0:t:bigVal)
 end
 
 # Make plot for VM model test and visually compare ML model predictions against truth

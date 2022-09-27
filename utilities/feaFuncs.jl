@@ -264,84 +264,74 @@ end
 
 # Rebuild FEA problem
 function rebuildProblem(vf, BCs, forces)
-
-  meshSize = (140, 50)
-  elementIDarray = [i for i in 1:prod(meshSize)] # Vector that lists element IDs
-  nodeCoords, cells = mshData(meshSize)
-  cellSets = Dict(
-    "SolidMaterialSolid" => elementIDarray,
-    "Eall"               => elementIDarray,
-    "Evolumes"           => elementIDarray)
-  grid = generate_grid(Quadrilateral, meshSize)
+  elementIDarray = [i for i in 1:prod(FEAparams.meshSize)] # Vector that lists element IDs
+  nodeCoords, cells = mshData(FEAparams.meshSize) # node coordinates and element definitions
+  cellSets = Dict("SolidMaterialSolid" => elementIDarray, # associate certain properties to all elements
+                  "Eall"               => elementIDarray,
+                  "Evolumes"           => elementIDarray)
+  grid = generate_grid(Quadrilateral, FEAparams.meshSize)
   numCellNodes = 4
   # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
+  elementIDmatrix = convert.(Int, quad(FEAparams.meshSize...,[i for i in 1:prod(FEAparams.meshSize)]))
   # [forces[1,1:2] = ij -> elementIDmatrix -> elementID -> grid -> nodeIDs] = lpos
-  eID = [elementIDmatrix[convert(Int, forces[f,1]), convert(Int, forces[f,2])] for f in 1:2]
+  # place loads
+  eID = [elementIDmatrix[floor(Int, forces[f,1]), floor(Int, forces[f,2])] for f in 1:2]
   lpos = collect(Iterators.flatten([[grid.cells[eID[f]].nodes[e] for e in 1:4] for f in 1:2]))
   cLoads = Dict(lpos[1] => forces[1,3:4])
   [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
   if length(lpos) > numCellNodes+1
+    ll = 0
       for pos in (numCellNodes+1):length(lpos)
-          pos == (numCellNodes+1) && (global ll = 2)
+          pos == (numCellNodes+1) && (ll = 2)
           merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
-          pos % numCellNodes == 0 && (global ll += 1)
+          pos % numCellNodes == 0 && (ll += 1)
       end
   end
-
+  # define nodeSets according to boundary condition (BC) definition
   if BCs[1,3] == 4
-    firstCol = [(n-1)*(meshSize[1]+1) + 1 for n in 1:(meshSize[2]+1)]
+    firstCol = [(n-1)*(FEAparams.meshSize[1]+1) + 1 for n in 1:(FEAparams.meshSize[2]+1)]
     secondCol = firstCol .+ 1
     nodeSets = Dict("supps" => vcat(firstCol, secondCol))
   elseif BCs[1,3] == 6
-    firstCol = [(meshSize[1]+1)*n for n in 1:(meshSize[2]+1)]
+    firstCol = [(FEAparams.meshSize[1]+1)*n for n in 1:(FEAparams.meshSize[2]+1)]
     secondCol = firstCol .- 1
     nodeSets = Dict("supps" => vcat(firstCol, secondCol))
   elseif BCs[1,3] == 5
-    nodeSets = Dict("supps" => [n for n in 1:(meshSize[1]+1)*2])
+    nodeSets = Dict("supps" => [n for n in 1:(FEAparams.meshSize[1]+1)*2])
   elseif BCs[1,3] == 7
-    nodeSets = Dict("supps" => [n for n in ((meshSize[1]+1)*(meshSize[2]-1)+1):((meshSize[1]+1)*((meshSize[2]+1)))])
+    nodeSets = Dict("supps" => [n for n in ((FEAparams.meshSize[1]+1)*(FEAparams.meshSize[2]-1)+1):((FEAparams.meshSize[1]+1)*((FEAparams.meshSize[2]+1)))])
   else
-    supports = zeros(meshSize)'
-    [supports[BCs[m, 1], BCs[m, 2]] = 3 for m in 1:size(BCs,1)]
+    supports = zeros(FEAparams.meshSize)'
+    [supports[BCs[m, 1], BCs[m, 2]] = 3 for m in axes(BCs)[1]]
     # supports!=0 -> elementIDmatrix -> eID -> grid -> nodes
-    eID = elementIDmatrix[findall(x->x!=0, supports)]
-    nodeSets = Dict("supps" => collect(Iterators.flatten([[grid.cells[eID[s]].nodes[e] for e in 1:4] for s in 1:length(eID)])))
+    eID = elementIDmatrix[findall(x -> x != 0, supports)]
+    nodeSets = Dict("supps" => collect(Iterators.flatten([[grid.cells[eID[s]].nodes[e] for e in 1:4] for s in axes(eID)[1]])))
   end
-
-  return InpStiffness(
-          InpContent(
-            nodeCoords, "CPS4", cells, nodeSets, cellSets, vf*210e3, 0.3,
+  return InpStiffness(InpContent(nodeCoords, "CPS4", cells, nodeSets, cellSets, vf*210e3, 0.3,
             0.0, Dict("supps" => [(1, 0.0), (2, 0.0)]), cLoads,
-            Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)
-          )
-        )
+            Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)))
 end
 
 # Create the node set necessary for specific and well defined support conditions
 function simplePins!(type, dispBC, FEAparams)
   type == "rand" && (type = rand(["left" "right" "top" "bottom"]))
-  if type == "left"
-    # Clamp left boundary of rectangular domain.
+  if type == "left" # Clamp left boundary of rectangular domain.
     fill!(dispBC, 4)
     # clamped nodes
     firstCol = [(n-1)*(FEAparams.meshSize[1]+1) + 1 for n in 1:(FEAparams.meshSize[2]+1)]
     secondCol = firstCol .+ 1
     nodeSet = Dict("supps" => vcat(firstCol, secondCol))
-  elseif type == "right"
-    # Clamp right boundary of rectangular domain.
+  elseif type == "right" # Clamp right boundary of rectangular domain.
     fill!(dispBC, 6)
     # clamped nodes
     firstCol = [(FEAparams.meshSize[1]+1)*n for n in 1:(FEAparams.meshSize[2]+1)]
     secondCol = firstCol .- 1
     nodeSet = Dict("supps" => vcat(firstCol, secondCol))
-  elseif type == "bottom"
-    # Clamp bottom boundary of rectangular domain
+  elseif type == "bottom" # Clamp bottom boundary of rectangular domain
     fill!(dispBC, 5)
     # clamped nodes
     nodeSet = Dict("supps" => [n for n in 1:(FEAparams.meshSize[1]+1)*2])
-  elseif type == "top"
-    # Clamp top boundary of rectangular domain
+  elseif type == "top" # Clamp top boundary of rectangular domain
     fill!(dispBC, 7)
     # clamped nodes
     # (first node of second highest line of nodes) : nodeQuant

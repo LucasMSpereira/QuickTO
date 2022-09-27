@@ -5,7 +5,7 @@ forceData, forceMat, disp, forceMulti = loadDispData("C:/Users/LucasKaoid/Deskto
 dispTrainLoader, dispValidateLoader, dispTestLoader = getDisploaders(disp, forceMulti, 0, (0.9, 0.1), 1719; multiOutputs = true)
 ### Custom loss
 rmseLoss(x, y) = sqrt(mean((x .- y) .^ 2)); myMultiLoss(x, y) = multiLoss(x, y; lossFun = rmseLoss)
-@load "./networks/models/3-celu-5-2.5854946E1/3-celu-5-2.5854946E1.bson" cpu_model
+@load "./networks/models/3-celu-5-4.1173697E2/3-celu-5-4.1173697E2.bson" cpu_model
 gpu_model = gpu(cpu_model)
 newModel = multiOutputs((3, 3), celu, 5)
 trainmode!(gpu_model, false)
@@ -30,14 +30,27 @@ for (x, y) in dispTrainLoader # each batch
   end
   # @show loss[2:end] |> mean # -> gradient -> update params
 end
-values
-vals = cpu(values)[1:10313, :]
-statsum(vals[:, 1]) # line (175 +- 137)
-statsum(vals[:, 2]) # col (620 +- 652)
-statsum(vals[:, 3]) # xcomp (913 +- 1295)
-statsum(vals[:, 4]) # ycomp (1120 +- 1507)
-std(vals[:, 4])
-# out = reshape(input, (size(input)..., 1)) |> gpu |> gpu_model |> cpu
-# @show out
-# printLoss(rmseLoss)
-# displayDispPlotTest(FEAparams, input, target, gpu_model, myMultiLoss)
+
+@load "./networks/models/3-celu-5-4.1173697E2/3-celu-5-4.1173697E2.bson" cpu_model
+forceMulti[3] .+= 90
+forceMulti[4] .+= 90
+statsum(forceMulti[3])
+for (disp, force) in dispTrainLoader # each batch
+  pred = (rand(1:50, (2, size(force[1], 2))), rand(1:140, (2, size(force[1], 2))),
+    rand(0:180, (2, size(force[1], 2))), rand(0:180, (2, size(force[1], 2))))
+  batchLoss = []
+  for sampleInBatch in 1:size(force[1], 2) # iterate inside batch
+    @show sampleInBatch
+    for i in axes(pred)[1] # each prediction: i, j, x, y
+      @show i
+      squaredError = (pred[i][:, sampleInBatch] .- force[i][:, sampleInBatch]) .^ 2
+      println(pred[i][:, sampleInBatch], " - ", force[i][:, sampleInBatch], " .^ 2 = ",  squaredError)
+      println(".|> mean (MSE): ", mean(squaredError))
+    end
+    println("|> mean (average MSE in sample): ", [(pred[i][:, sampleInBatch] .- force[i][:, sampleInBatch]) .^ 2 for i in axes(pred)[1]] .|> mean |> mean)
+    batchLoss = vcat(batchLoss, [(pred[i][:, sampleInBatch] .- force[i][:, sampleInBatch]) .^ 2 for i in axes(pred)[1]] .|> mean |> mean)
+  end
+  @show mean(batchLoss)
+  println()
+  println()
+end

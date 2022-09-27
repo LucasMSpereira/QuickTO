@@ -308,7 +308,7 @@ function quad(nelx,nely,vec)
   return quadd
 end
 
-# generate vector with n random and different integer values between 1 and val
+# generate vector with n random and different integer values from 1 to val
 function randDiffInt(n, val)
   randVec = zeros(Int, n)
   randVec[1] = rand(1:val)
@@ -337,6 +337,7 @@ function reshapeForces(predForces)
 end
 
 function sciNotation(num::Real, printDigits::Int)
+  num < 0 && return "sciNotation: negative 'num' input"
   base10 = floor(log10(num))
   mantissa = round(num/10^base10; digits = printDigits)
   return "$(mantissa)E$(Int(base10))"
@@ -345,7 +346,11 @@ end
 showVal(x) = println(round.(x; digits = 4)) # auxiliary print function
 
 # statistical summary of a numerical array
-statsum(arr) = reshape(arr, (1, :)) |> vec |> summarystats |> println
+function statsum(arr)
+  data = reshape(arr, (1, :)) |> vec
+  data |> summarystats |> print
+  println("Standard deviation: ", sciNotation(std(data), 4))
+end
 
 timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
 
@@ -361,3 +366,4 @@ timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with
   section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
 end
 FEAparams = FEAparameters()
+problem!(FEAparams)

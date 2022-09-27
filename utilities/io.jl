@@ -42,7 +42,6 @@ end
 # Combine pdf files into one
 function combinePDFs(path, finalName)
   PDFfiles = filter(x -> x[end-2:end] == "pdf", glob("*", path))
-  @show PDFfiles
   read(`$(Poppler_jll.pdfunite()) $(PDFfiles) $(path)/$finalName.pdf`, String) # join pdfs together
   rm.(PDFfiles)
 end
@@ -54,8 +53,7 @@ function combineStressCNNdata(path)
   # initialize "global" variables
   globalF = zeros(2, 4, 1); globalPrin = zeros(50, 140, 1); globalVM = zeros(50, 140, 1)
   for file in keys(files) # loop in files
-    # open current file and read data
-    id = h5open(files[file], "r")
+    id = h5open(files[file], "r") # open current file and read data
     force = read(id["forces"]); prin = read(id["principals"]); vm = read(id["vm"])
     close(id) # close current file
     quants = size(force, 3) # amount of new samples
@@ -153,7 +151,7 @@ function getStressCNNdata(path; multiOut = false)
   # read force data (2x4 Float matrix per sample)
   forceData = convert.(Float32, HDF5.read(datasets[1])) # 2 x 4 x nSamples of Float32
   # reshape forces to 8 x nSamples float matrix. each col refers to a sample
-  forceMat = hcat([vec(reshape(forceData[:, :, i], (1, :))) for i in 1:size(forceData, 3)]...)
+  forceMat = hcat([vec(reshape(forceData[:, :, i], (1, :))) for i in axes(forceData)[3]]...)
   # Get VM data, reshape to 50 x 140 x 1 x nSamples and convert to Float32
   vm = convert.(Float32, reshape(HDF5.read(datasets[3]), 50, 140, 1, :))
   prin = HDF5.read(datasets[2])
@@ -166,7 +164,7 @@ function getStressCNNdata(path; multiOut = false)
     yPositions = similar(xPositions)
     firstComponents = similar(xPositions)
     secondComponents = similar(xPositions)
-    for sample in 1:size(forceData, 3)
+    for sample in axes(forceData)[3]
       xPositions[:, sample] .= forceData[:, 1, sample]
       yPositions[:, sample] .= forceData[:, 2, sample]
       firstComponents[:, sample] .= forceData[:, 3, sample]
@@ -355,8 +353,7 @@ function stressCNNdata(id, numFiles, FEAparams)
     end
     nels = prod(FEAparams.meshSize) # number of elements in mesh
     # loop in samples of current file
-    @showprogress 1 "File $file/$numFiles" for sample in 1:length(vf)
-    # for sample in 1:length(vf)
+    @showprogress 1 "File $file/$numFiles" for sample in axes(vf)[1]
       # get VM and principal stress fields for current sample
       sampleVM, _, samplePrincipals, _ = calcConds(
         nels, FEAparams, dispFile[:, :, 2 * sample - 1 : 2 * sample],
@@ -405,19 +402,18 @@ end
 
 # write displacements to file
 function writeDispComps(quickTOdata, problemID, disp, FEAparams, numCellNode)
-  dispInterp = Array{Real}(undef, prod(FEAparams.meshSize),2)
-  cellValue = CellVectorValues(QuadratureRule{2, RefCube}(2), Lagrange{2,RefCube,ceil(Int, numCellNode/7)}())
-  global el = 1
-  # loop in elements
-  for cell in CellIterator(FEAparams.problems[problemID].ch.dh)
+  dispInterp = Array{Real}(undef, prod(FEAparams.meshSize), 2)
+  cellValue = CellVectorValues(QuadratureRule{2, RefCube}(2), Lagrange{2, RefCube, ceil(Int, numCellNode/7)}())
+  el = 1
+  for cell in CellIterator(FEAparams.problems[problemID].ch.dh) # loop in elements
     reinit!(cellValue, cell)
     # interpolate displacement (u, v) of element center based on nodal displacements.
-    dispInterp[el,:] = function_value(cellValue, 1, disp[celldofs(cell)])
-    global el += 1
+    dispInterp[el, :] = function_value(cellValue, 1, disp[celldofs(cell)])
+    el += 1
   end
   # add to dataset
-  quickTOdata["disp"][:, :, 2*problemID-1] = quad(FEAparams.meshSize...,dispInterp[:, 1])
-  quickTOdata["disp"][:, :, 2*problemID] = quad(FEAparams.meshSize...,dispInterp[:, 2])
+  quickTOdata["disp"][:, :, 2 * problemID - 1] = quad(FEAparams.meshSize..., dispInterp[:, 1])
+  quickTOdata["disp"][:, :, 2 * problemID] = quad(FEAparams.meshSize..., dispInterp[:, 2])
   return dispInterp
 end
 
