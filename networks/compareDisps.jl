@@ -4,7 +4,7 @@ include("C:/Users/LucasKaoid/Meu Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/Qu
 using GLMakie
 GLMakie.activate!()
 # * model may have been trained on data that went through preparation *
-@load "./networks/models/3-celu-5-4.1173697E2/3-celu-5-4.1173697E2.bson" cpu_model # load model
+@load "./networks/models/5-celu-5-1.0668805E3/5-celu-5-1.0668805E3.bson" cpu_model # load model
 begin
   ### choose folder, file and sample, get info and make load prediction ###
   id = string(rand(1:6)) # folder
@@ -14,26 +14,22 @@ begin
   while true
     sample = rand(axes(vf)[1]) # iterate in samples from current file
     if supp[1, 3, sample] == 4 # skip iteration if left side not clamped
-      dataDisp = unsqueeze(disp[:, :, 2*sample - 1 : 2*sample]; dims = 4) |> x -> convert.(Float32, x) # sample displacements
-      predForce = dataDisp |> cpu_model .|> x -> convert.(Float64, x) # forces predicted by load CNN model
+      dataDisp = disp[:, :, 2*sample - 1 : 2*sample] # sample displacements
+      modelInput = dataDisp ./ maximum(abs, dataDisp)
+      modelInput = unsqueeze(modelInput; dims = 4) |> x -> convert.(Float32, x) 
+      predForce = modelInput |> cpu_model .|> x -> convert.(Float64, x) # forces predicted by load CNN model
+      [predForce[i] .-= 90 for i in 3:4] # shift forces back to [-90; 90] range if necessary
+      # bound Fᵢ and Fⱼ predictions
       replace!(x -> min(FEAparams.meshSize[1], x), predForce[2])
       replace!(x -> max(1, x), predForce[2])
       replace!(x -> min(FEAparams.meshSize[2], x), predForce[1])
       replace!(x -> max(1, x), predForce[1])
       predForce = reduce(hcat, [predForce[i] for i in axes(predForce)[1]]) # reshape predicted forces
+      println("Predicted forces:")
       [println(round.(predForce[l, :]; digits = 2)) for l in axes(predForce)[1]]
-      ### load prediction -> problem definition -> FEA -> displacements
-        # nodeCoords, cells = mshData(FEAparams.meshSize)
-        # nodeSets, dispBC = simplePins!("rand", dispBC, FEAparams)
-        # problem = InpStiffness(InpContent(
-        #   nodeCoords, "CPS4", cells, nodeSets,
-        #   Dict("SolidMaterialSolid" => FEAparams.elementIDarray, # cellsets
-        #         "Eall"               => FEAparams.elementIDarray,
-        #         "Evolumes"           => FEAparams.elementIDarray),
-        #   FEAparams.V[i]*210e3, 0.3, 0.0,
-        #   Dict("supps" => [(1, 0.0), (2, 0.0)]),
-        #   cLoads,
-        #   Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)))
+      println("\nTrue forces:")
+      [println(round.(force[l, :, sample]; digits = 2)) for l in axes(predForce)[1]]
+      ### load prediction -> problem definition -> FEA -> new displacements
       solver = FEASolver(Direct, rebuildProblem(vf[sample], supp[:, :, sample], predForce);
         xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0)) # FEA solver
       solver() # determine displacements
@@ -45,12 +41,12 @@ begin
       fig = Figure(resolution = (1400, 700), fontsize = 20)
       Label(fig[1, 1], "Data", tellheight = false); Label(fig[2, 1], "Predicted", tellheight = false) # labels
       plotVM(FEAparams, dataDisp, vf[sample], fig, [1, 2]); plotVM(FEAparams, predDisp, vf[sample], fig, [2, 2])
-      display(fig)
       colsize!(fig.layout, 1, Fixed(200))
+      display(fig)
       ### Compare FEA result against original displacements ###
       # statistical summaries
-      println("\ndataDisp"); statsum(dataDisp)
-      println("\npredDisp"); statsum(predDisp)
+      println("\nDisplacement from data"); statsum(dataDisp)
+      println("\nDisplacement from prediction"); statsum(predDisp)
       # nodal displacement norm errors
       println("\nNodal norms")
       dataNorms = mapslices(norm, dataDisp; dims = [3])

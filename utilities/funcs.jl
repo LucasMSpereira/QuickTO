@@ -161,7 +161,7 @@ function disconnections(topology, dataset, section, sample)
     fig = Figure(;resolution = (1200, 400));
     heatmap(fig[1, 1], 1:size(topo, 1), size(topo, 2):-1:1, topo');
     # save image file
-    save("C:/Users/LucasKaoid/Desktop/datasets/post/disconnection/problems imgs/$dataset $section $(string(sample)).png", fig)
+    save(datasetPath*"analyses/disconnection/problems imgs/$dataset $section $(string(sample)).png", fig)
   end
   #=
     product of lengths of A* paths connecting extreme elements
@@ -337,9 +337,10 @@ function reshapeForces(predForces)
 end
 
 function sciNotation(num::Real, printDigits::Int)
-  num < 0 && return "sciNotation: negative 'num' input"
-  base10 = floor(log10(num))
-  mantissa = round(num/10^base10; digits = printDigits)
+  num == 0 && return "0."*repeat("0", printDigits)*"E00"
+  base10 = num |> abs |> log10 |> floor
+  mantissa = round(abs(num) / 10 ^ base10; digits = printDigits)
+  num < 0 && return "-$(mantissa)E$(Int(base10))"
   return "$(mantissa)E$(Int(base10))"
 end
 
@@ -353,17 +354,3 @@ function statsum(arr)
 end
 
 timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
-
-# Struct with simulation parameters
-@with_kw mutable struct FEAparameters
-  quants::Int = 1 # number of TO problems per section
-  V::Array{Real} = [0.4+rand()*0.5 for i in 1:quants] # volume fractions
-  problems::Any = Array{Any}(undef, quants) # store FEA problem structs
-  meshSize::Tuple{Int, Int} = (140, 50) # Size of rectangular mesh
-  elementIDarray::Array{Int} = [i for i in 1:prod(meshSize)] # Vector that lists element IDs
-  # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix::Array{Int,2} = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
-  section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
-end
-FEAparams = FEAparameters()
-problem!(FEAparams)

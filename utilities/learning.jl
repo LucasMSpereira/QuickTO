@@ -1,10 +1,46 @@
 # Functions related to machine learning
 
+# Batch of inputs during validation/testing
+function batchEval!(evalDataLoader, lossFun, mlModel)
+  meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data.data.indices[end])/evalDataLoader.batchsize))
+  count = 0
+  for (x, y) in evalDataLoader
+    count += 1
+    meanEvalLoss[count] = lossFun(mlModel(gpu(x)), gpu(y))
+  end
+  return meanEvalLoss
+end
+
+# Batch of inputs during validation/testing. Adapted to FEAloss pipeline
+function batchEvalFEAloss!(evalDataLoader, mlModel)
+  meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data.data.indices[end])/evalDataLoader.batchsize))
+  count = 0
+  for (x, y, z) in evalDataLoader
+    count += 1
+    meanEvalLoss[count] = FEAloss(mlModel(gpu(x)), gpu(x), gpu(y), gpu(z))
+  end
+  return meanEvalLoss
+end
+
 # Epoch of batch training ML model. Then take optimizer step
 function batchTrain!(trainDataLoader, mlModel, opt, lossFun)
   for (x, y) in trainDataLoader # each batch
     grads = Flux.gradient(Flux.params(mlModel)) do
       lossFun(mlModel(gpu(x)), gpu(y))
+    end
+    # Optimization step for current batch
+    Flux.Optimise.update!(opt, Flux.params(mlModel), grads)
+  end
+end
+
+# Epoch of batch training ML model. Then take optimizer step
+# Adapted to FEAloss pipeline
+function batchTrainFEAloss!(trainDataLoader, mlModel, opt)
+  for (x, y, z) in trainDataLoader # each batch
+    predForce = mlModel(gpu(x))
+    [predForce[i] .-= 90 for i in 3:4] # shift forces back to [-90; 90] range
+    grads = Flux.gradient(Flux.params(mlModel)) do
+      FEAloss(predForce, gpu(x), gpu(y), gpu(z))
     end
     # Optimization step for current batch
     Flux.Optimise.update!(opt, Flux.params(mlModel), grads)
@@ -43,6 +79,16 @@ function crossVal(data, numFolds, activ, epochs, batch, opt, save)
   end
 end
 
+# Custom loss function for mulitple outputs in predicting loads from displacements
+function customLoss1(x, y)
+  # x: model output from one batch, y: batch of labels
+  batchLoss = []
+  for sampleInBatch in 1:size(y[1], 2) # iterate inside batch
+    batchLoss = vcat(batchLoss, [(x[i][:, sampleInBatch] - y[i][:, sampleInBatch]) .^ 2 for i in axes(x)[1]] .|> mean |> mean)
+  end
+  return convert(Float32, mean(batchLoss)) |> gpu
+end
+
 # Check for early stop: if validation loss didn't
 # decrease enough in the last few validations
 function earlyStopCheck(trainParams)
@@ -54,23 +100,20 @@ function earlyStopCheck(trainParams)
 end
 
 # Evaluate (validation or test) model and print performance. To be called occasionally
-function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test = false)
+function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test = false, FEAloss = false)
   Flux.trainmode!(mlModel, false)
-  meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data.data.indices[end])/evalDataLoader.batchsize))
   # Go through validation dataset
   # Batches are used for GPU memory purposes
-  count = 0
-  for (x, y) in evalDataLoader
-    count += 1
-    meanEvalLoss[count] = lossFun(mlModel(gpu(x)), gpu(y))
+  if FEAloss
+    meanEvalLoss = batchEvalFEAloss!(evalDataLoader, mlModel)
+  else
+    meanEvalLoss = batchEval!(evalDataLoader, lossFun, mlModel)
   end
   trainmode!(mlModel, true)
-  # If function was called in a validation context
-  if !test
+  if !test # If function was called in a validation context
     # Keep history of evaluations
     trainParams.evaluations = vcat(trainParams.evaluations, mean(meanEvalLoss))
-    # Print info
-    if length(trainParams.evaluations) > 1
+    if length(trainParams.evaluations) > 1 # Print info
       @printf "Epoch %i     Δ(Validation loss): %.3e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1])
     else
       @printf "Epoch %i     Validation loss: %.3e     " epoch trainParams.evaluations[end]
@@ -79,6 +122,20 @@ function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test =
   else # If function was called in a test context
     return mean(meanEvalLoss)
   end
+end
+
+#= FEAloss pipeline: further train model pre-trained by hyperGrid().
+Now the loss calculates the new displacements resulting from the forces
+predicted by the model. Then it compares the new displacements against
+the old ones. Now the difference between displacement fields will be minimized. =#
+function FEAlossPipeline(model, data, FEparams, lossFun, optimizer, modelName; earlyStop = 0.0)
+  params = earlyStopTrainConfig(15; decay = 0.5, schedule = 100, earlyStopPercent = earlyStop) # initialize training configuration
+  # Train model with early-stopping
+  trainEarlyStop!(model, data[1:2]..., optimizer, params, lossFun; saveModel = true, FEAloss = true, modelName = modelName)
+  Flux.trainmode!(model, false) # disable parameter training
+  # save model and generate pdf report with training plot, tests, and info
+  hyperGridSave(modelName, params, data[3], FEparams, model, lossFun, optimizer; multiLossArch = false)
+  Flux.trainmode!(model, true) # reenable parameter training
 end
 
 # prepare data loaders for loadCNN training/validation/test using displacements
@@ -98,6 +155,18 @@ function getDisploaders(disp, forces, numPoints, separation, batch; multiOutputs
     DataLoader((data = dispTrain[1], label = dispTrain[2]); batchsize = batch, parallel = true),
     DataLoader((data = dispValidate[1], label = dispValidate[2]); batchsize = batch, parallel = true),
     DataLoader((data = dispTest[1], label = dispTest[2]); batchsize = batch, parallel = true))
+end
+
+# prepare data loaders for loadCNN training/validation/test in FEAloss pipeline
+function getFEAlossLoaders(disp, sup, vf, numPoints, separation, batch)
+  # split data into training, validation, and testing
+  FEAlossTrain, FEAlossValidate, FEAlossTest = splitobs(
+    (disp[:, :, :, 1:numPoints], sup[:, :, 1:numPoints], vf[1:numPoints]);
+    at = separation, shuffle = true)
+  # return loaders for each stage
+  return (DataLoader(FEAlossTrain; batchsize = batch, parallel = true),
+    DataLoader(FEAlossValidate; batchsize = batch, parallel = true),
+    DataLoader(FEAlossTest; batchsize = batch, parallel = true))
 end
 
 # prepare data loaders for loadCNN training/validation/test
@@ -144,7 +213,7 @@ function hyperGrid(
     # Save model if first combination of hyperparameters or new best performance in tests so far
     if comb == 1 || (currentTest < minimum(history[:, 2]))
       Flux.trainmode!(model, false) # disable parameter training
-      # save model and generate pdf report with training plot tests, and info
+      # save model and generate pdf report with training plot, tests, and info
       saveModelAndReport!(k, activ, ch, params, comb, history, model, currentTest, data[3], multiLossArch, FEparams, lossFun, optimizer)
       Flux.trainmode!(model, true) # reenable parameter training
     else
@@ -155,7 +224,7 @@ function hyperGrid(
 end
 
 # Generate pdf with validation history and test plots for hyperparameter grid search
-function hyperGridSave(currentModelName, trainParams, testLoader, FEparams, MLmodel, lossFun, optimizer, multiLossArch = false)
+function hyperGridSave(currentModelName, trainParams, testLoader, FEparams, MLmodel, lossFun, optimizer; multiLossArch = false)
   # PDF with validation history plot
   plotLearnTries([trainParams], [optimizer.eta]; drawLegend = false, name = "a"*currentModelName*" valLoss", path = "./networks/models/$currentModelName")
   # PDF with list of hyperparameters
@@ -208,8 +277,6 @@ function saveModelAndReport!(k, activ, ch, params, comb, history, MLmodel, curre
   comb == 1 ? println("Saving first model and report...") : println("New best in test! Saving model and report...")
   # Store test score in "history" matrix
   comb > size(history, 1) ? (history = vcat(history, [currentModelName currentTest])) : (history[comb, 1] = currentModelName; history[comb, 2] = currentTest)
-  # Determine shape of test targets. Changes if using multi-output models
-  testTargets = shapeTargetloadCNN(multiLossArch, testData)
   # Generate pdf with validation history and visualization of tests
   hyperGridSave(currentModelName, params, testData, FEparams, MLmodel, lossFun, optimizer, multiLossArch)
 end
@@ -241,7 +308,10 @@ end
 #= Train ML model with early stopping.
 In predetermined intervals of epochs, evaluate
 the current model and print validation loss.=#
-function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun; modelName = timeNow(), saveModel = true)
+function trainEarlyStop!(
+  mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun;
+  modelName = timeNow(), saveModel = true, FEAloss = false
+)
   epoch = 1
   while true
     # In case of learning rate scheduling, apply decay at certain interval of epochs
@@ -250,10 +320,14 @@ function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trai
       println("New learning rate: ", sciNotation(opt.eta, 1))
     end
     # Batch training and parameter update
-    batchTrain!(trainDataLoader, mlModel, opt, lossFun)
+    if FEAloss
+      batchTrainFEAloss!(trainDataLoader, mlModel, opt)
+    else
+      batchTrain!(trainDataLoader, mlModel, opt, lossFun)
+    end
     # Evaluate model and print info at certain epoch intervals
     if epoch % trainParams.validFreq == 0
-      epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun)
+      epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun; FEAloss = FEAloss)
       if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
         valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
         @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
@@ -270,7 +344,7 @@ function trainEarlyStop!(mlModel, trainDataLoader, validateDataLoader, opt, trai
   end
   if saveModel
     cpu_model = cpu(mlModel)
-    @save "./networks/models/$modelName.bson" cpu_model
+    @save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
   end
 end
 

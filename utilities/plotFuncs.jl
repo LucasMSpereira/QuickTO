@@ -53,8 +53,8 @@ function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; fol
   # Reshape output of loadCNN to match dataset format
   predForces = convert.(Float32, unsqueeze(disp, dims = ndims(disp) + 1)) |> gpu |> model |> cpu
   if shiftForce # shift force components back to [-90; 90] range if necessary
-    (predForces[i] .-= 90 for i in 3:4)
-    (trueForces[i] .-= 90 for i in 3:4)
+    [predForces[i] .-= 90 for i in 3:4]
+    [trueForces[i] .-= 90 for i in 3:4]
   end
   maxDenormalize != 0 && (predForces *= maxDenormalize) # Denormalize force vectors if necessary
   fig = Figure(resolution = (1000, 700), fontsize = 20) # create makie figure and set it up
@@ -169,7 +169,7 @@ function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, s
   plotVM(FEAparams, disp, vf, fig, (4, 2))
   if goal == "save"
     # save image file
-    save("C:/Users/LucasKaoid/Desktop/datasets/post/isolated features/imgs/$dataset $section $(string(sample)).png", fig)
+    save(datasetPath*"analyses/isolated features/imgs/$dataset $section $(string(sample)).png", fig)
   elseif goal == "display"
     display(fig)
   else
@@ -269,13 +269,9 @@ function plotTopoIntermediate(forces, supps, vf, top, FEAparams, bound)
       intermPercent;
   )
   textConfig(l)
-  # labels for second line of grid
-  Label(fig[3, 1], "Topology VF = $(round(vf;digits=3))", textsize = 20)
-  # plot final topology
-  heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top')
-  # save image file
-  save("C:/Users/LucasKaoid/Desktop/datasets/post/intermediateDensities/$(rand(1:99999)).png", fig)
-
+  Label(fig[3, 1], "Topology VF = $(round(vf;digits=3))", textsize = 20) # labels for second line of grid
+  heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top') # plot final topology
+  save(datasetPath*"analyses/intermediateDensities/$(rand(1:99999)).png", fig) # save image file
 end
 
 # plot von Mises field

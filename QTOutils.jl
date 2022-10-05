@@ -8,8 +8,13 @@ using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
 using BSON: @load, @save
 import Nonconvex
 Nonconvex.@load NLopt
+using Base: llvmcall
 CairoMakie.activate!()
 
 # function definitions in "utilities" folder
 include.(glob("*", "./utilities/"));
+
+# dataset path
+const datasetPath = "C:/Users/LucasKaoid/Desktop/datasets/"
+
 println("Done with definitions.")

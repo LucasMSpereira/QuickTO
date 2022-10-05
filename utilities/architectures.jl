@@ -201,6 +201,48 @@ Flux.@functor Split
 # end
 
 # loadCNN structure 12. Predict positions and components of loads from displacement field
+# function multiOutputs(kernel, activ, ch)
+#   module1 = Chain(
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 2, activ),
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 2, activ),
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 2, activ),
+#     flatten)
+#   m1size = prod(Flux.outputsize(module1, (51, 141, 2, 1)))
+#   module2 = Split(Dense(m1size => 2), Dense(m1size => 2), Dense(m1size => 2), Dense(m1size => 2))
+#   return Chain(module1, module2) |> gpu
+# end
+
+# # loadCNN structure 13. Predict positions and components of loads from displacement field
+# function multiOutputs(kernel, activ, ch)
+#   module1 = Chain(
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 2, activ),
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 2, activ),
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 2, activ),
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 2, activ),
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 2, activ),
+#     BatchNorm(2),
+#     Conv(kernel, 2 => 1, activ),
+#     BatchNorm(1),
+#     Conv(kernel, 1 => 1, activ),
+#     BatchNorm(1),
+#     Conv(kernel, 1 => 1, activ),
+#     BatchNorm(1),
+#     Conv(kernel, 1 => 1, activ),
+#     flatten)
+#   m1size = prod(Flux.outputsize(module1, (51, 141, 2, 1)))
+#   module2 = Split(Dense(m1size => 2, activ), Dense(m1size => 2, activ), Dense(m1size => 2, activ), Dense(m1size => 2, activ))
+#   return Chain(module1, module2) |> gpu
+# end
+
+# loadCNN structure 14. Predict positions and components of loads from displacement field
 function multiOutputs(kernel, activ, ch)
   module1 = Chain(
     BatchNorm(2),
@@ -209,8 +251,25 @@ function multiOutputs(kernel, activ, ch)
     Conv(kernel, 2 => 2, activ),
     BatchNorm(2),
     Conv(kernel, 2 => 2, activ),
+    BatchNorm(2),
+    Conv(kernel, 2 => 2, activ),
+    BatchNorm(2),
+    Conv(kernel, 2 => 2, activ),
+    BatchNorm(2),
+    Conv(kernel, 2 => 1, activ),
+    BatchNorm(1),
+    Conv(kernel, 1 => 1, activ),
+    BatchNorm(1),
+    Conv(kernel, 1 => 1, activ),
+    BatchNorm(1),
+    Conv(kernel, 1 => 1, activ),
     flatten)
   m1size = prod(Flux.outputsize(module1, (51, 141, 2, 1)))
-  module2 = Split(Dense(m1size => 2), Dense(m1size => 2), Dense(m1size => 2), Dense(m1size => 2))
+  module2 = Split(
+    Chain(Dense(m1size => m1size ÷ 10), Dense(m1size ÷ 10 => 2, activ)),
+    Chain(Dense(m1size => m1size ÷ 10), Dense(m1size ÷ 10 => 2, activ)),
+    Chain(Dense(m1size => m1size ÷ 10), Dense(m1size ÷ 10 => 2, activ)),
+    Chain(Dense(m1size => m1size ÷ 10), Dense(m1size ÷ 10 => 2, activ)),
+  )
   return Chain(module1, module2) |> gpu
 end
