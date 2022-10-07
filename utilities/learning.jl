@@ -4,7 +4,7 @@
 function batchEval!(evalDataLoader, lossFun, mlModel)
   meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data.data.indices[end])/evalDataLoader.batchsize))
   count = 0
-  for (x, y) in evalDataLoader
+  for (x, y) in evalDataLoader # each batch
     count += 1
     meanEvalLoss[count] = lossFun(mlModel(gpu(x)), gpu(y))
   end
@@ -13,13 +13,13 @@ end
 
 # Batch of inputs during validation/testing. Adapted to FEAloss pipeline
 function batchEvalFEAloss!(evalDataLoader, mlModel)
-  meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data.data.indices[end])/evalDataLoader.batchsize))
+  meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data[1].indices[end])/evalDataLoader.batchsize))
   count = 0
-  for (x, y, z) in evalDataLoader
+  for (trueDisps, sup, vf, force) in evalDataLoader # each batch
     count += 1
-    meanEvalLoss[count] = FEAloss(mlModel(gpu(x)), gpu(x), gpu(y), gpu(z))
+    meanEvalLoss[count] = FEAloss(mlModel(gpu(trueDisps)), gpu(trueDisps), gpu(sup), gpu(vf), gpu(force))
   end
-  return meanEvalLoss
+  return mean(meanEvalLoss)
 end
 
 # Epoch of batch training ML model. Then take optimizer step
@@ -36,11 +36,9 @@ end
 # Epoch of batch training ML model. Then take optimizer step
 # Adapted to FEAloss pipeline
 function batchTrainFEAloss!(trainDataLoader, mlModel, opt)
-  for (x, y, z) in trainDataLoader # each batch
-    predForce = mlModel(gpu(x))
-    [predForce[i] .-= 90 for i in 3:4] # shift forces back to [-90; 90] range
+  for (trueDisps, sup, vf, force) in trainDataLoader # each batch
     grads = Flux.gradient(Flux.params(mlModel)) do
-      FEAloss(predForce, gpu(x), gpu(y), gpu(z))
+      FEAloss(mlModel(gpu(trueDisps)), gpu(trueDisps), gpu(sup), gpu(vf), gpu(force))
     end
     # Optimization step for current batch
     Flux.Optimise.update!(opt, Flux.params(mlModel), grads)
@@ -112,7 +110,7 @@ function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test =
   trainmode!(mlModel, true)
   if !test # If function was called in a validation context
     # Keep history of evaluations
-    trainParams.evaluations = vcat(trainParams.evaluations, mean(meanEvalLoss))
+    trainParams.evaluations = vcat(trainParams.evaluations, meanEvalLoss)
     if length(trainParams.evaluations) > 1 # Print info
       @printf "Epoch %i     Δ(Validation loss): %.3e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1])
     else
@@ -120,7 +118,7 @@ function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test =
     end
     typeof(trainParams) == epochTrainConfig && println()
   else # If function was called in a test context
-    return mean(meanEvalLoss)
+    return meanEvalLoss
   end
 end
 
@@ -144,9 +142,10 @@ function getDisploaders(disp, forces, numPoints, separation, batch; multiOutputs
     if !multiOutputs
       dispTrain, dispValidate, dispTest = splitobs((disp[:, :, :, 1:numPoints], forces[:, 1:numPoints]); at = separation, shuffle = true)
     else
-      dispTrain, dispValidate, dispTest = splitobs(
-        (disp[:, :, :, 1:numPoints], (forces[1][:, 1:numPoints], forces[2][:, 1:numPoints], forces[3][:, 1:numPoints], forces[4][:, 1:numPoints]));
-        at = separation, shuffle = true)
+      dispTrain, dispValidate, dispTest = splitobs((disp[:, :, :, 1:numPoints],
+          (forces[1][:, 1:numPoints], forces[2][:, 1:numPoints],
+          forces[3][:, 1:numPoints], forces[4][:, 1:numPoints]));
+          at = separation, shuffle = true)
     end
   else
     dispTrain, dispValidate, dispTest = splitobs((disp, forces); at = separation, shuffle = true)
@@ -158,11 +157,15 @@ function getDisploaders(disp, forces, numPoints, separation, batch; multiOutputs
 end
 
 # prepare data loaders for loadCNN training/validation/test in FEAloss pipeline
-function getFEAlossLoaders(disp, sup, vf, numPoints, separation, batch)
-  # split data into training, validation, and testing
+function getFEAlossLoaders(disp, sup, vf, force, numPoints, separation, batch)
+  # split dataset into training, validation, and testing
   FEAlossTrain, FEAlossValidate, FEAlossTest = splitobs(
-    (disp[:, :, :, 1:numPoints], sup[:, :, 1:numPoints], vf[1:numPoints]);
-    at = separation, shuffle = true)
+    (
+      disp[:, :, :, 1:numPoints],
+      sup[:, :, 1:numPoints], vf[1:numPoints],
+      (force[1][:, 1:numPoints], force[2][:, 1:numPoints],
+      force[3][:, 1:numPoints], force[4][:, 1:numPoints])
+    ); at = separation, shuffle = true)
   # return loaders for each stage
   return (DataLoader(FEAlossTrain; batchsize = batch, parallel = true),
     DataLoader(FEAlossValidate; batchsize = batch, parallel = true),
@@ -310,8 +313,7 @@ In predetermined intervals of epochs, evaluate
 the current model and print validation loss.=#
 function trainEarlyStop!(
   mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun;
-  modelName = timeNow(), saveModel = true, FEAloss = false
-)
+  modelName = timeNow(), saveModel = true, FEAloss = false)
   epoch = 1
   while true
     # In case of learning rate scheduling, apply decay at certain interval of epochs

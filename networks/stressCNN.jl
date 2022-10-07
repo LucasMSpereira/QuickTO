@@ -10,9 +10,12 @@ function customLoss2(x, y)
   # x: model output from one batch, y: batch of labels
   batchLoss = []
   for sampleInBatch in 1:size(y[1], 2) # iterate inside batch
-    samplePred = gpu(copy([x[i][:, sampleInBatch] for i in 1:4])); [samplePred[i] .-= 90 for i in 3:4]
-    sampleTrue = gpu(copy([y[i][:, sampleInBatch] for i in 1:4])); [sampleTrue[i] .-= 90 for i in 3:4]
+    samplePred = [x[1][:, sampleInBatch];; x[2][:, sampleInBatch];; x[3][:, sampleInBatch] .- 90;; x[4][:, sampleInBatch] .- 90]
+    sampleTrue = [y[1][:, sampleInBatch];; y[2][:, sampleInBatch];; y[3][:, sampleInBatch] .- 90;; y[4][:, sampleInBatch] .- 90]
     # position error
+    [println(samplePred[f, :]) for f in 1:2]
+    xMat = zeros(Float32, (2, 4))
+    [xMat[:, i] = samplePred[i] for i in axes(samplePred)[1]]
     xMat =  reduce(hcat, samplePred); [println(xMat[f, :]) for f in 1:2]
     yMat =  reduce(hcat, sampleTrue); [println(yMat[f, :]) for f in 1:2]
     @show [(samplePred[i] - sampleTrue[i]).^2 for i in 1:2]
@@ -37,6 +40,6 @@ end
 m = multiOutputs((5, 5), celu, 5)
 batchTrain!(dispTrainLoader, m, Flux.Optimise.NAdam(8e-5), customLoss2)
 ## Grid search for architecture hyperparameters
-hyperGrid(multiOutputs, [5], [celu], [5], (dispTrainLoader, dispValidateLoader, dispTestLoader),
-  FEAparams, customLoss2, Flux.Optimise.NAdam(8e-5); multiLossArch = true, earlyStop = 1)
+# hyperGrid(multiOutputs, [5], [celu], [5], (dispTrainLoader, dispValidateLoader, dispTestLoader),
+#   FEAparams, customLoss2, Flux.Optimise.NAdam(8e-5); multiLossArch = true, earlyStop = 1)
 #

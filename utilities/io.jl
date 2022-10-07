@@ -1,33 +1,37 @@
 # Functions that involve opening/closing/saving files
 
-# function used to combine file with data for FEAloss learning pipeline
+# combine files with data for FEAloss learning pipeline
 function combineFEAlossData()
-  fileList = readdir(datasetPath*"data/stressCNNdata/FEAloss"; join = true, sort = false)
-  globalVF = zeros(1); globalDisp = zeros(51, 141, 1); globalSup = zeros(3, 3, 1)
+  fileList = readdir(datasetPath*"data/stressCNNdata/fea loss data"; join = true, sort = false)
+  globalVF = zeros(1); globalDisp = zeros(51, 141, 1)
+  globalSup = zeros(3, 3, 1); globalForce = zeros(2, 4, 1)
   for file in fileList
     # open file, read data and concatenate to global arrays
     id = h5open(file, "r")
     globalVF = vcat(globalVF, read(id["vf"]))
     globalDisp = cat(globalDisp, read(id["disp"]); dims = 3)
+    globalForce = cat(globalForce, read(id["force"]); dims = 3)
     globalSup = cat(globalSup, read(id["sup"]); dims = 3)
     close(id)
     @show file
   end
   # discard null initial data
-  globalVF = globalVF[2:end]; globalDisp = globalDisp[:, :, 2:end]; globalSup = globalSup[:, :, 2:end]
+  globalVF = globalVF[2:end]; globalDisp = globalDisp[:, :, 2:end]
+  globalSup = globalSup[:, :, 2:end]; globalForce = globalForce[:, :, 2:end]
   count = length(globalVF)
   # create new file
-  h5open(datasetPath*"data/stressCNNdata/FEAloss/FEAlossData", "w") do new
-    # new = h5open(datasetPath*"data/stressCNNdata/FEAloss/FEAlossData", "w")
+  h5open(datasetPath*"data/stressCNNdata/fea loss data/FEAlossData", "w") do new
     # initialize fields in new file
     create_dataset(new, "vf", zeros(count))
     create_dataset(new, "disp", zeros(51, 141, 2*count))
     create_dataset(new, "sup", zeros(3, 3, count))
+    create_dataset(new, "force", zeros(2, 4, count))
     # fill new file with data
     for i in 1:count
       new["vf"][i] = globalVF[i]
       new["sup"][:, :, i] = globalSup[:, :, i]
       new["disp"][:, :, 2*i-1 : 2*i] = globalDisp[:, :, 2*i-1 : 2*i]
+      new["force"][:, :, i] = globalForce[:, :, i]
     end
   end
 end
@@ -176,38 +180,43 @@ function getDataFSVDT(file)
   return forces, supps, vf, disp, top
 end
 
-# create dataset to be used in new pipeline of load prediction through
-# displacements. Dataset contains displacements, VF and support of samples.
-# Initially restricted to samples with left side clamped.
+#= create dataset to be used in new pipeline of load prediction through
+displacements. Dataset contains displacements, VF ,support, and load
+of samples. Initially restricted to samples with left side clamped. =#
 function getFEAlossData(id)
   # get list of file names in folder "id"
   fileList = readdir(datasetPath*"data/$id"; join = true, sort = false)
   count = 0 # global sample counter
   # initialize "global" variables
-  globalVF = zeros(1); globalDisp = zeros(51, 141, 1); globalSup = zeros(3, 3, 1)
+  globalVF = zeros(1); globalDisp = zeros(51, 141, 1)
+  globalSup = zeros(3, 3, 1); globalForce = zeros(2, 4, 1)
   for file in fileList # loop in files
-    _, sup, vf, disp, _ = getDataFSVDT(file) # read data
+    force, sup, vf, disp, _ = getDataFSVDT(file) # read data
     samples = findall(x -> x == 4, sup[1, 3, :]) # find samples with desired support type
     # concatenate subset of file data with "global" arrays
     globalVF = vcat(globalVF, vf[samples])
+    globalForce = cat(globalForce, force[:, :, samples]; dims = 3)
     globalSup = cat(globalSup, sup[:, :, samples]; dims = 3)
     [globalDisp = cat(globalDisp, disp[:, :, 2*s-1 : 2*s]; dims = 3) for s in samples]
     count += length(samples) # update global counter
     println("count = $count - ", findfirst(x -> x == file, fileList), "/", length(fileList))
   end
   # discard null initial data
-  globalVF = globalVF[2:end]; globalDisp = globalDisp[:, :, 2:end]; globalSup = globalSup[:, :, 2:end]
+  globalVF = globalVF[2:end]; globalDisp = globalDisp[:, :, 2:end]
+  globalSup = globalSup[:, :, 2:end]; globalForce = globalForce[:, :, 2:end]
   # create new file to store everything
-  new = h5open(datasetPath*"data/stressCNNdata/FEAlossData$id", "w")
+  new = h5open(datasetPath*"data/stressCNNdata/fea loss data/FEAlossData$id", "w")
   # initialize fields in new file
   create_dataset(new, "vf", zeros(count))
   create_dataset(new, "disp", zeros(51, 141, 2*count))
   create_dataset(new, "sup", zeros(3, 3, count))
+  create_dataset(new, "force", zeros(2, 4, count))
   # fill new file with data
   for i in 1:count
     new["vf"][i] = globalVF[i]
     new["sup"][:, :, i] = globalSup[:, :, i]
     new["disp"][:, :, 2*i-1 : 2*i] = globalDisp[:, :, 2*i-1 : 2*i]
+    new["force"][:, :, i] = globalForce[:, :, i]
   end
   close(new) # close and save new file
 end
@@ -287,7 +296,7 @@ function loadDispData(multiOut)
 end
 
 function loadFEAlossData()
-  disp = []; sup = []; vf = []
+  disp, sup, vf, force, xPositions, yPositions, firstComponents, secondComponents = [], [], [], [], [], [], [], []
   h5open(datasetPath*"data/stressCNNdata/FEAlossData", "r") do h5file # open hdf5 file
     datasets = HDF5.get_datasets(h5file) # get references to datasets
     # read displacement data (51 x 141 x nSamples)
@@ -295,12 +304,24 @@ function loadFEAlossData()
     # reshape displacements to match Flux.jl's API
     disp = Array{Float32}(undef, (51, 141, 2, size(dispRead, 3) ÷ 2))
     [disp[:, :, :, sample] .= dispRead[:, :, 2*sample-1 : 2*sample] for sample in 1 : size(dispRead, 3)÷2]
+    force = convert.(Float32, HDF5.read(datasets[2])) # read force data (2 x 4 x nSamples)
+    # reshape force data
+    xPositions = zeros(Float32, (2, size(force, 3)))
+    yPositions = similar(xPositions)
+    firstComponents = similar(xPositions)
+    secondComponents = similar(xPositions)
+    for sample in axes(force)[3] # loop in samples
+      xPositions[:, sample] .= force[:, 1, sample]
+      yPositions[:, sample] .= force[:, 2, sample]
+      firstComponents[:, sample] .= force[:, 3, sample]
+      secondComponents[:, sample] .= force[:, 4, sample]
+    end
     # read supports data (3 x 3 x nSamples)
-    sup = convert.(Float32, HDF5.read(datasets[2]))
+    sup = convert.(Float32, HDF5.read(datasets[3]))
     # read vf data (nSamples vector)
-    vf = convert.(Float32, HDF5.read(datasets[3]))
+    vf = convert.(Float32, HDF5.read(datasets[4]))
   end
-  return disp, sup, vf
+  return disp, sup, vf, (xPositions, yPositions, firstComponents, secondComponents)
 end
 
 # Access folder "id". Apply function "func" to all samples in "numFiles" HDF5 files.

@@ -185,13 +185,14 @@ function predFEA(predForce, vf, supp)
   replace!(x -> max(1, x), predForce[1])
   predForce = reduce(hcat, [predForce[i] for i in axes(predForce)[1]]) # reshape predicted forces
   # load prediction -> problem definition -> FEA -> new displacements
-  solver = FEASolver(Direct, rebuildProblem(convert.(Float64, cpu(vf)), convert.(Float64, cpu(supp)), convert.(Float64, cpu(predForce)));
+  solver = FEASolver(Direct,
+    rebuildProblem(convert.(Float64, cpu(vf)), convert.(Float64, cpu(supp)), convert.(Float64, cpu(predForce)));
     xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0)) # FEA solver
   solver() # determine displacements
   feaDisp = copy(solver.u) # vector with displacements resulting from predicted forces
   # reshape result from FEA to [nodesY, nodesX, 2]
   return [quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 1:2:length(feaDisp)]);;;
-    quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 2:2:length(feaDisp)])]
+          quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 2:2:length(feaDisp)])]
 end
 
 # Create randomized FEA problem
@@ -287,7 +288,7 @@ function rebuildProblem(vf, BCs, forces)
                   "Eall"               => elementIDarray,
                   "Evolumes"           => elementIDarray)
   grid = generate_grid(Quadrilateral, FEAparams.meshSize)
-  numCellNodes = 4
+  numCellNodes = 4 # quantity of nodes per element (QUAD4)
   # matrix with element IDs in their respective position in the mesh
   elementIDmatrix = convert.(Int, quad(FEAparams.meshSize...,[i for i in 1:prod(FEAparams.meshSize)]))
   # [forces[1,1:2] = ij -> elementIDmatrix -> elementID -> grid -> nodeIDs] = lpos
@@ -417,17 +418,3 @@ function topoFEA(forces, supps, vf, top)
   return maximum(sqrt.(dispX.^2 + dispY.^2))
   
 end
-
-# Struct with simulation parameters
-@with_kw mutable struct FEAparameters
-  quants::Int = 1 # number of TO problems per section
-  V::Array{Real} = [0.4+rand()*0.5 for i in 1:quants] # volume fractions
-  problems::Any = Array{Any}(undef, quants) # store FEA problem structs
-  meshSize::Tuple{Int, Int} = (140, 50) # Size of rectangular mesh
-  elementIDarray::Array{Int} = [i for i in 1:prod(meshSize)] # Vector that lists element IDs
-  # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix::Array{Int,2} = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
-  section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
-end
-FEAparams = FEAparameters()
-problem!(FEAparams)

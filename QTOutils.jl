@@ -1,7 +1,7 @@
 # Packages
 println("Definitions...")
 using Glob, Ferrite, LinearAlgebra, Makie, TopOpt, Graphs, Zygote
-using Parameters, Printf, HDF5, Statistics, Combinatorics
+using Parameters, Printf, HDF5, Statistics, Combinatorics, ChainRulesCore
 using ProgressMeter, Random, CUDA, Poppler_jll, MultivariateStats
 using StatsBase, CairoMakie, MLUtils, Dates, MetaGraphs, Flux
 using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
