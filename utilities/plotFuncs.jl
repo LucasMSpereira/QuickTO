@@ -2,15 +2,42 @@
 
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
-function dispCNNtestPlots(quant::Int, path::String, dispTestLoader, finalName::String, FEparams, MLmodel, lossFun)
+function dispCNNtestPlots(quant::Int, path::String, dispTestLoader, finalName::String, FEparams, mlModel, lossFun)
   count = 0
   for (disp, force) in dispTestLoader # each batch
     for sampleInBatch in axes(disp)[end] # iterate inside batch
       count += 1; count > quant && break # limit number of tests
       plotDispTest( # plot comparison between prediction and truth
         FEparams, disp[:, :, :, sampleInBatch], Tuple([force[i][:, sampleInBatch]' for i in axes(force)[1]]),
-        MLmodel, 0, lossFun; folder = path, shiftForce = true)
+        mlModel, 0, lossFun; folder = path, shiftForce = true)
     end
+  end
+  combinePDFs(path, finalName)
+end
+
+# Use a trained model to predict samples and make plots comparing
+# with ground truth. In the end, combine plots into single pdf file.
+# Adaptation for FEAloss pipeline
+function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, finalName::String, FEparams, mlModel, lossFun)
+  count = 0
+  for (disp, sup, vf, force) in dispTestLoader # each batch
+    for sampleInBatch in axes(disp)[end] # iterate inside batch
+      count += 1; count > quant && break # limit number of tests
+      sampleDisp = unsqueeze(disp[:, :, :, sampleInBatch], dims = ndims(disp) + 1)
+      sampleForce = Tuple([force[i][:, sampleInBatch] for i in axes(force)[1]])
+      plotDispTest( # plot comparison between prediction and truth
+        FEparams, sampleDisp, sampleForce, mlModel, 0, lossFun; folder = path, shiftForce = true,
+        FEAlossInput = (sampleDisp |> gpu |> mlModel |> cpu, sampleDisp, sup[:, :, sampleInBatch], [vf[sampleInBatch]], sampleForce))
+    end
+  end
+  combinePDFs(path, finalName)
+end
+
+# Use a trained model to predict samples and make plots comparing
+# with ground truth. In the end, combine plots into single pdf file
+function loadCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
+  for sample in randDiffInt(quant, size(forceData, 3)) # loop in random samples
+    plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
   end
   combinePDFs(path, finalName)
 end
@@ -49,9 +76,17 @@ function parameterList(model, opt, lossFun, path; multiLossArch = false)
 end
 
 # Make plot for disp model test and visually compare ML model predictions against truth
-function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; folder = "", maxDenormalize = 0, shiftForce = false)
-  # Reshape output of loadCNN to match dataset format
-  predForces = convert.(Float32, unsqueeze(disp, dims = ndims(disp) + 1)) |> gpu |> model |> cpu
+function plotDispTest(
+  FEparams, disp, trueForces, model, modelName, lossFun;
+  folder = "", maxDenormalize = 0, shiftForce = false, FEAlossInput = 0
+)
+  if FEAlossInput == 0
+    # Reshape output of loadCNN to match dataset format
+    predForces = convert.(Float32, unsqueeze(disp, dims = ndims(disp) + 1)) |> gpu |> model |> cpu
+    trueForces = Tuple([permutedims(trueForces[i], (2, 1)) for i in axes(trueForces)[1]])
+  else
+    predForces = FEAlossInput[1]
+  end
   if shiftForce # shift force components back to [-90; 90] range if necessary
     [predForces[i] .-= 90 for i in 3:4]
     [trueForces[i] .-= 90 for i in 3:4]
@@ -61,7 +96,6 @@ function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; fol
   axHeight = 200 # axis height for vm and forces
   textPos = (-0.1, 0.5) # text position in final figure
   # plot true forces
-  trueForces = Tuple([permutedims(trueForces[i], (2, 1)) for i in axes(trueForces)[1]])
   forceAxis = plotForce(FEparams, trueForces, fig, (1, 2:3), (2, 2); alignText = textPos, axisHeight = axHeight)
   # plot predicted forces
   plotForce(FEparams, predForces, fig, (1, 2:3), (2, 3);
@@ -70,8 +104,11 @@ function plotDispTest(FEparams, disp, trueForces, model, modelName, lossFun; fol
   Label(fig[1, 1], "Force positions"; tellheight = :false)
   (colsize!(fig.layout, i, Fixed(500)) for i in 1:2)
   # loss value of current prediction
-  Label(fig[2, 1], "Loss: "*sciNotation(lossFun(predForces, trueForces), 3);
-  align = (-1, 0.5), tellheight = :false)
+  if FEAlossInput == 0
+    Label(fig[2, 1], "Loss: "*sciNotation(lossFun(predForces, trueForces), 3); align = (-1, 0.5), tellheight = :false)
+  else
+    Label(fig[2, 1], "Loss: "*sciNotation(lossFun(FEAlossInput...), 3); align = (-1, 0.5), tellheight = :false)
+  end
   if length(folder) == 0 # save figure created
     Makie.save("./networks/trainingPlots/$modelName test.pdf", fig)
   else
@@ -316,15 +353,6 @@ function plotVMtest(FEparams, input, trueForces, model, modelName, lossFun; fold
   else
     Makie.save("$folder/$(rand(1:999999)).pdf", fig)
   end
-end
-
-# Use a trained model to predict samples and make plots comparing
-# with ground truth. In the end, combine plots into single pdf file
-function loadCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
-  for sample in randDiffInt(quant, size(forceData, 3)) # loop in random samples
-    plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
-  end
-  combinePDFs(path, finalName)
 end
 
 # Generate pdf with tests using model that was trained on normalized data

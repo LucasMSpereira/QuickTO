@@ -132,7 +132,7 @@ function FEAlossPipeline(model, data, FEparams, lossFun, optimizer, modelName; e
   trainEarlyStop!(model, data[1:2]..., optimizer, params, lossFun; saveModel = true, FEAloss = true, modelName = modelName)
   Flux.trainmode!(model, false) # disable parameter training
   # save model and generate pdf report with training plot, tests, and info
-  hyperGridSave(modelName, params, data[3], FEparams, model, lossFun, optimizer; multiLossArch = false)
+  hyperGridSave(modelName, params, data[3], FEparams, model, lossFun, optimizer; multiLossArch = true)
   Flux.trainmode!(model, true) # reenable parameter training
 end
 
@@ -255,22 +255,6 @@ function multiLoss(output, target; lossFun)
   # function getLoaders() with multi-output: x positions,
   # y positions, components of first load, components of second load
   return mean([lossFun(modelOut, truth) for (modelOut, truth) in zip(output, target)])
-end
-
-# Generate pdf report from saved model, including test
-# plots and architecture description
-function reportFromSavedModel(pathModel, pathReport, opt, lossFun, multiOutput, vmTestLoader, FEAparams)
-  @load pathModel cpu_model # load model from bson file
-  gpu_model = gpu(cpu_model) # transfer model to gpu
-  # PDF with list of hyperparameters
-  parameterList(gpu_model, opt, lossFun, pathReport; multiLossArch = multiOutput)
-  # shape of test targets. change in case of multiple outputs
-  testTargets = shapeTargetloadCNN(multiOutput, vmTestLoader)
-  # Create test plots and unite all PDF files in folder
-  loadCNNtestPlots(
-    20, pathReport, vmTestLoader.data.data.parent, testTargets,
-    "reportFromSavedModel", FEAparams, gpu_model, lossFun
-  )
 end
 
 # In hyperGrid() function, save model and generate pdf report

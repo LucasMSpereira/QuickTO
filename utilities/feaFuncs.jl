@@ -188,9 +188,11 @@ function predFEA(predForce, vf, supp)
   @ignore_derivatives predForce2 = [b;;d;;predForce[3];;predForce[4]] # reshape predicted forces
   # load prediction -> problem definition -> FEA -> new displacements
   solver = []
-  @ignore_derivatives solver = FEASolver(Direct,
-    rebuildProblem(convert.(Float64, cpu(vf)), convert.(Float64, cpu(supp)), convert.(Float64, cpu(predForce2)));
-    xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0)) # FEA solver
+  @ignore_derivatives solver = FEASolver(
+      Direct,
+      rebuildProblem(convert.(Float64, cpu(vf)), convert.(Float64, cpu(supp)), convert.(Float64, cpu(predForce2)));
+      xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0)
+  ) # FEA solver
   feaDisp = Displacement(solver)(fill(vf, FEAparams.nElements))
   # reshape result from FEA to [nodesY, nodesX, 2]
   xDisp, yDisp = [], []

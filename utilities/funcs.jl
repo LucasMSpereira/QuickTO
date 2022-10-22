@@ -337,11 +337,16 @@ function reshapeForces(predForces)
 end
 
 function sciNotation(num::Real, printDigits::Int)
-  num == 0 && return "0."*repeat("0", printDigits)*"E00"
-  base10 = num |> abs |> log10 |> floor
-  mantissa = round(abs(num) / 10 ^ base10; digits = printDigits)
-  num < 0 && return "-$(mantissa)E$(Int(base10))"
-  return "$(mantissa)E$(Int(base10))"
+  try
+    num == 0 && return "0."*repeat("0", printDigits)*"E00"
+    base10 = num |> abs |> log10 |> floor
+    mantissa = round(abs(num) / 10 ^ base10; digits = printDigits)
+    num < 0 && return "-$(mantissa)E$(Int(base10))"
+    return "$(mantissa)E$(Int(base10))"
+  catch
+    @warn "sciNotation problem"
+    return "0"
+  end
 end
 
 showVal(x) = println(round.(x; digits = 4)) # auxiliary print function

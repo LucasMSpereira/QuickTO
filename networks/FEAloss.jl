@@ -16,7 +16,7 @@ function FEAloss(predForce, trueDisp, sup, vf, trueForce)
     trueDisp: true displacements;  sup: mechanical supports;
     vf: VF values;  trueForce: forces from dataset =#
   batchDispError = Float32[]
-  for sampleInBatch in 1:size(predForce[1], 2) # iterate inside batch
+  for sampleInBatch in axes(predForce[1])[2] # iterate inside batch
     # Use predicted forces in FEA to obtain new displacement field
     predDisp = predFEA(Tuple([predForce[i][:, sampleInBatch] for i in 1:4]),
       vf[sampleInBatch], sup[:, :, sampleInBatch])
@@ -30,6 +30,10 @@ end
 # load model. It will be further trained with new FEA loss
 @load "./networks/models/5-celu-5-1.0668805E3/5-celu-5-1.0668805E3.bson" cpu_model
 gpu_model = gpu(cpu_model)
-@time FEAlossPipeline(gpu_model, (FEAlossTrainLoader, FEAlossValidateLoader, FEAlossTestLoader),
-  FEAparams, FEAloss, Flux.Optimise.NAdam(5e-5), "5-celu-5-1.0668805E3")
+# @time FEAlossPipeline(gpu_model, (FEAlossTrainLoader, FEAlossValidateLoader, FEAlossTestLoader),
+#   FEAparams, FEAloss, Flux.Optimise.NAdam(5e-5), "5-celu-5-1.0668805E3")
 #
+@load "./networks/models/5-celu-5-1.0668805E3/FEA-74685.bson" cpu_model
+gpu_model = gpu(cpu_model)
+parameterList(gpu_model, Flux.Optimise.NAdam(5e-5), FEAloss, "./networks/models/5-celu-5-1.0668805E3"; multiLossArch = true)
+dispCNNtestPlotsFEAloss(20, "./networks/models/5-celu-5-1.0668805E3", FEAlossTestLoader, "currentModelName", FEAparams, gpu_model, FEAloss)
