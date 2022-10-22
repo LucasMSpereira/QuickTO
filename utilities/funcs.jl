@@ -365,6 +365,8 @@ timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with
   # matrix with element IDs in their respective position in the mesh
   elementIDmatrix::Array{Int,2} = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
   section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
+  nElements::Int32 = prod(meshSize) # quantity of elements
+  nNodes::Int32 = prod(meshSize .+ 1) # quantity of nodes
 end
 FEAparams = FEAparameters()
 problem!(FEAparams)

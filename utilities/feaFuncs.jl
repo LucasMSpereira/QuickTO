@@ -179,20 +179,24 @@ end
 # Run FEA with forces predicted by ML model to obtain new displacement field
 function predFEA(predForce, vf, supp)
   # bound Fᵢ and Fⱼ predictions
-  replace!(x -> min(FEAparams.meshSize[1], x), predForce[2])
-  replace!(x -> max(1, x), predForce[2])
-  replace!(x -> min(FEAparams.meshSize[2], x), predForce[1])
-  replace!(x -> max(1, x), predForce[1])
-  predForce = reduce(hcat, [predForce[i] for i in axes(predForce)[1]]) # reshape predicted forces
+  a, b, c, d = [], [], [], []
+  @ignore_derivatives a = replace(x -> min(FEAparams.meshSize[2], x), predForce[1]) # i upper bound
+  @ignore_derivatives b = replace(x -> max(1, x), a) # i lower bound
+  @ignore_derivatives c = replace(x -> min(FEAparams.meshSize[1], x), predForce[2]) # j upper bound
+  @ignore_derivatives d = replace(x -> max(1, x), c) # j lower bound
+  predForce2 = Float64[]
+  @ignore_derivatives predForce2 = [b;;d;;predForce[3];;predForce[4]] # reshape predicted forces
   # load prediction -> problem definition -> FEA -> new displacements
-  solver = FEASolver(Direct,
-    rebuildProblem(convert.(Float64, cpu(vf)), convert.(Float64, cpu(supp)), convert.(Float64, cpu(predForce)));
+  solver = []
+  @ignore_derivatives solver = FEASolver(Direct,
+    rebuildProblem(convert.(Float64, cpu(vf)), convert.(Float64, cpu(supp)), convert.(Float64, cpu(predForce2)));
     xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0)) # FEA solver
-  solver() # determine displacements
-  feaDisp = copy(solver.u) # vector with displacements resulting from predicted forces
+  feaDisp = Displacement(solver)(fill(vf, FEAparams.nElements))
   # reshape result from FEA to [nodesY, nodesX, 2]
-  return [quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 1:2:length(feaDisp)]);;;
-          quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 2:2:length(feaDisp)])]
+  xDisp, yDisp = [], []
+  @ignore_derivatives xDisp = quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 1:2:length(feaDisp)])
+  @ignore_derivatives yDisp = quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 2:2:length(feaDisp)])
+  return cat(xDisp, yDisp; dims = 3)
 end
 
 # Create randomized FEA problem
@@ -282,7 +286,7 @@ end
 
 # Rebuild FEA problem
 function rebuildProblem(vf, BCs, forces)
-  elementIDarray = [i for i in 1:prod(FEAparams.meshSize)] # Vector that lists element IDs
+  elementIDarray = [i for i in 1:FEAparams.nElements] # Vector that lists element IDs
   nodeCoords, cells = mshData(FEAparams.meshSize) # node coordinates and element definitions
   cellSets = Dict("SolidMaterialSolid" => elementIDarray, # associate certain properties to all elements
                   "Eall"               => elementIDarray,
@@ -290,31 +294,31 @@ function rebuildProblem(vf, BCs, forces)
   grid = generate_grid(Quadrilateral, FEAparams.meshSize)
   numCellNodes = 4 # quantity of nodes per element (QUAD4)
   # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix = convert.(Int, quad(FEAparams.meshSize...,[i for i in 1:prod(FEAparams.meshSize)]))
+  elementIDmatrix = convert.(Int, quad(FEAparams.meshSize...,[i for i in 1:FEAparams.nElements]))
   # [forces[1,1:2] = ij -> elementIDmatrix -> elementID -> grid -> nodeIDs] = lpos
   # place loads
-  eID = [elementIDmatrix[floor(Int, forces[f,1]), floor(Int, forces[f,2])] for f in 1:2]
+  eID = [elementIDmatrix[floor(Int, forces[f, 1]), floor(Int, forces[f, 2])] for f in 1:2]
   lpos = collect(Iterators.flatten([[grid.cells[eID[f]].nodes[e] for e in 1:4] for f in 1:2]))
-  cLoads = Dict(lpos[1] => forces[1,3:4])
-  [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
-  if length(lpos) > numCellNodes+1
+  cLoads = Dict(lpos[1] => forces[1, 3:4])
+  [merge!(cLoads, Dict(lpos[c] => forces[1, 3:4])) for c in 2:numCellNodes];
+  if length(lpos) > numCellNodes + 1
     ll = 0
-      for pos in (numCellNodes+1):length(lpos)
-          pos == (numCellNodes+1) && (ll = 2)
-          merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
+      for pos in (numCellNodes + 1) : length(lpos)
+          pos == (numCellNodes + 1) && (ll = 2)
+          merge!(cLoads, Dict(lpos[pos] => forces[ll, 3:4]))
           pos % numCellNodes == 0 && (ll += 1)
       end
   end
   # define nodeSets according to boundary condition (BC) definition
-  if BCs[1,3] == 4
-    firstCol = [(n-1)*(FEAparams.meshSize[1]+1) + 1 for n in 1:(FEAparams.meshSize[2]+1)]
+  if BCs[1, 3] == 4
+    firstCol = [(n - 1)*(FEAparams.meshSize[1] + 1) + 1 for n in 1:(FEAparams.meshSize[2] + 1)]
     secondCol = firstCol .+ 1
     nodeSets = Dict("supps" => vcat(firstCol, secondCol))
-  elseif BCs[1,3] == 6
-    firstCol = [(FEAparams.meshSize[1]+1)*n for n in 1:(FEAparams.meshSize[2]+1)]
+  elseif BCs[1, 3] == 6
+    firstCol = [(FEAparams.meshSize[1] + 1) * n for n in 1:(FEAparams.meshSize[2] + 1)]
     secondCol = firstCol .- 1
     nodeSets = Dict("supps" => vcat(firstCol, secondCol))
-  elseif BCs[1,3] == 5
+  elseif BCs[1, 3] == 5
     nodeSets = Dict("supps" => [n for n in 1:(FEAparams.meshSize[1]+1)*2])
   elseif BCs[1,3] == 7
     nodeSets = Dict("supps" => [n for n in ((FEAparams.meshSize[1]+1)*(FEAparams.meshSize[2]-1)+1):((FEAparams.meshSize[1]+1)*((FEAparams.meshSize[2]+1)))])
