@@ -125,6 +125,10 @@ function cornerPos(topo)
   return closeEles
 end
 
+# add fourth dimension to Flux data
+# (width, height, channels, batch)
+dim4 = unsqueeze(; dims = 5)
+
 # identify samples with structural disconnection in final topology
 function disconnections(topology, dataset, section, sample)
   # make sample topology binary
@@ -347,6 +351,15 @@ function sciNotation(num::Real, printDigits::Int)
     @warn "sciNotation problem"
     return "0"
   end
+end
+
+#= Inside 'squeeze and excitation' (SE) block, global average
+pooling creates vector that's used to weight the channels of a 4D tensor.
+This function does the shape acrobatics needed for this weighting =#
+function SEmult(channelWeights, inputTensor)
+  res1 = [inputTensor[:, :, slice3, :] * channelWeights[slice3] for slice3 in axes(inputTensor)[3]]
+  res2 = cat(dropdims.(res1; dims = 3)...; dims = 3)
+  dim4(res2)
 end
 
 showVal(x) = println(round.(x; digits = 4)) # auxiliary print function

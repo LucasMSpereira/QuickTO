@@ -23,7 +23,7 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   for (disp, sup, vf, force) in dispTestLoader # each batch
     for sampleInBatch in axes(disp)[end] # iterate inside batch
       count += 1; count > quant && break # limit number of tests
-      sampleDisp = unsqueeze(disp[:, :, :, sampleInBatch], dims = ndims(disp) + 1)
+      sampleDisp = dim4(disp[:, :, :, sampleInBatch])
       sampleForce = Tuple([force[i][:, sampleInBatch] for i in axes(force)[1]])
       plotDispTest( # plot comparison between prediction and truth
         FEparams, sampleDisp, sampleForce, mlModel, 0, lossFun; folder = path, shiftForce = true,
@@ -82,7 +82,7 @@ function plotDispTest(
 )
   if FEAlossInput == 0
     # Reshape output of loadCNN to match dataset format
-    predForces = convert.(Float32, unsqueeze(disp, dims = ndims(disp) + 1)) |> gpu |> model |> cpu
+    predForces = convert.(Float32, dim4(disp)) |> gpu |> model |> cpu
     trueForces = Tuple([permutedims(trueForces[i], (2, 1)) for i in axes(trueForces)[1]])
   else
     predForces = FEAlossInput[1]
@@ -206,8 +206,9 @@ function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, s
   plotVM(FEAparams, disp, vf, fig, (4, 2))
   if goal == "save"
     # save image file
-    save(datasetPath*"analyses/isolated features/imgs/$dataset $section $(string(sample)).png", fig)
+    Makie.save(datasetPath*"analyses/isolated features/imgs/$dataset $section $(string(sample)).pdf", fig)
   elseif goal == "display"
+    GLMakie.activate!()
     display(fig)
   else
     println("\n\nWrong goal for plotSample().\n\n")
@@ -316,7 +317,7 @@ function plotVM(FEAparams, disp, vf, fig, figPos)
   # get von Mises field
   vm = calcVM(prod(FEAparams.meshSize), FEAparams, disp, 210e3*vf, 0.3)
   # plot von Mises
-  _,hm = heatmap(fig[figPos[1], figPos[2]],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm')
+  _,hm = heatmap(fig[figPos[1], figPos[2]],1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, vm')
   # setup colorbar for von Mises
   bigVal = 1.1*ceil(maximum(vm))
   t = floor(0.2*bigVal)
