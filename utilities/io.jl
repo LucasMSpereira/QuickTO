@@ -459,7 +459,7 @@ function stressCNNdata(id, numFiles, FEAparams)
     end
     nels = prod(FEAparams.meshSize) # number of elements in mesh
     # loop in samples of current file
-    @showprogress 1 "File $file/$numFiles" for sample in axes(vf)[1]
+    for sample in axes(vf)[1]
       # get VM and principal stress fields for current sample
       sampleVM, _, samplePrincipals, _ = calcConds(
         nels, FEAparams, dispFile[:, :, 2 * sample - 1 : 2 * sample],

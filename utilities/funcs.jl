@@ -353,16 +353,35 @@ function sciNotation(num::Real, printDigits::Int)
   end
 end
 
-#= Inside 'squeeze and excitation' (SE) block, global average
-pooling creates vector that's used to weight the channels of a 4D tensor.
-This function does the shape acrobatics needed for this weighting =#
-function SEmult(channelWeights, inputTensor)
-  res1 = [inputTensor[:, :, slice3, :] * channelWeights[slice3] for slice3 in axes(inputTensor)[3]]
-  res2 = cat(dropdims.(res1; dims = 3)...; dims = 3)
-  dim4(res2)
-end
-
 showVal(x) = println(round.(x; digits = 4)) # auxiliary print function
+
+# print order of layers and variation in data size along Flux chain
+# problem with number print and recursion
+function sizeLayers(myChain, input; currentLayer = 0)
+  @show currentLayer
+  if currentLayer == 0
+    println("Input size: ", size(input))
+    layer = 1
+  else
+    layer = copy(currentLayer)
+  end
+  for _ in 1:length(myChain) # iterate in NN layers
+    if typeof(myChain[layer]) <: SkipConnection # recursion in case of skip connection
+      sizeLayers(
+        myChain[layer].layers,
+        input |> myChain[1 : layer - 1];
+        currentLayer = max(layer - 1, 1)
+      )
+    else # print size of output if not skip connection
+      println(
+        layer + currentLayer, ": ", typeof(myChain[layer]),
+        "   -   output size: ", input |> myChain[1:layer] |> size
+      )
+      layer += 1
+    end
+  end
+  return currentLayer
+end
 
 # statistical summary of a numerical array
 function statsum(arr)

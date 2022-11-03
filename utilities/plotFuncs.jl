@@ -309,7 +309,30 @@ function plotTopoIntermediate(forces, supps, vf, top, FEAparams, bound)
   textConfig(l)
   Label(fig[3, 1], "Topology VF = $(round(vf;digits=3))", textsize = 20) # labels for second line of grid
   heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top') # plot final topology
-  save(datasetPath*"analyses/intermediateDensities/$(rand(1:99999)).png", fig) # save image file
+  save(datasetPath*"analyses/intermediateDensities/$(rand(1:99999)).pdf", fig) # save image file
+end
+
+function plotTopoPred(targetTopo, predTopo; goal = "save")
+  fig = Figure(resolution = (1100, 800)) # create makie figure
+  # labels for each heatmap
+  Label(fig[1, 1], "Original", textsize = 20; tellheight = false); Label(fig[2, 1], "Prediction", textsize = 20; tellheight = false)
+  _, hmPred = heatmap(fig[2, 2], # heatmap of predicted topology
+    Array(reshape(predTopo, (FEAparams.meshSize[2], FEAparams.meshSize[1]))')
+  )
+  colsize!(fig.layout, 2, Fixed(800))
+  # heatmap of original topology
+  _, hmOriginal = heatmap(fig[1, 2], Array(targetTopo'))
+  # colorbars
+  Colorbar(fig[1, 3], hmPred); Colorbar(fig[2, 3], hmOriginal)
+  if goal == "display" # display image
+    GLMakie.activate!()
+    display(fig)
+  elseif goal == "save" # save image
+    CairoMakie.activate!()
+    Makie.save("./networks/test.pdf", fig)
+  else
+    error("Invalid kw arg 'goal' in plotTopoPred().")
+  end
 end
 
 # plot von Mises field

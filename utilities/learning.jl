@@ -53,7 +53,7 @@ function crossVal(data, numFolds, activ, epochs, batch, opt, save)
     model, modParams = buildModel(activ) # build model
     # number of times to go through entire training dataset,
     # considering k-fold cross-validation
-    @showprogress "Epoch" for epoch in 1:epochs
+    for epoch in 1:epochs
       trainLoader = DataLoader((data = fold[1][1], label = fold[1][2]); batchsize = batch, parallel = true)
       for (x, y) in trainLoader
         grads = Flux.gradient(modParams) do
