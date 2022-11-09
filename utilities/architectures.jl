@@ -2,9 +2,9 @@
 
 # Discriminator for TopologyGAN
 # https://arxiv.org/abs/2003.04685
-function discriminator()
+function topologyGANdisc()
   m1 = Chain(
-    Conv((5, 5), 6 => df_dim; stride = 2, pad = SamePad()),
+    Conv((5, 5), 7 => df_dim; stride = 2, pad = SamePad()),
     leakyrelu, # h0
     Conv((5, 5), df_dim => df_dim * 2; stride = 2, pad = SamePad()),
     BatchNorm(df_dim * 2),
@@ -17,12 +17,12 @@ function discriminator()
     leakyrelu, # h3
     flatten,
   )
-  m1size = prod(Flux.outputsize(m1, (51, 141, 6, 1)))
-  m2 = Split(
-    Chain(Dense(m1size => 1, sigmoid), x -> reduce(*, x)),
-    Chain(Dense(m1size => 1), x -> reduce(*, x)),
+  m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
+  m2 = Chain(
+    Dense(m1size => 1), # h4 (don't need sigmoid)
+    x -> dropdims(x |> transpose |> Array; dims = 2)
   )
-  return Chain(m1, m2)
+  return Chain(m1, m2) |> gpu
 end
 
 # loadCNN structure 14. Predict positions and components of loads from displacement field
@@ -91,7 +91,6 @@ function SE_ResNetChain(; sizeChain = 32)
   se2 = Chain(
     Dense(se1Size => se1Size ÷ 16, relu),
     Dense(se1Size ÷ 16 => se1Size, sigmoid),
-    aa -> reshape(aa, (1, 1, :, 1))
   )
   se = SEblock(Chain(se1, se2)) # squeeze and excitation (SE) block
   seRes = SEresNet(Chain(
@@ -104,7 +103,7 @@ function SE_ResNetChain(; sizeChain = 32)
     SkipConnection(
       se,
       # SE uses global avg pooling to define weights for tensor channels
-      (channelWeights, inputTensor) -> inputTensor .* reshape(channelWeights, (1, 1, :))
+      (channelWeights, inputTensor) -> inputTensor .* reshape(view(channelWeights, :, :), (1, 1, gf_dim * 4, :))
     ),
   ))
   return Chain(ntuple(i -> SkipConnection(seRes, +), sizeChain))
@@ -143,7 +142,7 @@ function U_SE_ResNetGenerator()
     SkipConnection(d3e1, (mx, x) -> cat(mx, x, dims = 3)), # concat d3 e1, ### d3
     relu,
     ConvTranspose((5, 5), gf_dim * 2 => 1; stride = 2, pad = SamePad()), ### self.d4
-    MeanPool((15, 13); stride = 1),
+    MeanPool((15, 13); stride = 1, pad = (0, 1, 0, 1)),
     sigmoid,
-  )
+  ) |> gpu
 end

@@ -422,5 +422,13 @@ function topoFEA(forces, supps, vf, top)
     end
   end
   return maximum(sqrt.(dispX.^2 + dispY.^2))
-  
+end
+
+# volume fraction of each topology in a batch
+function volFrac(topologyBatch::Array{Float32, 4})
+  mapslices(
+    topology -> sum(topology) / FEAparams.nElements |> Float32,
+    topologyBatch;
+    dims = [1, 2]
+  )
 end
