@@ -16,9 +16,9 @@ include.(glob("*", "./utilities/"));
 # dataset path
 const datasetPath = "C:/Users/LucasKaoid/Desktop/datasets/"
 # reference number of channels used in TopologyGAN
-const gf_dim::Int64 = 128
-const df_dim::Int64 = 128
+const gf_dim = 128
+const df_dim = 128
 # coefficients used in TopologyGAN loss
-const l1λ::Int32 = 10_000 
-const l2λ::Int32 = 1
+const l1λ = 10_000 
+const l2λ = 1
 println("Done with definitions.")

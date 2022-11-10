@@ -85,7 +85,7 @@ Flux.@functor SEresNet
 
 # Return Flux Chain of SE-ResNet blocks of desired size.
 # Generator from original paper used 32 blocks
-function SE_ResNetChain(; sizeChain = 32)
+function SE_ResNetChain(sizeChain)
   se1 = Chain(GlobalMeanPool(), flatten)
   se1Size = prod(Flux.outputsize(se1, (1, 1, gf_dim * 4, 1)))
   se2 = Chain(
@@ -111,8 +111,8 @@ end
 
 # U-SE-ResNet generator from original article
 # https://arxiv.org/abs/2003.04685
-function U_SE_ResNetGenerator()
-  seResNetblocks = SE_ResNetChain()
+function U_SE_ResNetGenerator(; sizeChain = 32)
+  seResNetblocks = SE_ResNetChain(sizeChain)
   d1e3 = Chain(
     seResNetblocks, # Long chain of SE-Res-Net blocks
     relu,
