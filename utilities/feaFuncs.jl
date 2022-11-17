@@ -426,9 +426,7 @@ end
 
 # volume fraction of each topology in a batch
 function volFrac(topologyBatch::Array{Float32, 4})
-  mapslices(
-    topology -> sum(topology) / FEAparams.nElements |> Float32,
-    topologyBatch;
-    dims = [1, 2]
-  )
+  return [sum(topologyBatch[:, :, :, sample]) for sample in axes(topologyBatch, 4)] ./ FEAparams.nElements
 end
+
+include("./funcs.jl")

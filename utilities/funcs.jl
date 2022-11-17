@@ -229,6 +229,22 @@ function estimateGrads(vals, quants, iCenter, jCenter)
 
 end
 
+# toy data for GANs
+function GANdata()
+  nSamples = 500
+  standardSize = (51, 141, 1, nSamples)
+  realTopologyData = pad_constant(rand(Float32, (50, 140, 1, nSamples)), (0, 1, 0, 1); dims = [1 2])
+  ### FEA input data (read from dataset)
+  vfData = ones(Float32, standardSize) .* reshape(view(rand(Float32, nSamples), :), (1, 1, 1, :)) # VF
+  supportData = rand(Bool, standardSize) # binary highlighting pinned NODES
+  # components and position of loads (read from dataset)
+  FxData = zeros(Float32, standardSize); FxData[10, 30, 1, :] .= 5f1; FxData[20, 40, 1, :] .= -3f1
+  FyData = zeros(Float32, standardSize); FyData[10, 30, 1, :] .= 1f1; FyData[20, 40, 1, :] .= 2f1
+  ### conditioning with physical fields (read from dataset)
+  vmData = rand(Float32, standardSize); energyData = rand(Float32, standardSize)
+  return vfData, vmData, energyData, supportData, FxData, FyData, realTopologyData
+end
+
 # Identify non-binary topologies
 function getNonBinaryTopos(forces, supps, vf, disp, top)
   bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
@@ -285,6 +301,19 @@ function isoFeats(force, supp, topo)
   return all(neighborDens .> 0.0625)
 end
 
+# contextual logit binary cross-entropy. "If" statement
+# tries to avoid allocation of new vector of 1s or 0s
+# when possible (far majority of times). It will then use instead
+# constant global variables discBinaryReal and discBinaryFake
+function logitBinCrossEnt(logits, label)
+  if length(logits) != batchSize
+    expected = fill(label |> Float64, size(logits))
+  else
+    expected = label == 1 ? discBinaryReal : discBinaryFake
+  end
+  return Flux.Losses.logitbinarycrossentropy(logits, expected)
+end
+
 # Returns total number of samples across files in list
 numSample(files) = sum([parse(Int, split(files[g][findlast(x->x=='\\', files[g])+1:end])[3]) for g in keys(files)])
 
@@ -324,6 +353,9 @@ function randDiffInt(n, val)
   end
   return randVec
 end
+
+# reshape output of discriminator
+reshapeDiscOut(x) = dropdims(x |> transpose |> Array; dims = 2)
 
 # Reshape output from stressCNN
 function reshapeForces(predForces)
@@ -392,18 +424,6 @@ end
 
 timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
 
-# Struct with simulation parameters
-@with_kw mutable struct FEAparameters
-  quants::Int = 1 # number of TO problems per section
-  V::Array{Real} = [0.4+rand()*0.5 for i in 1:quants] # volume fractions
-  problems::Any = Array{Any}(undef, quants) # store FEA problem structs
-  meshSize::Tuple{Int, Int} = (140, 50) # Size of rectangular mesh
-  elementIDarray::Array{Int} = [i for i in 1:prod(meshSize)] # Vector that lists element IDs
-  # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix::Array{Int,2} = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
-  section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
-  nElements::Int32 = prod(meshSize) # quantity of elements
-  nNodes::Int32 = prod(meshSize .+ 1) # quantity of nodes
-end
-FEAparams = FEAparameters()
-problem!(FEAparams)
+<|(f, args...) = f(args...)
+
+include("./io.jl")

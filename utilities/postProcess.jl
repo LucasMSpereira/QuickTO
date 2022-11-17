@@ -79,3 +79,5 @@ function calcVM(nels, FEAparams, disp, e, v)
   end
   return vm
 end
+
+include("./testFunctions.jl")

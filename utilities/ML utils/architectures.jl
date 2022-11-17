@@ -19,8 +19,7 @@ function topologyGANdisc()
   )
   m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
   m2 = Chain(
-    Dense(m1size => 1), # h4 (don't need sigmoid)
-    x -> dropdims(x |> transpose |> Array; dims = 2)
+    Dense(m1size => 1) # h4 (don't need sigmoid)
   )
   return Chain(m1, m2) |> gpu
 end
@@ -56,32 +55,6 @@ function multiOutputs(kernel, activ, ch)
   )
   return Chain(module1, module2) |> gpu
 end
-
-# custom split layer
-struct Split{T}
-  paths::T
-end
-Split(paths...) = Split(paths)
-Flux.@functor Split
-(m::Split)(x::AbstractArray) = map(f -> f(x), m.paths)
-
-# Squeeze and excitation block for TopologyGAN U-SE-ResNet generator
-struct SEblock
-  chain::Chain
-end
-function (m::SEblock)(input)
-  return m.chain(input)
-end
-Flux.@functor SEblock
-
-# Residual block for TopologyGAN U-SE-ResNet generator
-struct SEresNet
-  chain::Chain
-end
-function (m::SEresNet)(input)
-  return m.chain(input)
-end
-Flux.@functor SEresNet
 
 # Return Flux Chain of SE-ResNet blocks of desired size.
 # Generator from original paper used 32 blocks

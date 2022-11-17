@@ -1,5 +1,18 @@
 # Functions that involve opening/closing/saving files
 
+function checkPointSaveGAN(metaData)
+  # transfer models to cpu
+  cpuGenerator = cpu(metaData.generator)
+  cpuDiscriminator = cpu(metaData.discriminator)
+  # save models
+  @save "./networks/models/checkpoints/$(timeNow())gen.bson" cpuGenerator
+  @save "./networks/models/checkpoints/$(timeNow())disc.bson" cpuDiscriminator
+  # bring models back to gpu
+  metaData.generator = gpu(cpuGenerator)
+  metaData.discriminator = gpu(cpuDiscriminator)
+  return nothing
+end
+
 # combine files with data for FEAloss learning pipeline
 function combineFEAlossData()
   fileList = readdir(datasetPath*"data/stressCNNdata/fea loss data"; join = true, sort = false)
@@ -135,6 +148,28 @@ function createFile(quants, sec, runID, nelx,nely)
   create_dataset(quickTOdata, "disp", zeros(nely, nelx, 2*quants))
   # return file id to write info during dataset generation
   return quickTOdata
+end
+
+# print information in validation steps
+function GANprints(epoch, metaData; earlyStopVals = 0)
+  # if first early-stop check
+  if length(metaData.lossesVals[:genValHistory]) == metaData.trainConfig.earlyStopQuant + 1
+    println("Epoch       ΔGenerator loss    ΔDiscriminator loss")
+  end
+  if earlyStopVals != 0 # If performing early-stopping check
+    println(
+      rpad(epoch, 12),
+      rpad <| ("$(round(earlyStopGANs[1], 2))%", 19)...,
+      round(earlyStopGANs[2], 2), "%"
+    )
+  else # if validation without early-stop check
+    println(
+      rpad(epoch, 12),
+      rpad <| (sciNotation(metaData.lossesVals[:genValHistory][end], 4), 18)...,
+      sciNotation(metaData.lossesVals[:discValHistory][end], 4),
+      "    No early-stop check yet."
+    )
+  end
 end
 
 # Create displacements dataset by gathering that info in new file
@@ -533,3 +568,5 @@ function writeConds(fileID, vm, σ, principals, strainEnergy, problemID, FEApara
   fileID["conditions"]["energy"][:,:,problemID] = strainEnergy
 
 end
+
+include("./typeDefinitions.jl")

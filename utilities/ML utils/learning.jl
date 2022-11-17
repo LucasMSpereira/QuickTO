@@ -1,50 +1,5 @@
 # Functions related to machine learning
 
-# Batch of inputs during validation/testing
-function batchEval!(evalDataLoader, lossFun, mlModel)
-  meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data.data.indices[end])/evalDataLoader.batchsize))
-  count = 0
-  for (x, y) in evalDataLoader # each batch
-    count += 1
-    meanEvalLoss[count] = lossFun(x |> gpu |> mlModel |> cpu, y)
-  end
-  return meanEvalLoss
-end
-
-# Batch of inputs during validation/testing. Adapted to FEAloss pipeline
-function batchEvalFEAloss!(evalDataLoader, mlModel)
-  meanEvalLoss = zeros(ceil(Int, length(evalDataLoader.data[1].indices[end])/evalDataLoader.batchsize))
-  count = 0
-  for (trueDisps, sup, vf, force) in evalDataLoader # each batch
-    count += 1
-    meanEvalLoss[count] = FEAloss(trueDisps |> gpu |> mlModel |> cpu, trueDisps, sup, vf, force)
-  end
-  return mean(meanEvalLoss)
-end
-
-# Epoch of batch training ML model. Then take optimizer step
-function batchTrain!(trainDataLoader, mlModel, opt, lossFun)
-  for (x, y) in trainDataLoader # each batch
-    grads = Flux.gradient(Flux.params(mlModel)) do
-      lossFun(x |> gpu |> mlModel |> cpu, y)
-    end
-    # Optimization step for current batch
-    Flux.Optimise.update!(opt, Flux.params(mlModel), grads)
-  end
-end
-
-# Epoch of batch training ML model. Then take optimizer step
-# Adapted to FEAloss pipeline
-function batchTrainFEAloss!(trainDataLoader, mlModel, opt)
-  for (trueDisps, sup, vf, force) in trainDataLoader # each batch
-    grads = Flux.gradient(
-      () -> FEAloss(trueDisps |> gpu |> mlModel |> cpu, trueDisps, sup, vf, force),
-      Flux.params(mlModel))
-    # Optimization step for current batch
-    Flux.Optimise.update!(opt, Flux.params(mlModel), grads)
-  end
-end
-
 #= k-fold cross-validation: number of folds in which training/validation
 dataset will be split. In each of the k iterations, (k-1) folds will be used for
 training, and the remaining fold will be used for validation =#
@@ -77,24 +32,36 @@ function crossVal(data, numFolds, activ, epochs, batch, opt, save)
   end
 end
 
-# Custom loss function for mulitple outputs in predicting loads from displacements
-function customLoss1(x, y)
-  # x: model output from one batch, y: batch of labels
-  batchLoss = []
-  for sampleInBatch in 1:size(y[1], 2) # iterate inside batch
-    batchLoss = vcat(batchLoss, [(x[i][:, sampleInBatch] - y[i][:, sampleInBatch]) .^ 2 for i in axes(x)[1]] .|> mean |> mean)
-  end
-  return convert(Float32, mean(batchLoss)) |> gpu
+# calculate earlystop
+function earlyStopCalc(validationHistory, earlyStopQuant)
+  (validationHistory[end] - validationHistory[end - earlyStopQuant]) / validationHistory[end - earlyStopQuant] * 100
 end
 
 # Check for early stop: if validation loss didn't
 # decrease enough in the last few validations
 function earlyStopCheck(trainParams)
-  currentValidLoss = trainParams.evaluations[end]
-  pastValidLoss = trainParams.evaluations[end - trainParams.earlyStopQuant]
-  # Return boolean that signals if training should stop
-  valLossPercentDrop = (currentValidLoss - pastValidLoss)/pastValidLoss*100 
-  return valLossPercentDrop, valLossPercentDrop > -trainParams.earlyStopPercent
+  if isa(trainParams, metaData) # in case of GAN training
+    # percentage drop in generator validation loss
+    genValLossPercentDrop = earlyStopCalc(
+      trainParams.lossesVals[:genValHistory],
+      trainParams.trainConfig.earlyStopQuant
+    )
+    # percentage drop in generator validation loss
+    discValLossPercentDrop = earlyStopCalc(
+      trainParams.lossesVals[:discValHistory],
+      trainParams.trainConfig.earlyStopQuant
+    )
+    # Return percentage drop and boolean that signals if training should stop
+    return (
+      genValLossPercentDrop,
+      discValLossPercentDrop,
+      prod([genValLossPercentDrop discValLossPercentDrop] .> -trainParams.trainConfig.earlyStopPercent)
+    )
+  else
+    valLossPercentDrop = earlyStopCalc(trainParam.evaluations, trainParam.earlyStopQuant)
+    # Return percentage drop and boolean that signals if training should stop
+    return valLossPercentDrop, valLossPercentDrop > -trainParams.earlyStopPercent
+  end
 end
 
 # Evaluate (validation or test) model and print performance. To be called occasionally
@@ -136,69 +103,37 @@ function FEAlossPipeline(model, data, FEparams, lossFun, optimizer, modelName; e
   Flux.trainmode!(model, true) # reenable parameter training
 end
 
-# prepare data loaders for loadCNN training/validation/test using displacements
-function getDisploaders(disp, forces, numPoints, separation, batch; multiOutputs = false)
-  if numPoints != 0 # use all data or certain number of points
-    if !multiOutputs
-      dispTrain, dispValidate, dispTest = splitobs((disp[:, :, :, 1:numPoints], forces[:, 1:numPoints]); at = separation, shuffle = true)
-    else
-      dispTrain, dispValidate, dispTest = splitobs((disp[:, :, :, 1:numPoints],
-          (forces[1][:, 1:numPoints], forces[2][:, 1:numPoints],
-          forces[3][:, 1:numPoints], forces[4][:, 1:numPoints]));
-          at = separation, shuffle = true)
+# epoch of GAN usage, be it training, validation or test
+# return avg. losses for epoch
+function GANepoch!(metaData, goal)
+  # choose split of the dataset depending on context
+  genLossHist, discLossHist, batchCount = 0.0, 0.0, 0
+  # GC.gc()
+  # CUDA.reclaim()
+  # CUDA.memory_status(); println()
+  # each batch of current epoch
+  for (genInput, FEAinfo, realTopology) in getDataset(metaData, goal)
+    batchCount += 1; @show batchCount
+    # use NNs, and get gradients and losses for current batch
+    genGrads, genLossVal, discGrads, discLossVal = GANgrads(
+      metaData.generator, metaData.discriminator, genInput, FEAinfo, realTopology
+    )
+    GC.gc()
+    CUDA.reclaim()
+    CUDA.memory_status(); println()
+    if goal == :train # update NNs parameters in case of training
+      Flux.Optimise.update!(metaData.opt, Flux.params(metaData.generator), genGrads)
+      Flux.Optimise.update!(metaData.opt, Flux.params(metaData.discriminator), discGrads)
     end
-  else
-    dispTrain, dispValidate, dispTest = splitobs((disp, forces); at = separation, shuffle = true)
+    # acumulate batch losses
+    genLossHist += genLossVal
+    discLossHist += discLossVal
   end
-  return ( # DataLoader serves to iterate in mini-batches of the training data
-    DataLoader((data = dispTrain[1], label = dispTrain[2]); batchsize = batch, parallel = true),
-    DataLoader((data = dispValidate[1], label = dispValidate[2]); batchsize = batch, parallel = true),
-    DataLoader((data = dispTest[1], label = dispTest[2]); batchsize = batch, parallel = true))
+  # return avg losses for current epoch
+  return genLossHist/batchCount, discLossHist/batchCount
 end
 
-# prepare data loaders for loadCNN training/validation/test in FEAloss pipeline
-function getFEAlossLoaders(
-  disp::Array{Float32, 4}, sup::Array{Float32, 3}, vf::Array{Float32, 1},
-  force, numPoints::Int64, separation, batch::Int64
-)
-  # split dataset into training, validation, and testing
-  numPoints == 0 && (numPoints = length(vf))
-  numPoints < 0 && (error("Negative number of samples in getFEAlossLoaders."))
-  FEAlossTrain, FEAlossValidate, FEAlossTest = splitobs(
-    (
-      disp[:, :, :, 1:numPoints],
-      sup[:, :, 1:numPoints], vf[1:numPoints],
-      (force[1][:, 1:numPoints], force[2][:, 1:numPoints],
-      force[3][:, 1:numPoints], force[4][:, 1:numPoints])
-    ); at = separation, shuffle = true)
-  # return loaders for each stage
-  return (DataLoader(FEAlossTrain; batchsize = batch, parallel = true),
-    DataLoader(FEAlossValidate; batchsize = batch, parallel = true),
-    DataLoader(FEAlossTest; batchsize = batch, parallel = true))
-end
-
-# prepare data loaders for loadCNN training/validation/test
-function getVMloaders(vm, forces, numPoints, separation, batch; multiOutputs = false)
-  # use all data or certain number of points
-  if numPoints != 0
-    if !multiOutputs
-      vmTrain, vmValidate, vmTest = splitobs((vm[:, :, :, 1:numPoints], forces[:, 1:numPoints]); at = separation, shuffle = true)
-    else
-      vmTrain, vmValidate, vmTest = splitobs(
-        (vm[:, :, :, 1:numPoints], (forces[1][:, 1:numPoints], forces[2][:, 1:numPoints], forces[3][:, 1:numPoints], forces[4][:, 1:numPoints]));
-        at = separation, shuffle = true)
-    end
-  else
-    vmTrain, vmValidate, vmTest = splitobs((vm, forces); at = separation, shuffle = true)
-  end
-  # DataLoader serves to iterate in mini-batches of the training data
-  vmTrainLoader = DataLoader((data = vmTrain[1], label = vmTrain[2]); batchsize = batch, parallel = true);
-  vmValidateLoader = DataLoader((data = vmValidate[1], label = vmValidate[2]); batchsize = batch, parallel = true);
-  vmTestLoader = DataLoader((data = vmTest[1], label = vmTest[2]); batchsize = batch, parallel = true);
-  return vmTrainLoader, vmValidateLoader, vmTestLoader
-end
-
-# Test hyperparameter combinations (grid search)
+# Test hyperparameter combinations with grid search
 function hyperGrid(
   architecture::Function, kernelSizes::Array{Int}, activFunctions,
   channels::Array{Int}, data, FEparams, lossFun, optimizer; earlyStop = 0.0, multiLossArch = false
@@ -249,14 +184,6 @@ function intermediateSave(MLmodel)
   gpu(MLmodel)
 end
 
-# Loss for NN architectures with more than one output
-function multiLoss(output, target; lossFun)
-  # Compares each prediction/target pair from the
-  # function getLoaders() with multi-output: x positions,
-  # y positions, components of first load, components of second load
-  return mean([lossFun(modelOut, truth) for (modelOut, truth) in zip(output, target)])
-end
-
 # In hyperGrid() function, save model and generate pdf report
 # with training plot tests, and info when necessary
 function saveModelAndReport!(k, activ, ch, params, comb, history, MLmodel, currentTest, testData, multiLossArch, FEparams, lossFun, optimizer)
@@ -296,6 +223,9 @@ function testRates!(rates, trainConfigs, trianLoader, validateLoader, opt, archi
   end
   plotLearnTries(trainConfigs, rates)
 end
+
+# Get outputs from generator and discriminator
+
 
 #= Train ML model with early stopping.
 In predetermined intervals of epochs, evaluate
@@ -361,28 +291,3 @@ function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainPa
     @save "./networks/models/$(timeNow()).bson" cpu_model
   end
 end
-
-mutable struct earlyStopTrainConfig
-  validFreq::Int64 # Evaluation frequency in epochs
-  decay::Float64 # If scheduling, periodically multiply learning rate by this value
-  schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  evaluations::Array{Any} # History of evaluation losses
-  # Interval of most recent validations used for early stop criterion
-  earlyStopQuant::Int32
-  # Minimal percentage drop in loss in the last "earlyStopQuant" validations
-  earlyStopPercent::Float32
-end
-earlyStopTrainConfig(
-  validFreq; decay = 0.0, schedule = 0, evaluations = [], earlyStopQuant = 3, earlyStopPercent = 1
-) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations, earlyStopQuant, earlyStopPercent)
-
-mutable struct epochTrainConfig
-  epochs::Int64 # Total number of training epochs
-  validFreq::Int64 # Evaluation frequency in epochs
-  schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  decay::Float64 # If scheduling, periodically multiply learning rate by this value
-  evaluations::Array{Any} # History of evaluation losses
-end
-epochTrainConfig(
-  epochs, validFreq; schedule = 0, decay = 0.0, evaluations = []
-) = epochTrainConfig(epochs, validFreq, schedule, decay, evaluations)
