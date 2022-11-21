@@ -154,6 +154,14 @@ function plotForce(
   return axis
 end
 
+function plotGANlostHist()
+  GLMakie.activate!()
+  f = Figure(resolution = (1050, 700)); # create makie figure
+  ax = Axis(f[1, 1], xlabel = "Validation epochs", ylabel = "Loss")
+  lines!(experimentMetaData.lossesVals[:genValHistory])
+  lines!(experimentMetaData.lossesVals[:discValHistory])
+end
+
 # Line plots of evaluation histories
 function plotLearnTries(trainParams, tries; drawLegend = true, name = timeNow(), path = "./networks/trainingPlots")
   f = Figure(resolution = (1050, 700)); # create makie figure
@@ -380,7 +388,7 @@ function plotVMtest(FEparams, input, trueForces, model, modelName, lossFun; fold
 end
 
 # Generate pdf with tests using model that was trained on normalized data
-function testNormalizedData(modelPath::String, vm, forceData, quant::Int64, FEparams::FEAparameters, lossFun)
+function testNormalizedData(modelPath::String, vm, forceData, quant::Int64, FEparams, lossFun)
   files = glob("*", modelPath)
   @load filter(x -> x[end-3:end] == "bson", files) cpu_model
   mkpath(modelPath*"/normalizedTests")
@@ -412,5 +420,3 @@ function textConfig(l)
   l.axis.attributes.halign = :center
   l.axis.attributes.width = 300
 end
-
-include("./postProcess.jl")

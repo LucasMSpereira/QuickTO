@@ -198,7 +198,7 @@ function predFEA(predForce, vf, supp)
   xDisp, yDisp = [], []
   @ignore_derivatives xDisp = quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 1:2:length(feaDisp)])
   @ignore_derivatives yDisp = quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 2:2:length(feaDisp)])
-  return cat(xDisp, yDisp; dims = 3)
+  return solidify(xDisp, yDisp)
 end
 
 # Create randomized FEA problem
@@ -428,5 +428,3 @@ end
 function volFrac(topologyBatch::Array{Float32, 4})
   return [sum(topologyBatch[:, :, :, sample]) for sample in axes(topologyBatch, 4)] ./ FEAparams.nElements
 end
-
-include("./funcs.jl")

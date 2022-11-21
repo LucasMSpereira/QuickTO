@@ -229,22 +229,6 @@ function estimateGrads(vals, quants, iCenter, jCenter)
 
 end
 
-# toy data for GANs
-function GANdata()
-  nSamples = 500
-  standardSize = (51, 141, 1, nSamples)
-  realTopologyData = pad_constant(rand(Float32, (50, 140, 1, nSamples)), (0, 1, 0, 1); dims = [1 2])
-  ### FEA input data (read from dataset)
-  vfData = ones(Float32, standardSize) .* reshape(view(rand(Float32, nSamples), :), (1, 1, 1, :)) # VF
-  supportData = rand(Bool, standardSize) # binary highlighting pinned NODES
-  # components and position of loads (read from dataset)
-  FxData = zeros(Float32, standardSize); FxData[10, 30, 1, :] .= 5f1; FxData[20, 40, 1, :] .= -3f1
-  FyData = zeros(Float32, standardSize); FyData[10, 30, 1, :] .= 1f1; FyData[20, 40, 1, :] .= 2f1
-  ### conditioning with physical fields (read from dataset)
-  vmData = rand(Float32, standardSize); energyData = rand(Float32, standardSize)
-  return vfData, vmData, energyData, supportData, FxData, FyData, realTopologyData
-end
-
 # Identify non-binary topologies
 function getNonBinaryTopos(forces, supps, vf, disp, top)
   bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
@@ -260,6 +244,26 @@ function getNonBinaryTopos(forces, supps, vf, disp, top)
   else
       return 0.0
   end
+end
+
+# get lists of hdf5 files to be used in training and validation
+function getNonTestFileLists!(metaData, trainValidateFolder, trainPercentage)
+  # get list of files, and shuffle it
+  filePaths = readdir(trainValidateFolder; join = true) |> shuffle!
+  # amount of samples used in training
+  datasetTrainSize = trainPercentage * datasetSize |> round
+  numberOfFiles = 0
+  while true # loop including more files each time
+    # if size of training split was reached, break
+    numSample(filePaths[1 : numberOfFiles]) >= datasetTrainSize && break
+    @show numSample(filePaths[1 : numberOfFiles])
+    numberOfFiles += 1
+    @show numberOfFiles
+  end
+  # create lists of files to be used in each split
+  metaData.files[:train] = filePaths[1:numberOfFiles]
+  metaData.files[:validate] = filePaths[numberOfFiles + 1 : end]
+  return nothing
 end
 
 # Get section and dataset IDs of sample
@@ -315,7 +319,9 @@ function logitBinCrossEnt(logits, label)
 end
 
 # Returns total number of samples across files in list
-numSample(files) = sum([parse(Int, split(files[g][findlast(x->x=='\\', files[g])+1:end])[3]) for g in keys(files)])
+numSample(files) = sum([
+  parse(Int, split(files[g][findlast(x -> x == '\\', files[g]) + 1 : end])[3]) for g in keys(files)
+])
 
 # get list of elements visited by a path
 function pathEleList(aStar)
@@ -415,6 +421,9 @@ function sizeLayers(myChain, input; currentLayer = 0)
   return currentLayer
 end
 
+# concatenate multiple 2D or 3D arrays in the 3rd dimension
+solidify(x...) = cat(x...; dims = 3)
+
 # statistical summary of a numerical array
 function statsum(arr)
   data = reshape(arr, (1, :)) |> vec
@@ -425,5 +434,3 @@ end
 timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
 
 <|(f, args...) = f(args...)
-
-include("./io.jl")

@@ -40,7 +40,7 @@ end
 # Check for early stop: if validation loss didn't
 # decrease enough in the last few validations
 function earlyStopCheck(trainParams)
-  if isa(trainParams, metaData) # in case of GAN training
+  if isa(trainParams, GANmetaData) # in case of GAN training
     # percentage drop in generator validation loss
     genValLossPercentDrop = earlyStopCalc(
       trainParams.lossesVals[:genValHistory],
@@ -106,28 +106,22 @@ end
 # epoch of GAN usage, be it training, validation or test
 # return avg. losses for epoch
 function GANepoch!(metaData, goal)
-  # choose split of the dataset depending on context
+  # initialize variables related to whole epoch
   genLossHist, discLossHist, batchCount = 0.0, 0.0, 0
-  # GC.gc()
-  # CUDA.reclaim()
-  # CUDA.memory_status(); println()
   # each batch of current epoch
   for (genInput, FEAinfo, realTopology) in getDataset(metaData, goal)
-    batchCount += 1; @show batchCount
+    batchCount += 1
+    GC.gc(); CUDA.reclaim() # avoid GPU memory issues
     # use NNs, and get gradients and losses for current batch
     genGrads, genLossVal, discGrads, discLossVal = GANgrads(
       metaData.generator, metaData.discriminator, genInput, FEAinfo, realTopology
     )
-    GC.gc()
-    CUDA.reclaim()
-    CUDA.memory_status(); println()
     if goal == :train # update NNs parameters in case of training
       Flux.Optimise.update!(metaData.opt, Flux.params(metaData.generator), genGrads)
       Flux.Optimise.update!(metaData.opt, Flux.params(metaData.discriminator), discGrads)
     end
     # acumulate batch losses
-    genLossHist += genLossVal
-    discLossHist += discLossVal
+    genLossHist += genLossVal; discLossHist += discLossVal
   end
   # return avg losses for current epoch
   return genLossHist/batchCount, discLossHist/batchCount

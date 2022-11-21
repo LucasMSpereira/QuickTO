@@ -40,8 +40,9 @@ mutable struct GANmetaData
   discriminator::Chain # discriminator network
   opt::Flux.Optimise.AbstractOptimiser # optimizer used in training
   loaders::Dict{Symbol, <:MLUtils.DataLoader} # loaders for each dataset split
-  trainConfig::trainConfig # parameters for training
+  const trainConfig::trainConfig # parameters for training
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
+  files::Dict{Symbol, Vector{String}}
 end
 
 ## GANmetaData APIs
@@ -70,6 +71,10 @@ GANmetaData(
     :discValHistory => Float64[],
     :genTest => Float64[],
     :discTest => Float64[]
+  ),
+  Dict(
+    :train => String[],
+    :validate => String[]
   )
 )
 
@@ -83,15 +88,15 @@ end
 # Struct with FEA parameters
 @with_kw mutable struct FEAparameters
   quants::Int = 1 # number of TO problems per section
-  V::Array{Real} = [0.4+rand()*0.5 for i in 1:quants] # volume fractions
+  V::Array{Real} = [0.4 + rand() * 0.5 for i in 1 : quants] # volume fractions
   problems::Any = Array{Any}(undef, quants) # store FEA problem structs
   meshSize::Tuple{Int, Int} = (140, 50) # Size of rectangular mesh
-  elementIDarray::Array{Int} = [i for i in 1:prod(meshSize)] # Vector that lists element IDs
-  # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix::Array{Int,2} = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
   section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
   nElements::Int32 = prod(meshSize) # quantity of elements
   nNodes::Int32 = prod(meshSize .+ 1) # quantity of nodes
+  # matrix with element IDs in their respective position in the mesh
+  elementIDmatrix::Array{Int, 2} = convert.(Int, quad(meshSize..., [i for i in 1:nElements]))
+  elementIDarray::Array{Int} = [i for i in 1:nElements] # Vector that lists element IDs
 end
 FEAparams = FEAparameters()
 problem!(FEAparams)
@@ -121,5 +126,3 @@ end
 Split(paths...) = Split(paths)
 Flux.@functor Split
 (m::Split)(x::AbstractArray) = map(f -> f(x), m.paths)
-
-include("./plotFuncs.jl")

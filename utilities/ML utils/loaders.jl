@@ -70,8 +70,8 @@ function createGANloaders(
   FxData_, FyData_, realTopologyData_, batch; separation = (0.7, 0.2)
 )
   # group certain informations for convenience
-  genInput = cat(vfData_, vmData_, energyData_; dims = 3) # generator input
-  FEAinfo = cat(supportData_, FxData_, FyData_; dims = 3) # FEA data
+  genInput = solidify(vfData_, vmData_, energyData_) # generator input
+  FEAinfo = solidify(supportData_, FxData_, FyData_) # FEA data
   # separate dataset for training, validating, and testing
   topoGANtrain, topoGANvalidate, topoGANtest = splitobs(
     (genInput, FEAinfo, realTopologyData_);

@@ -21,34 +21,36 @@ discLoss(gLossDreal_, gLossDfake_) = gLossDreal_ + gLossDfake_
 # use batch data and models to obtain gradients and losses
 function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
   # concatenate data to create discriminator input with REAL topology
-  discInputReal = cat(genInput, FEAinfo, realTopology; dims = 3) |> gpu
+  discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
   # discriminator's output for input with REAL topology
   discOutReal = discInputReal |> disc |> cpu |> reshapeDiscOut
   # initialize for scope purposes
   discOutFake, genInputGPU, discInputFake = 0.0, 0.0, 0.0
-  # function to calculate loss of generator. It's defined
-  # here for scope purposes
+  # function to calculate loss of generator. It's
+  # defined here for scope purposes
   function genLoss(genOutput)
     # batch MSE of generator output (FAKE topologies)
     mse = (genOutput .- realTopology) .^ 2 |> mean
     # batch mean absolute error of generator output (FAKE topologies)
     absError = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean
     # concatenate data to create discriminator input with FAKE topology
-    discInputFake = cat(genInput, FEAinfo, genOutput; dims = 3) |> gpu
+    discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
     # discriminator's output for input with FAKE topology
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
     # batch mean binary cross-entropy loss for generator
     genCE = logitBinCrossEnt(discOutFake, 1)
-    # final generator loss
-    return genCE + 10_000 * mse + 1 * absError
+    return genCE + 10_000 * mse + 1 * absError # final generator loss
   end
   # function to calculate loss of discriminator. It's
   # defined here for scope purposes
   discLoss(discOutReal) = logitBinCrossEnt(discOutReal, 1) + logitBinCrossEnt(discOutFake, 0)
   # gradients and final losses of both NNs
   genInputGPU = genInput |> gpu
+  # println("ANTES DE GRADS"); CUDA.memory_status(); println()
   genLossVal, genGrads = withgradient(() -> genLoss(genInputGPU |> gen |> cpu), Flux.params(gen))
+  # println("ENTRE GRADS"); CUDA.memory_status(); println()
   discLossVal, discGrads = withgradient(() -> discLoss(discOutReal), Flux.params(disc))
+  # println("DEPOIS DE GRADS"); CUDA.memory_status(); println()
   return genGrads, genLossVal, discGrads, discLossVal
 end
 
