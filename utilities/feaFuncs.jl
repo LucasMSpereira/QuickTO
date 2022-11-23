@@ -210,9 +210,7 @@ function problem!(FEAparams)
     grid = generate_grid(QuadraticQuadrilateral, FEAparams.meshSize)
   end
   numCellNodes = length(grid.cells[1].nodes) # number of nodes per cell/element
-
   nels = prod(FEAparams.meshSize) # number of elements in the mesh
-
   # nodeCoords = Vector of tuples with node coordinates
   # cells = Vector of tuples of integers. Each line refers to an element
   # and lists the IDs of its nodes
@@ -221,50 +219,45 @@ function problem!(FEAparams)
   elseif elType == "CPS8"
     nodeCoords, cells = mshDataQuadratic(FEAparams.meshSize)
   end
-
   # Similar to nodeSets, but refers to groups of cells (FEA elements) 
   cellSets = Dict(
     "SolidMaterialSolid" => FEAparams.elementIDarray,
     "Eall"               => FEAparams.elementIDarray,
     "Evolumes"           => FEAparams.elementIDarray
   )
-
-        dispBC = zeros(Int, (3,3))
-        
-        # nodeSets = dictionary mapping strings to vectors of integers. The vector groups 
-        # node IDs that can be later referenced by the name in the string
-        if rand() > 0.6
-            # "clamp" a side
-            nodeSets, dispBC = simplePins!("rand", dispBC, FEAparams)
-        else
-            # position pins randomly
-            nodeSets, dispBC = randPins!(nels, FEAparams, dispBC, grid)
-        end
-        
-        # lpos has the IDs of the loaded nodes.
-        # each line in "forces" contains [forceLine forceCol forceXcomponent forceYcomponent]
-        lpos, forces = loadPos(nels, dispBC, FEAparams, grid)
-        # Dictionary mapping integers to vectors of floats. The vector
-        # represents a force applied to the node with
-        # the respective integer ID.
-        cLoads = Dict(lpos[1] => forces[1,3:4])
-        [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
-        if length(lpos) > numCellNodes+1
-            for pos in (numCellNodes+1):length(lpos)
-                pos == (numCellNodes+1) && (global ll = 2)
-                merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
-                pos % numCellNodes == 0 && (global ll += 1)
-            end
-        end
-        
-        FEAparams.problems[1] = InpStiffness(
-            InpContent(
-                nodeCoords, elType, cells, nodeSets, cellSets,  FEAparams.V[1]*210e3, 0.3,
-                0.0, Dict("supps" => [(1, 0.0), (2, 0.0)]), cLoads,
-                Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)
-            )
-        )
-    return FEAparams
+  dispBC = zeros(Int, (3,3))
+  # nodeSets = dictionary mapping strings to vectors of integers. The vector groups 
+  # node IDs that can be later referenced by the name in the string
+  if rand() > 0.6
+      # "clamp" a side
+      nodeSets, dispBC = simplePins!("rand", dispBC, FEAparams)
+  else
+      # position pins randomly
+      nodeSets, dispBC = randPins!(nels, FEAparams, dispBC, grid)
+  end
+  # lpos has the IDs of the loaded nodes.
+  # each line in "forces" contains [forceLine forceCol forceXcomponent forceYcomponent]
+  lpos, forces = loadPos(nels, dispBC, FEAparams, grid)
+  # Dictionary mapping integers to vectors of floats. The vector
+  # represents a force applied to the node with
+  # the respective integer ID.
+  cLoads = Dict(lpos[1] => forces[1,3:4])
+  [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
+  if length(lpos) > numCellNodes+1
+      for pos in (numCellNodes+1):length(lpos)
+          pos == (numCellNodes+1) && (global ll = 2)
+          merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
+          pos % numCellNodes == 0 && (global ll += 1)
+      end
+  end
+  FEAparams.problems[1] = InpStiffness(
+      InpContent(
+          nodeCoords, elType, cells, nodeSets, cellSets,  FEAparams.V[1]*210e3, 0.3,
+          0.0, Dict("supps" => [(1, 0.0), (2, 0.0)]), cLoads,
+          Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)
+      )
+  )
+  return FEAparams
 end
 
 # Pin a few random elements
@@ -406,10 +399,7 @@ function topoFEA(forces, supps, vf, top)
   comp = TopOpt.Compliance(problem, solver) # compliance
   filter = DensityFilter(solver; rmin=3.0) # filtering to avoid checkerboard
   obj = x -> comp(filter(x)); # objective
-  meshSize = (140, 50) # size of mesh
-  nEle = prod(meshSize) # number of elements
-  elementIDmatrix = convert.(Int, quad(meshSize...,[i for i in 1:nEle])); # matrix with element IDs in the right positions
-  dens = [top[findfirst(x -> x == ele, elementIDmatrix)] for ele in 1:nEle]
+  dens = [top[findfirst(x -> x == ele, FEAparams.elementIDmatrix)] for ele in 1:FEAparams.nElements]
   objVal = obj(dens)
   disp = solver.u
   dispX = []
@@ -422,6 +412,15 @@ function topoFEA(forces, supps, vf, top)
     end
   end
   return maximum(sqrt.(dispX.^2 + dispY.^2))
+end
+
+function topologyCompliance(vf::Float64, supp::Array{Int64, 2}, force::Array{Float64, 2}, savedTopology::Array{Float64, 2})::Float64
+  # InpContent struct from original problem
+  problem = rebuildProblem(vf, supp, force)
+  solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
+  comp = TopOpt.Compliance(solver) # define compliance
+  # use comp function in final topology and return result
+  comp(cat((eachslice(savedTopology; dims = 1) |> collect |> reverse)...; dims = 1))
 end
 
 # volume fraction of each topology in a batch

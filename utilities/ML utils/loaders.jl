@@ -62,24 +62,3 @@ function getVMloaders(vm, forces, numPoints, separation, batch; multiOutputs = f
   vmTestLoader = DataLoader((data = vmTest[1], label = vmTest[2]); batchsize = batch, parallel = true);
   return vmTrainLoader, vmValidateLoader, vmTestLoader
 end
-
-# Split data int training, validation and test. Then return data
-# loaders for each split
-function createGANloaders(
-  vfData_, vmData_, energyData_, supportData_,
-  FxData_, FyData_, realTopologyData_, batch; separation = (0.7, 0.2)
-)
-  # group certain informations for convenience
-  genInput = solidify(vfData_, vmData_, energyData_) # generator input
-  FEAinfo = solidify(supportData_, FxData_, FyData_) # FEA data
-  # separate dataset for training, validating, and testing
-  topoGANtrain, topoGANvalidate, topoGANtest = splitobs(
-    (genInput, FEAinfo, realTopologyData_);
-    at = separation, shuffle = true
-  )
-  return Dict( # return dictionary with data loaders for each dataset
-    :train => DataLoader(topoGANtrain; batchsize = batch, parallel = true),
-    :validate => DataLoader(topoGANvalidate; batchsize = batch, parallel = true),
-    :test => DataLoader(topoGANtest; batchsize = batch, parallel = true)
-  )
-end

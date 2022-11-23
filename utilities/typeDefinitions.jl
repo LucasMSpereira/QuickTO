@@ -39,7 +39,6 @@ mutable struct GANmetaData
   generator::Chain # generator network
   discriminator::Chain # discriminator network
   opt::Flux.Optimise.AbstractOptimiser # optimizer used in training
-  loaders::Dict{Symbol, <:MLUtils.DataLoader} # loaders for each dataset split
   const trainConfig::trainConfig # parameters for training
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
@@ -47,8 +46,8 @@ end
 
 ## GANmetaData APIs
 # save histories of losses
-function (ganMD::GANmetaData)(valLossHist::NTuple{2, Float64}; context = :validation)
-  if context == :validation
+function (ganMD::GANmetaData)(valLossHist::NTuple{2, Float64}; context = :validate)
+  if context == :validate
     push!(ganMD.lossesVals[:genValHistory], valLossHist[1])
     push!(ganMD.lossesVals[:discValHistory], valLossHist[2])
   elseif context == :test
@@ -62,23 +61,18 @@ end
 
 # Outer constructor to create object in the begining
 GANmetaData(
-  generator::Chain, discriminator::Chain, opt::Flux.Optimise.AbstractOptimiser,
-  loaders::Dict{Symbol, <:MLUtils.DataLoader}, myTrainConfig::trainConfig
+  generator::Chain, discriminator::Chain,
+  opt::Flux.Optimise.AbstractOptimiser, myTrainConfig::trainConfig
 ) = GANmetaData(
-  generator, discriminator, opt, loaders, myTrainConfig,
+  generator, discriminator, opt, myTrainConfig,
   Dict(
     :genValHistory => Float64[],
     :discValHistory => Float64[],
     :genTest => Float64[],
     :discTest => Float64[]
   ),
-  Dict(
-    :train => String[],
-    :validate => String[]
-  )
+  getNonTestFileLists!(datasetPath * "data/trainValidate", 0.7)
 )
-
-getDataset(metaData::GANmetaData, goal::Symbol) = get(metaData.loaders, goal, "")
 
 function switchTraining(metaData::GANmetaData, mode::Bool)
   Flux.trainmode!(metaData.generator, mode); Flux.trainmode!(metaData.discriminator, mode)
@@ -97,6 +91,7 @@ end
   # matrix with element IDs in their respective position in the mesh
   elementIDmatrix::Array{Int, 2} = convert.(Int, quad(meshSize..., [i for i in 1:nElements]))
   elementIDarray::Array{Int} = [i for i in 1:nElements] # Vector that lists element IDs
+  meshMatrixSize::Tuple{Int, Int} = (51, 141) # Size of rectangular nodal mesh as a matrix
 end
 FEAparams = FEAparameters()
 problem!(FEAparams)

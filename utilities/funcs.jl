@@ -125,9 +125,23 @@ function cornerPos(topo)
   return closeEles
 end
 
-# add fourth dimension to Flux data
-# (width, height, channels, batch)
+# define 'groupFiles' variable in GANepoch!(). Used to get indices
+# to acces files for training/validation
+function defineGroupFiles(metaData, goal)
+  if goal != :test # if training or validating
+    return groupFiles = DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 17)
+  else
+    # if testing, variable 'groupFiles' has no effect.
+    # Return placeholder
+    return groupFiles = [1]
+  end
+end
+
+# add fourth dimension to Flux data (width, height, channels, batch)
 dim4 = unsqueeze(; dims = 5)
+
+# discard first channel of 3D array
+discardFirstChannel(x) = x[:, :, 2:end]
 
 # identify samples with structural disconnection in final topology
 function disconnections(topology, dataset, section, sample)
@@ -176,14 +190,14 @@ function disconnections(topology, dataset, section, sample)
   return prod(length.(paths))
 end
 
+# rearrange disp into vector
 function dispVec(disp)
-  # rearrange disp into vector
-  dispX = reshape(disp[end:-1:1,:,1]',(1,:))
-  dispY = reshape(disp[end:-1:1,:,2]',(1,:))
-  disps = zeros(length(dispX)*2)
-  for i in 1:length(dispX)
-    disps[2*i-1] = dispX[i]
-    disps[2*i] = dispY[i]
+  dispX = reshape(disp[end : -1 : 1 , :, 1]', (1, :))
+  dispY = reshape(disp[end : -1 : 1, :, 2]', (1, :))
+  disps = zeros(length(dispX) * 2)
+  for i in axes(dispX, 2)
+    disps[2 * i - 1] = dispX[i]
+    disps[2 * i] = dispY[i]
   end
   return disps
 end
@@ -247,7 +261,7 @@ function getNonBinaryTopos(forces, supps, vf, disp, top)
 end
 
 # get lists of hdf5 files to be used in training and validation
-function getNonTestFileLists!(metaData, trainValidateFolder, trainPercentage)
+function getNonTestFileLists!(trainValidateFolder, trainPercentage)
   # get list of files, and shuffle it
   filePaths = readdir(trainValidateFolder; join = true) |> shuffle!
   # amount of samples used in training
@@ -260,16 +274,26 @@ function getNonTestFileLists!(metaData, trainValidateFolder, trainPercentage)
     numberOfFiles += 1
     @show numberOfFiles
   end
-  # create lists of files to be used in each split
-  metaData.files[:train] = filePaths[1:numberOfFiles]
-  metaData.files[:validate] = filePaths[numberOfFiles + 1 : end]
-  return nothing
+  return Dict( # create lists of files to be used in each split
+    :train => filePaths[1:numberOfFiles],
+    :validate => filePaths[numberOfFiles + 1 : end]
+  )
 end
 
 # Get section and dataset IDs of sample
 function getIDs(pathing)
   s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
   return s[1], s[2]
+end
+
+function forceToMat(force)
+  forceXmatrix = zeros(FEAparams.meshMatrixSize)
+  forceYmatrix = zeros(FEAparams.meshMatrixSize)
+  forceXmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 3] # x component of first load
+  forceXmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 3] # x component of second load
+  forceYmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 4] # y component of first load
+  forceYmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 4] # y component of second load
+  return forceXmatrix, forceYmatrix
 end
 
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
@@ -429,6 +453,33 @@ function statsum(arr)
   data = reshape(arr, (1, :)) |> vec
   data |> summarystats |> print
   println("Standard deviation: ", sciNotation(std(data), 4))
+  nonZeros = findall(x -> Float64(x) != 0.0, arr) |> length
+  println(
+    nonZeros,
+    "/", length(arr),
+    " (", round(nonZeros/length(arr)*100; digits = 1),
+    "%) non-zero elements."
+  )
+end
+
+# use compact 3x3 support definition to create
+# matrix used to train the GANs
+function suppToBinary(supp)
+  suppMat = zeros(FEAparams.meshMatrixSize)
+  if supp[1, end] == 4 # left clamped
+    suppMat[:, 1] .= 1.0
+  elseif supp[1, end] == 5 # bottom clamped
+    suppMat[end, :] .= 1.0
+  elseif supp[1, end] == 6 # right clamped
+    suppMat[:, end] .= 1.0
+  elseif supp[1, end] == 7 # top clamped
+    suppMat[1, :] .= 1.0
+  else # 3 random pins
+    for line in axes(supp, 1)
+      suppMat[supp[line, 1], supp[line, 2]] = 1.0
+    end
+  end
+  return suppMat
 end
 
 timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date

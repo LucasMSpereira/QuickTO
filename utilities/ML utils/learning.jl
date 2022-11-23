@@ -64,6 +64,41 @@ function earlyStopCheck(trainParams)
   end
 end
 
+# train GANs with earlystopping
+function earlyStopGANs(metaData)
+  epoch = 0
+  while true # loop in epochs
+    epoch += 1 # count training epochs
+    epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
+    # trains for one epoch
+    GANepoch!(metaData, :train)
+    # occasionally run validation epoch and check for early-stopping
+    if epoch % metaData.trainConfig.validFreq == 0
+      switchTraining(metaData, false) # disable model updating during validation
+      # validation epoch returning avg losses for both NNs
+      GANepoch!(metaData, :validate) |> metaData
+      # print information about validation
+      switchTraining(metaData, true) # reenable model updating after validation
+      # after enough validations, start performing early-stop check
+      if length(metaData.lossesVals[:genValHistory]) > metaData.trainConfig.earlyStopQuant
+        # percentage drops in losses and boolean indicating to stop training
+        genValLossPercentDrop, discValLossPercentDrop, earlyStopping = earlyStopCheck(metaData)
+        # print validation and early-stop information
+        GANprints(epoch, metaData; earlyStopVals = (genValLossPercentDrop, discValLossPercentDrop))
+        if earlyStopping
+          println("EARLY-STOPPING")
+          saveGANs(metaData; finalSave = true)
+          break
+        end
+      else # not checking for early-stop yet
+        GANprints(epoch, metaData) # print just validation information
+      end
+    end
+    # save occasional checkpoints of the model
+    epoch % metaData.trainConfig.checkPointFreq == 0 && saveGANs(metaData)
+  end
+end
+
 # Evaluate (validation or test) model and print performance. To be called occasionally
 function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test = false, FEAloss = false)
   Flux.trainmode!(mlModel, false)
@@ -106,22 +141,32 @@ end
 # epoch of GAN usage, be it training, validation or test
 # return avg. losses for epoch
 function GANepoch!(metaData, goal)
+  !in(goal, [:train, :validate, :test]) && error("GANepoch!() called with invalid 'goal'.")
   # initialize variables related to whole epoch
   genLossHist, discLossHist, batchCount = 0.0, 0.0, 0
-  # each batch of current epoch
-  for (genInput, FEAinfo, realTopology) in getDataset(metaData, goal)
-    batchCount += 1
-    GC.gc(); CUDA.reclaim() # avoid GPU memory issues
-    # use NNs, and get gradients and losses for current batch
-    genGrads, genLossVal, discGrads, discLossVal = GANgrads(
-      metaData.generator, metaData.discriminator, genInput, FEAinfo, realTopology
-    )
-    if goal == :train # update NNs parameters in case of training
-      Flux.Optimise.update!(metaData.opt, Flux.params(metaData.generator), genGrads)
-      Flux.Optimise.update!(metaData.opt, Flux.params(metaData.discriminator), discGrads)
+  groupFiles = defineGroupFiles(metaData, goal)
+  # loop in groups of files used for current split
+  for group in groupFiles
+    if goal != :test # if training or validating
+      currentLoader = GANdata(metaData.files[goal][group])
+    else
+      currentLoader = GANdata(datasetPath * "/data/test")
     end
-    # acumulate batch losses
-    genLossHist += genLossVal; discLossHist += discLossVal
+    # each batch of current epoch
+    for (genInput, FEAinfo, realTopology) in currentLoader
+      batchCount += 1
+      GC.gc(); CUDA.reclaim() # avoid GPU memory issues
+      # use NNs, and get gradients and losses for current batch
+      genGrads, genLossVal, discGrads, discLossVal = GANgrads(
+        metaData.generator, metaData.discriminator, genInput, FEAinfo, realTopology
+      )
+      if goal == :train # update NNs parameters in case of training
+        Flux.Optimise.update!(metaData.opt, Flux.params(metaData.generator), genGrads)
+        Flux.Optimise.update!(metaData.opt, Flux.params(metaData.discriminator), discGrads)
+      end
+      # acumulate batch losses
+      genLossHist += genLossVal; discLossHist += discLossVal
+    end
   end
   # return avg losses for current epoch
   return genLossHist/batchCount, discLossHist/batchCount

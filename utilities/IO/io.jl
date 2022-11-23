@@ -131,6 +131,19 @@ function readAnalysis(pathRef)
   return ds, sec, sID, res
 end
 
+# read file from topologyGAN dataset
+function readTopologyGANdataset(path)
+  dictionary = Dict{String, Array{Float64}}()
+  h5open(path, "r") do id # open file
+    dataFields = HDF5.get_datasets(id) # get references to data
+    for data in dataFields
+      # include each field's name and contents in dictionary
+      push!(dictionary, HDF5.name(data)[2:end] => HDF5.read(data))
+    end
+  end
+  return dictionary
+end
+
 #=
 "Reference files" (created by the function 'combineFiles') store contextual info
 about certain samples (plastification, non-binary topology etc.).
@@ -184,43 +197,6 @@ function remSamples(id, pathRef)
       close(new)
     else
       println("SKIPPED $currentDS $currentSec")
-    end
-  end
-end
-
-# locate samples in dataset that have a specific simple mechanical support
-# these samples whill be used as the test dataset for topologyGAN
-# side clamped - 4: left, 5: bottom, 6: right, 7: top
-function testDataset(suppID)
-  for folder in 1:6 # loop in folders
-    @show folder
-    # list of files in current folder
-    fileList = readdir(datasetPath * "/data/$(folder)"; join = true)
-    for file in fileList # loop in files
-        @show file
-        dVFsuppFtop = 0
-        # read data in current file
-        h5open(file, "r") do ID dVFsuppFtop = ID |> HDF5.get_datasets .|> read end
-        # indices of samples with this type of support (==(suppID)) or not (!=(suppID))
-        indices = findall(!=(suppID), dVFsuppFtop[3][3, 3, :])
-        length(indices) == 0 && continue # skip file if no samples of interest are found
-        @show length(indices)
-        new = 0
-        try
-        new = newHDF5(replace( # create new file
-            file,
-            (file |> split)[end] => length(indices) |> string
-          ),
-          length(indices)
-        )
-          writeToHDF5(new, # copy subset of data to new file
-            solidify([dVFsuppFtop[1][:, :, 2 * s - 1 : 2 * s] for s in indices]...),
-            dVFsuppFtop[2],
-            [solidify([dVFsuppFtop[t][:, :, s] for s in indices]...) for t in 3:5]...
-          )
-        catch
-          close(new)
-        end
     end
   end
 end
@@ -289,4 +265,91 @@ function stressCNNdata(id, numFiles, FEAparams)
     stressCNNdata["forces"][:, :, gg] = force[:, :, gg] # forces
   end
   close(stressCNNdata) # close/save new file
+end
+
+# locate samples in dataset that have a specific simple mechanical support
+# these samples whill be used as the test dataset for topologyGAN
+# side clamped - 4: left, 5: bottom, 6: right, 7: top
+function testDataset(suppID)
+  for folder in 1:6 # loop in folders
+    @show folder
+    # list of files in current folder
+    fileList = readdir(datasetPath * "/data/$(folder)"; join = true)
+    for file in fileList # loop in files
+        @show file
+        dVFsuppFtop = 0
+        # read data in current file
+        h5open(file, "r") do ID dVFsuppFtop = ID |> HDF5.get_datasets .|> read end
+        # indices of samples with this type of support (==(suppID)) or not (!=(suppID))
+        indices = findall(!=(suppID), dVFsuppFtop[3][3, 3, :])
+        length(indices) == 0 && continue # skip file if no samples of interest are found
+        @show length(indices)
+        new = 0
+        try
+        new = newHDF5(replace( # create new file
+            file,
+            (file |> split)[end] => length(indices) |> string
+          ),
+          length(indices)
+        )
+          writeToHDF5(new, # copy subset of data to new file
+            solidify([dVFsuppFtop[1][:, :, 2 * s - 1 : 2 * s] for s in indices]...),
+            dVFsuppFtop[2],
+            [solidify([dVFsuppFtop[t][:, :, s] for s in indices]...) for t in 3:5]...
+          )
+        catch
+          close(new)
+        end
+    end
+  end
+end
+
+# prepare dataset to train topologyGAN
+function topologyGANdataset()
+  files = readdir(datasetPath * "data/trainValidate"; join = true) # get list of file names
+  numFiles = length(files)
+  for (countFile, file) in zip(1:numFiles |> collect, files) # loop in files of folder
+    println("\n*** $countFile/$numFiles ***")
+    force, supp, vf, disp, topology = getDataFSVDT(file) # get data from file
+    # initialize arrays
+    vm = zeros(FEAparams.meshMatrixSize..., length(vf)); compliance = zeros(vf |> size)
+    energy, binarySupp, Fx, Fy = similar(vm), similar(vm), similar(vm), similar(vm)
+    for sample in axes(vf, 1) # loop in samples of current file
+      sample % 200 == 0 && @show sample
+      # get VM and principal stress fields for current sample
+      vm[:, :, sample], energy[:, :, sample] = calcCondsGAN(disp[:, :, 2 * sample - 1 : 2 * sample],
+        210e3 * vf[sample], 0.33
+      )
+      # determine sample compliance
+      @suppress_err compliance[sample] = topologyCompliance(
+        vf[sample], supp[:, :, sample], force[:, :, sample], topology[:, :, sample]
+      )
+      # transform and group data
+      binarySupp[:, :, sample] = suppToBinary(supp[:, :, sample])
+      Fx[:, :, sample], Fy[:, :, sample] = forceToMat(force[:, :, sample])
+    end
+    vfMat = ones(FEAparams.meshMatrixSize..., length(vf)) .* reshape(vf, (1, 1, :))
+    # name of current file
+    fileName = file[findlast(==('\\'), file) + 1 : end]
+    # data = discardFirstChannel.((vm, energy, binarySupp, Fx, Fy)) # discard first channel (null)
+    # create new data file
+    h5open(datasetPath * "data/trainValidate2/$fileName", "w") do new
+      for (field, name) in zip(
+        [compliance, vfMat, vm, energy, binarySupp, Fx, Fy, topology],
+        ["compliance", "vf", "vm", "energy", "binarySupp","Fx", "Fy", "topologies"]
+      )
+        create_dataset(new, name, field |> size |> zeros)
+      end
+      for gg in axes(vf, 1) # fill new file with data
+        new["compliance"][gg] = compliance[gg]
+        new["vf"][:, :, gg] = vfMat[:, :, gg]
+        new["vm"][:, :, gg] = vm[:, :, gg]
+        new["energy"][:, :, gg] = energy[:, :, gg]
+        new["binarySupp"][:, :, gg] = binarySupp[:, :, gg]
+        new["Fx"][:, :, gg] = Fx[:, :, gg]
+        new["Fy"][:, :, gg] = Fy[:, :, gg]
+        new["topologies"][:, :, gg] = topology[:, :, gg]
+      end
+    end
+  end
 end

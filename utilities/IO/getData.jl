@@ -1,8 +1,14 @@
 # functions that read data from hdf5 files, usually to be
 # used for ML pipelines
 
-# toy data for GANs
-function GANdata()
+# prepare data for GAN training. Receives list of HDF5 files.
+# Returns data loader to iterate in batches of samples
+function GANdata(files)
+  for file in files
+    data = 0
+    h5open(file, "r") do ID data = ID |> HDF5.get_datasets .|> read end
+    ########
+  end
   standardSize = (51, 141, 1, nSamples)
   realTopologyData = pad_constant(rand(Float32, (50, 140, 1, nSamples)), (0, 1, 0, 1); dims = [1 2])
   ### FEA input data (read from dataset)
@@ -13,7 +19,14 @@ function GANdata()
   FyData = zeros(Float32, standardSize); FyData[10, 30, 1, :] .= 1f1; FyData[20, 40, 1, :] .= 2f1
   ### conditioning with physical fields (read from dataset)
   vmData = rand(Float32, standardSize); energyData = rand(Float32, standardSize)
-  return vfData, vmData, energyData, supportData, FxData, FyData, realTopologyData
+
+  return DataLoader( # return data loader to iterate in batches
+    (
+      solidify(vfData, vmData, energyData), # generator input
+      solidify(supportData, FxData, FyData), # FEA data
+      realTopologyData
+    ); batchsize = batchSize, parallel = true
+  )
 end
 
 # Get data from dataset file

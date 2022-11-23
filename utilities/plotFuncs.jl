@@ -121,9 +121,13 @@ function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
   newAxis = "true", paintArrow = :black, paintText = :black, alignText = (0, 0), axisHeight = 0
 )
-  forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
+  if typeof(forces) <: Tuple
+    forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
+  else
+    forceMat = forces
+  end
   loadXcoord = zeros(size(forceMat, 1)); loadYcoord = zeros(size(forceMat, 1))
-  for l in axes(forceMat)[1] # Get load positions
+  for l in axes(forceMat, 1) # Get load positions
     loadXcoord[l] = forceMat[l, 2]
     loadYcoord[l] = FEAparams.meshSize[2] - forceMat[l, 1] + 1
   end
@@ -141,7 +145,7 @@ function plotForce(
     axis = newAxis
   end
   arrows!( # Plot loads as arrows
-    axis, loadXcoord, loadYcoord, forceMat[:,3], forceMat[:,4];
+    axis, loadXcoord, loadYcoord, forceMat[:, 3], forceMat[:, 4];
     # norm of weakest force. Used to scale force vectors
     lengthscale = 1 / (0.1 * minimum( sqrt.( (forceMat[:, 3]) .^ 2 + (forceMat[:, 4]) .^ 2 ) )),
     linecolor = paintArrow, arrowcolor = paintArrow)
@@ -219,7 +223,7 @@ function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, s
     GLMakie.activate!()
     display(fig)
   else
-    println("\n\nWrong goal for plotSample().\n\n")
+    error("\n\nWrong goal for plotSample().\n\n")
   end
 end
 
@@ -346,7 +350,7 @@ end
 # plot von Mises field
 function plotVM(FEAparams, disp, vf, fig, figPos)
   # get von Mises field
-  vm = calcVM(prod(FEAparams.meshSize), FEAparams, disp, 210e3*vf, 0.3)
+  vm = calcVM(FEAparams.nElements, FEAparams, disp, 210e3*vf, 0.3)
   # plot von Mises
   _,hm = heatmap(fig[figPos[1], figPos[2]],1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, vm')
   # setup colorbar for von Mises
