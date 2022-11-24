@@ -132,13 +132,20 @@ function readAnalysis(pathRef)
 end
 
 # read file from topologyGAN dataset
-function readTopologyGANdataset(path)
-  dictionary = Dict{String, Array{Float64}}()
+function readTopologyGANdataset(path; print = false)
+  dictionary = Dict{Symbol, Array{Float64}}()
   h5open(path, "r") do id # open file
     dataFields = HDF5.get_datasets(id) # get references to data
     for data in dataFields
       # include each field's name and contents in dictionary
-      push!(dictionary, HDF5.name(data)[2:end] => HDF5.read(data))
+      push!(dictionary, Symbol(HDF5.name(data)[2:end]) => HDF5.read(data))
+    end
+  end
+  if print
+    for (key, value) in dictionary
+      println(key)
+      println(size(value))
+      value |> statsum
     end
   end
   return dictionary
@@ -308,47 +315,47 @@ end
 function topologyGANdataset()
   files = readdir(datasetPath * "data/trainValidate"; join = true) # get list of file names
   numFiles = length(files)
-  for (countFile, file) in zip(1:numFiles |> collect, files) # loop in files of folder
-    println("\n*** $countFile/$numFiles ***")
+  for (countFile, file) in enumerate(files) # loop in files of folder
+    println(countFile/numFiles*100 |> round)
     force, supp, vf, disp, topology = getDataFSVDT(file) # get data from file
+    nSamples = length(vf)
     # initialize arrays
-    vm = zeros(FEAparams.meshMatrixSize..., length(vf)); compliance = zeros(vf |> size)
+    vm = zeros(FEAparams.meshMatrixSize..., 1, nSamples); compliance = zeros(nSamples)
+    topPlaceHolder = zeros(FEAparams.meshMatrixSize..., 1, nSamples)
     energy, binarySupp, Fx, Fy = similar(vm), similar(vm), similar(vm), similar(vm)
     for sample in axes(vf, 1) # loop in samples of current file
-      sample % 200 == 0 && @show sample
       # get VM and principal stress fields for current sample
-      vm[:, :, sample], energy[:, :, sample] = calcCondsGAN(disp[:, :, 2 * sample - 1 : 2 * sample],
-        210e3 * vf[sample], 0.33
+      vm[:, :, 1, sample], energy[:, :, 1, sample] = calcCondsGAN(
+        disp[:, :, 2 * sample - 1 : 2 * sample], 210e3 * vf[sample], 0.33
       )
       # determine sample compliance
-      @suppress_err compliance[sample] = topologyCompliance(
-        vf[sample], supp[:, :, sample], force[:, :, sample], topology[:, :, sample]
+      @suppress_err compliance[sample] = topologyCompliance(vf[sample],
+        supp[:, :, sample], force[:, :, sample], topology[:, :, sample]
       )
       # transform and group data
-      binarySupp[:, :, sample] = suppToBinary(supp[:, :, sample])
-      Fx[:, :, sample], Fy[:, :, sample] = forceToMat(force[:, :, sample])
+      binarySupp[:, :, 1, sample] = suppToBinary(supp[:, :, sample])
+      Fx[:, :, 1, sample], Fy[:, :, 1, sample] = forceToMat(force[:, :, sample])
     end
-    vfMat = ones(FEAparams.meshMatrixSize..., length(vf)) .* reshape(vf, (1, 1, :))
+    vfMat = ones(FEAparams.meshMatrixSize..., 1, nSamples) .* reshape(vf, (1, 1, 1, :))
     # name of current file
     fileName = file[findlast(==('\\'), file) + 1 : end]
-    # data = discardFirstChannel.((vm, energy, binarySupp, Fx, Fy)) # discard first channel (null)
     # create new data file
     h5open(datasetPath * "data/trainValidate2/$fileName", "w") do new
-      for (field, name) in zip(
-        [compliance, vfMat, vm, energy, binarySupp, Fx, Fy, topology],
+      for (field, name) in zip( # create fields in file
+        [compliance, vfMat, vm, energy, binarySupp, Fx, Fy, topPlaceHolder],
         ["compliance", "vf", "vm", "energy", "binarySupp","Fx", "Fy", "topologies"]
       )
         create_dataset(new, name, field |> size |> zeros)
       end
       for gg in axes(vf, 1) # fill new file with data
         new["compliance"][gg] = compliance[gg]
-        new["vf"][:, :, gg] = vfMat[:, :, gg]
-        new["vm"][:, :, gg] = vm[:, :, gg]
-        new["energy"][:, :, gg] = energy[:, :, gg]
-        new["binarySupp"][:, :, gg] = binarySupp[:, :, gg]
-        new["Fx"][:, :, gg] = Fx[:, :, gg]
-        new["Fy"][:, :, gg] = Fy[:, :, gg]
-        new["topologies"][:, :, gg] = topology[:, :, gg]
+        new["vf"][:, :, 1, gg] = vfMat[:, :, 1, gg]
+        new["vm"][:, :, 1, gg] = vm[:, :, 1, gg]
+        new["energy"][:, :, 1, gg] = energy[:, :, 1, gg]
+        new["binarySupp"][:, :, 1, gg] = binarySupp[:, :, 1, gg]
+        new["Fx"][:, :, 1, gg] = Fx[:, :, 1, gg]
+        new["Fy"][:, :, 1, gg] = Fy[:, :, 1, gg]
+        new["topologies"][1:50, 1:140, 1, gg] = topology[:, :, gg]
       end
     end
   end

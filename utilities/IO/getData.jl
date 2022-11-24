@@ -4,12 +4,12 @@
 # prepare data for GAN training. Receives list of HDF5 files.
 # Returns data loader to iterate in batches of samples
 function GANdata(files)
+  # genInput = zeros(FEAparams.meshMatrixSize..., 3, 1), FEAinfo, topology = similar(genInput)
   for file in files
-    data = 0
-    h5open(file, "r") do ID data = ID |> HDF5.get_datasets .|> read end
-    ########
+    dataDict = readTopologyGANdataset(path) # read data as dictionary
+    standardSize = (FEAparams.meshMatrixSize..., 1, dataDict[:compliance] |> length)
+    genInput = cat(genInput, solidify(dataDict[:vf], dataDict[:vm], dataDict[:energy]); dims = 4)
   end
-  standardSize = (51, 141, 1, nSamples)
   realTopologyData = pad_constant(rand(Float32, (50, 140, 1, nSamples)), (0, 1, 0, 1); dims = [1 2])
   ### FEA input data (read from dataset)
   vfData = ones(Float32, standardSize) .* reshape(view(rand(Float32, nSamples), :), (1, 1, 1, :)) # VF

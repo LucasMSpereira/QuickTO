@@ -33,6 +33,11 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   combinePDFs(path, finalName)
 end
 
+# generate PDFs related to GANs
+function GANplots()
+
+end
+
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
 function loadCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
@@ -119,7 +124,7 @@ end
 # plot forces
 function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
-  newAxis = "true", paintArrow = :black, paintText = :black, alignText = (0, 0), axisHeight = 0
+  newAxis = "true", paintArrow = :black, paintText = :black, alignText = (:left, :center), axisHeight = 0
 )
   if typeof(forces) <: Tuple
     forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
@@ -158,12 +163,16 @@ function plotForce(
   return axis
 end
 
-function plotGANlostHist()
-  GLMakie.activate!()
+# create line plots of GAN validation histories.
+# save plot as pdf
+function plotGANlostHist(losses, path)
+  CairoMakie.activate!()
   f = Figure(resolution = (1050, 700)); # create makie figure
+  # axis to draw on
   ax = Axis(f[1, 1], xlabel = "Validation epochs", ylabel = "Loss")
-  lines!(experimentMetaData.lossesVals[:genValHistory])
-  lines!(experimentMetaData.lossesVals[:discValHistory])
+  # line plots of histories
+  lines!(losses[:genValHistory]); lines!(losses[:discValHistory])
+  Makie.save("$path/validation histories.pdf", f) # save pdf with plot
 end
 
 # Line plots of evaluation histories
@@ -198,7 +207,7 @@ end
 # create figure to vizualize sample
 function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, sample; goal = "display")
   # create makie figure and set it up
-  fig = Figure(resolution = (1400, 700));
+  fig = Figure(resolution = (1400, 700))
   colSize = 500
   colsize!(fig.layout, 1, Fixed(colSize))
   # labels for first line of grid
@@ -352,12 +361,11 @@ function plotVM(FEAparams, disp, vf, fig, figPos)
   # get von Mises field
   vm = calcVM(FEAparams.nElements, FEAparams, disp, 210e3*vf, 0.3)
   # plot von Mises
-  _,hm = heatmap(fig[figPos[1], figPos[2]],1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, vm')
-  # setup colorbar for von Mises
-  bigVal = 1.1*ceil(maximum(vm))
-  t = floor(0.2*bigVal)
-  t == 0 && (t = 1)
-  Colorbar(fig[figPos[1], figPos[2] + 1], hm, ticks = 0:t:bigVal)
+  _,hm = heatmap(fig[figPos[1], figPos[2]],
+    1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, vm';
+    colorrange = (floor(Int, minimum(vm)), ceil(Int, maximum(vm)))
+  )
+  Colorbar(fig[figPos[1], figPos[2] + 1], hm)
 end
 
 # Make plot for VM model test and visually compare ML model predictions against truth

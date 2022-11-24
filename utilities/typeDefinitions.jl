@@ -29,7 +29,7 @@ end
 
 earlyStopTrainConfig(
   validFreq; decay = 0.0, schedule = 0, evaluations = [],
-  earlyStopQuant = 3, earlyStopPercent = 1, checkPointFreq = 10
+  earlyStopQuant = 3, earlyStopPercent = 5, checkPointFreq = 4
 ) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations,
   earlyStopQuant, earlyStopPercent, checkPointFreq
 )

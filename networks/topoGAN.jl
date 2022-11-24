@@ -1,6 +1,6 @@
 include("C:/Users/LucasKaoid/Meu Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/QTOutils.jl")
-const batchSize = 64
-const nSamples = 12_000
+const batchSize = 24
+const nSamples = 200
 # binaries for logit binary cross-entropy
 const discBinaryReal = ones(Float32, batchSize)
 const discBinaryFake = zeros(Float32, batchSize)

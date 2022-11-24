@@ -357,7 +357,7 @@ function pathEleList(aStar)
 end
 
 # reshape vectors with element quantity to reflect mesh shape
-function quad(nelx, nely, vec)
+function quad(nelx::Int, nely::Int, vec::Vector{Real})
   # nelx = number of elements along x axis (number of columns in matrix)
   # nely = number of elements along y axis (number of lines in matrix)
   # vec = vector of scalars, each one associated to an element.
@@ -458,9 +458,11 @@ function statsum(arr)
     nonZeros,
     "/", length(arr),
     " (", round(nonZeros/length(arr)*100; digits = 1),
-    "%) non-zero elements."
+    "%) non-zero elements.\n"
   )
+  return nothing
 end
+statsum(x...) = statsum.(x)
 
 # use compact 3x3 support definition to create
 # matrix used to train the GANs
