@@ -34,8 +34,10 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
 end
 
 # generate PDFs related to GANs
-function GANplots()
-
+function GANplots(directory)
+  mkpath(directory) # create directory to store all PDFs
+  # create pdf with line plots of validation loss histories
+  plotGANlostHist(losses, path)
 end
 
 # Use a trained model to predict samples and make plots comparing

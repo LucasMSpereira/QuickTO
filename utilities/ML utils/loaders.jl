@@ -1,6 +1,15 @@
 # Functions that organize data in loaders. These enable the iteration
 # in batches of data.
 
+# get data loader for GANs, according to context and group
+function GANdataLoader(metaData, goal, group)
+  if goal != :test # if training or validating
+    return GANdata(metaData.files[goal][group])
+  else # if testing
+    return GANdata(datasetPath * "/data/test")
+  end
+end
+
 # prepare data loaders for loadCNN training/validation/test using displacements
 function getDisploaders(disp, forces, numPoints, separation, batch; multiOutputs = false)
   if numPoints != 0 # use all data or certain number of points

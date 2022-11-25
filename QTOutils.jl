@@ -22,7 +22,7 @@ readdir("./utilities/ML utils"; join = true) .|> include;
 readdir("./utilities/IO"; join = true) .|> include;
 println("Constants...")
 const datasetPath = "C:/Users/LucasKaoid/Desktop/datasets/" # dataset path
-const datasetSize = 120_000 # approximate dataset size
+const datasetNonTestSize = 106_336 # number of samples for training and validation
 # reference number of channels used in TopologyGAN
 const gf_dim = 128
 const df_dim = 128

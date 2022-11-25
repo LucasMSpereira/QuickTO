@@ -23,23 +23,23 @@ end
 
 # print information in validation steps
 function GANprints(epoch, metaData; earlyStopVals = 0)
-  # if first early-stop check
-  if length(metaData.lossesVals[:genValHistory]) == metaData.trainConfig.earlyStopQuant + 1
-    println("Epoch       Δ% Generator loss    Δ% Discriminator loss")
-  end
-  if earlyStopVals != 0 # If performing early-stopping check
-    println(
-      rpad(epoch, 12),
-      rpad <| ("$(round(earlyStopVals[1]; digits = 2))%", 21)...,
-      rpad <| ("$(round(earlyStopVals[2]; digits = 2))%", 21)...,
-    )
-  else # if validation without early-stop check
-    println(
-      rpad(epoch, 12),
-      rpad <| (sciNotation(metaData.lossesVals[:genValHistory][end], 4), 18)...,
-      rpad <| (sciNotation(metaData.lossesVals[:discValHistory][end], 4), 19)...,
-      "No early-stop check yet."
-    )
+  # if using earlystopping
+  if typeof(metaData.trainConfig) == earlyStopTrainConfig
+    # if first early-stop check
+    if length(metaData.lossesVals[:genValHistory]) == metaData.trainConfig.earlyStopQuant + 1
+      println("Epoch       Δ% Generator loss    Δ% Discriminator loss")
+    end
+    if earlyStopVals != 0 # If performing early-stopping check
+      println(
+        rpad(epoch, 12),
+        rpad <| ("$(round(earlyStopVals[1]; digits = 2))%", 21)...,
+        rpad <| ("$(round(earlyStopVals[2]; digits = 2))%", 21)...,
+      )
+    else
+      printGANvalid(metaData, epoch)
+    end
+  else # if using fixed number of epochs
+    printGANvalid(metaData, epoch)
   end
 end
 
@@ -71,6 +71,16 @@ function newHDF5(path, quants)
     "disp", zeros(FEAparams.meshSize[2] + 1, FEAparams.meshSize[1] + 1, 2 * quants)
   )
   return newFile # return file id to write info
+end
+
+# print validation information during GAN training
+function printGANvalid(metaData, epoch)
+  println(
+      rpad(epoch, 12),
+      rpad <| (sciNotation(metaData.lossesVals[:genValHistory][end], 4), 18)...,
+      rpad <| (sciNotation(metaData.lossesVals[:discValHistory][end], 4), 19)...,
+      "No early-stop check yet."
+  )
 end
 
 # Access folder "id". Apply function "func" to all samples in "numFiles" HDF5 files.
@@ -133,12 +143,12 @@ end
 
 # read file from topologyGAN dataset
 function readTopologyGANdataset(path; print = false)
-  dictionary = Dict{Symbol, Array{Float64}}()
+  dictionary = Dict{Symbol, Array{Float32}}()
   h5open(path, "r") do id # open file
     dataFields = HDF5.get_datasets(id) # get references to data
     for data in dataFields
       # include each field's name and contents in dictionary
-      push!(dictionary, Symbol(HDF5.name(data)[2:end]) => HDF5.read(data))
+      push!(dictionary, Symbol(HDF5.name(data)[2:end]) => Float32.(HDF5.read(data)))
     end
   end
   if print
@@ -312,11 +322,16 @@ function testDataset(suppID)
 end
 
 # prepare dataset to train topologyGAN
-function topologyGANdataset()
-  files = readdir(datasetPath * "data/trainValidate"; join = true) # get list of file names
+function topologyGANdataset(firstFileIndex, lastFileIndex)
+  # get list of file names
+  if firstFileIndex * lastFileIndex == 0
+    files = [datasetPath * "data/test"]
+  else
+    files = readdir(datasetPath * "data/trainValidate"; join = true)[firstFileIndex:lastFileIndex]
+  end
   numFiles = length(files)
   for (countFile, file) in enumerate(files) # loop in files of folder
-    println(countFile/numFiles*100 |> round)
+    println(countFile/numFiles*100 |> round, "%")
     force, supp, vf, disp, topology = getDataFSVDT(file) # get data from file
     nSamples = length(vf)
     # initialize arrays
@@ -324,6 +339,7 @@ function topologyGANdataset()
     topPlaceHolder = zeros(FEAparams.meshMatrixSize..., 1, nSamples)
     energy, binarySupp, Fx, Fy = similar(vm), similar(vm), similar(vm), similar(vm)
     for sample in axes(vf, 1) # loop in samples of current file
+      sample % 1000 == 0 && @show sample
       # get VM and principal stress fields for current sample
       vm[:, :, 1, sample], energy[:, :, 1, sample] = calcCondsGAN(
         disp[:, :, 2 * sample - 1 : 2 * sample], 210e3 * vf[sample], 0.33
@@ -338,7 +354,11 @@ function topologyGANdataset()
     end
     vfMat = ones(FEAparams.meshMatrixSize..., 1, nSamples) .* reshape(vf, (1, 1, 1, :))
     # name of current file
-    fileName = file[findlast(==('\\'), file) + 1 : end]
+    if firstFileIndex * lastFileIndex == 0
+      fileName = "test"
+    else
+      fileName = file[findlast(==('\\'), file) + 1 : end]
+    end
     # create new data file
     h5open(datasetPath * "data/trainValidate2/$fileName", "w") do new
       for (field, name) in zip( # create fields in file

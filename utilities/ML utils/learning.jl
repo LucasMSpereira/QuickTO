@@ -138,6 +138,28 @@ function FEAlossPipeline(model, data, FEparams, lossFun, optimizer, modelName; e
   Flux.trainmode!(model, true) # reenable parameter training
 end
 
+# train GANs with fixed number of epochs
+function fixedEpochGANs(metaData)
+  epoch = 0
+  while epoch < metaData.trainConfig.epochs # loop in epochs
+    epoch += 1 # count training epochs
+    epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
+    GANepoch!(metaData, :train) # training epoch
+    # occasionally run validation epoch
+    if epoch % metaData.trainConfig.validFreq == 0
+      switchTraining(metaData, false) # disable model updating during validation
+      # validation epoch returning avg losses for both NNs
+      GANepoch!(metaData, :validate) |> metaData
+      switchTraining(metaData, true) # reenable model updating after validation
+      # print information about validation
+      GANprints(epoch, metaData)
+    end
+    # save occasional checkpoints of the models
+    epoch % metaData.trainConfig.checkPointFreq == 0 && saveGANs(metaData)
+  end
+  saveGANs(metaData; finalSave = true) # save final models
+end
+
 # epoch of GAN usage, be it training, validation or test
 # return avg. losses for epoch
 function GANepoch!(metaData, goal)
@@ -147,11 +169,8 @@ function GANepoch!(metaData, goal)
   groupFiles = defineGroupFiles(metaData, goal)
   # loop in groups of files used for current split
   for group in groupFiles
-    if goal != :test # if training or validating
-      currentLoader = GANdata(metaData.files[goal][group])
-    else
-      currentLoader = GANdata(datasetPath * "/data/test")
-    end
+    # get loader with data for current group
+    currentLoader = GANdataLoader(metaData, goal, group)
     # each batch of current epoch
     for (genInput, FEAinfo, realTopology) in currentLoader
       batchCount += 1

@@ -129,11 +129,10 @@ end
 # to acces files for training/validation
 function defineGroupFiles(metaData, goal)
   if goal != :test # if training or validating
-    return groupFiles = DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 17)
+    return groupFiles = DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 13)
   else
     # if testing, variable 'groupFiles' has no effect.
-    # Return placeholder
-    return groupFiles = [1]
+    return groupFiles = [1] # Return placeholder
   end
 end
 
@@ -261,22 +260,20 @@ function getNonBinaryTopos(forces, supps, vf, disp, top)
 end
 
 # get lists of hdf5 files to be used in training and validation
-function getNonTestFileLists!(trainValidateFolder, trainPercentage)
+function getNonTestFileLists(trainValidateFolder, trainPercentage)
   # get list of files, and shuffle it
   filePaths = readdir(trainValidateFolder; join = true) |> shuffle!
   # amount of samples used in training
-  datasetTrainSize = trainPercentage * datasetSize |> round
-  numberOfFiles = 0
+  datasetTrainSize = trainPercentage * datasetNonTestSize |> round
+  trainingFiles = 0
   while true # loop including more files each time
+    trainingFiles += 1
     # if size of training split was reached, break
-    numSample(filePaths[1 : numberOfFiles]) >= datasetTrainSize && break
-    @show numSample(filePaths[1 : numberOfFiles])
-    numberOfFiles += 1
-    @show numberOfFiles
+    numSample(filePaths[1 : trainingFiles]) >= datasetTrainSize && break
   end
   return Dict( # create lists of files to be used in each split
-    :train => filePaths[1:numberOfFiles],
-    :validate => filePaths[numberOfFiles + 1 : end]
+    :train => filePaths[1:trainingFiles],
+    :validate => filePaths[trainingFiles + 1 : end]
   )
 end
 
@@ -357,7 +354,7 @@ function pathEleList(aStar)
 end
 
 # reshape vectors with element quantity to reflect mesh shape
-function quad(nelx::Int, nely::Int, vec::Vector{Real})
+function quad(nelx::Int, nely::Int, vec::Vector{<:Real})
   # nelx = number of elements along x axis (number of columns in matrix)
   # nely = number of elements along y axis (number of lines in matrix)
   # vec = vector of scalars, each one associated to an element.
@@ -384,6 +381,9 @@ function randDiffInt(n, val)
   return randVec
 end
 
+# remove first position along 4th dimension in 4D array
+remFirstSample(x::Array{<:Real, 4})::Array{<:Real, 4} = x[:, :, :, 2:end]
+
 # reshape output of discriminator
 reshapeDiscOut(x) = dropdims(x |> transpose |> Array; dims = 2)
 
@@ -402,6 +402,7 @@ function reshapeForces(predForces)
   return forces
 end
 
+# print real number in scientific notation
 function sciNotation(num::Real, printDigits::Int)
   try
     num == 0 && return "0."*repeat("0", printDigits)*"E00"
@@ -484,6 +485,14 @@ function suppToBinary(supp)
   return suppMat
 end
 
+# string with current time and date
 timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
 
+# estimate of time needed to train GANs with fixed number of epochs (in hours)
+function trainTime(nEpochs, datasetPercentage)
+  tTime = (3.5 * nEpochs) * datasetPercentage
+  println(tTime, " hours, ", round(tTime/24; digits = 1), " days")
+end
+
+# notation analogue to |>, but works with multiple arguments
 <|(f, args...) = f(args...)

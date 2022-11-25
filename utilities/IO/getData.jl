@@ -4,27 +4,40 @@
 # prepare data for GAN training. Receives list of HDF5 files.
 # Returns data loader to iterate in batches of samples
 function GANdata(files)
-  # genInput = zeros(FEAparams.meshMatrixSize..., 3, 1), FEAinfo, topology = similar(genInput)
+  genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
+  topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
   for file in files
-    dataDict = readTopologyGANdataset(path) # read data as dictionary
-    standardSize = (FEAparams.meshMatrixSize..., 1, dataDict[:compliance] |> length)
-    genInput = cat(genInput, solidify(dataDict[:vf], dataDict[:vm], dataDict[:energy]); dims = 4)
+    dataDict = readTopologyGANdataset(file) # read data as dictionary
+    # amount of samples according to percentage of dataset being used
+    nSamples = round <| (Int, length(dataDict[:compliance]) * percentageDataset)...
+    standardSize = (FEAparams.meshMatrixSize..., 1, nSamples)
+    genInput = cat(genInput,
+      solidify(
+        reshape(dataDict[:vf][:, :, 1, 1:nSamples], standardSize),
+        reshape(dataDict[:vm][:, :, 1, 1:nSamples], standardSize),
+        reshape(dataDict[:energy][:, :, 1, 1:nSamples], standardSize)
+      );
+      dims = 4
+    )
+    FEAinfo = cat(FEAinfo,
+      solidify(
+        reshape(dataDict[:binarySupp][:, :, 1, 1:nSamples], standardSize),
+        reshape(dataDict[:Fx][:, :, 1, 1:nSamples], standardSize),
+        reshape(dataDict[:Fy][:, :, 1, 1:nSamples], standardSize)
+      );
+      dims = 4
+    )
+    topology = cat(topology,
+      reshape(dataDict[:topologies][:, :, 1, 1:nSamples], standardSize); dims = 4
+    )
   end
-  realTopologyData = pad_constant(rand(Float32, (50, 140, 1, nSamples)), (0, 1, 0, 1); dims = [1 2])
-  ### FEA input data (read from dataset)
-  vfData = ones(Float32, standardSize) .* reshape(view(rand(Float32, nSamples), :), (1, 1, 1, :)) # VF
-  supportData = rand(Bool, standardSize) # binary highlighting pinned NODES
-  # components and position of loads (read from dataset)
-  FxData = zeros(Float32, standardSize); FxData[10, 30, 1, :] .= 5f1; FxData[20, 40, 1, :] .= -3f1
-  FyData = zeros(Float32, standardSize); FyData[10, 30, 1, :] .= 1f1; FyData[20, 40, 1, :] .= 2f1
-  ### conditioning with physical fields (read from dataset)
-  vmData = rand(Float32, standardSize); energyData = rand(Float32, standardSize)
-
+  # discard first position of arrays (initialization)
+  genInput, FEAinfo, topology = remFirstSample.((genInput, FEAinfo, topology))
   return DataLoader( # return data loader to iterate in batches
     (
-      solidify(vfData, vmData, energyData), # generator input
-      solidify(supportData, FxData, FyData), # FEA data
-      realTopologyData
+      genInput, # generator input
+      FEAinfo, # FEA data
+      topology # true topologies
     ); batchsize = batchSize, parallel = true
   )
 end

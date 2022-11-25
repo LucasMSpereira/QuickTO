@@ -4,32 +4,33 @@ abstract type trainConfig end
 
 # Configurations for training of neural networks for fixed number of epochs
 mutable struct epochTrainConfig <: trainConfig
-  epochs::Int64 # Total number of training epochs
-  validFreq::Int64 # Evaluation frequency in epochs
-  schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  decay::Float64 # If scheduling, periodically multiply learning rate by this value
-  evaluations::Array{Any} # History of evaluation losses
+  const epochs::Int64 # Total number of training epochs
+  const validFreq::Int64 # Evaluation frequency in epochs
+  const schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
+  const decay::Float64 # If scheduling, periodically multiply learning rate by this value
+  evaluations::Array{<:Real} # History of evaluation losses
+  const checkPointFreq::Int32 # epoch interval between intermediate saves
 end
 epochTrainConfig(
-  epochs, validFreq; schedule = 0, decay = 0.0, evaluations = []
-) = epochTrainConfig(epochs, validFreq, schedule, decay, evaluations)
+  epochs, validFreq; schedule = 0, decay = 0.0, evaluations = Float64[], checkPointFreq = 4
+) = epochTrainConfig(epochs, validFreq, schedule, decay, evaluations, checkPointFreq)
 
 # Configurations for early-stop training of neural networks
 mutable struct earlyStopTrainConfig <: trainConfig
-  validFreq::Int64 # Evaluation frequency in epochs
-  decay::Float64 # If scheduling, periodically multiply learning rate by this value
-  schedule::Int32 # Learning rate adjustment interval in epochs. 0 for no scheduling
-  evaluations::Array{Any} # History of evaluation losses
+  const validFreq::Int64 # Evaluation frequency in epochs
+  const decay::Float64 # If scheduling, periodically multiply learning rate by this value
+  const schedule::Int32 # Learning rate adjustment interval in epochs. 0 for no scheduling
+  evaluations::Array{<:Real} # History of evaluation losses
   # Interval of most recent validations used for early stop criterion
-  earlyStopQuant::Int32
+  const earlyStopQuant::Int32
   # Minimal percentage drop in loss in the last "earlyStopQuant" validations
-  earlyStopPercent::Float32
-  checkPointFreq::Int32 # epoch interval between intermediate saves
+  const earlyStopPercent::Float32
+  const checkPointFreq::Int32 # epoch interval between intermediate saves
 end
 
 earlyStopTrainConfig(
-  validFreq; decay = 0.0, schedule = 0, evaluations = [],
-  earlyStopQuant = 3, earlyStopPercent = 5, checkPointFreq = 4
+  validFreq; decay = 0.0, schedule = 0, evaluations = Float64[],
+  earlyStopQuant = 3, earlyStopPercent = 6, checkPointFreq = 4
 ) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations,
   earlyStopQuant, earlyStopPercent, checkPointFreq
 )
@@ -71,7 +72,7 @@ GANmetaData(
     :genTest => Float64[],
     :discTest => Float64[]
   ),
-  getNonTestFileLists!(datasetPath * "data/trainValidate", 0.7)
+  getNonTestFileLists(datasetPath * "data/trainValidate", 0.7)
 )
 
 function switchTraining(metaData::GANmetaData, mode::Bool)
