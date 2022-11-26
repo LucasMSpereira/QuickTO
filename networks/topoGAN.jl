@@ -27,6 +27,7 @@ end
 begin
   m = GANmetaData(
     Chain(Conv((3, 3), 1 => 1)), Chain(Conv((3, 3), 1 => 1)),
+    # Flux.Optimise.Adam(), earlyStopTrainConfig(10)
     Flux.Optimise.Adam(), epochTrainConfig(67, 5)
   )
   [m((randBetween(100, 1000), randBetween(0, 5))) for _ in 1:30]

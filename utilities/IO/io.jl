@@ -34,12 +34,13 @@ function GANprints(epoch, metaData; earlyStopVals = 0)
         rpad(epoch, 12),
         rpad <| ("$(round(earlyStopVals[1]; digits = 2))%", 21)...,
         rpad <| ("$(round(earlyStopVals[2]; digits = 2))%", 21)...,
+        timeNow()
       )
     else
-      printGANvalid(metaData, epoch)
+      printGANvalid(metaData, epoch; training = :earlystop)
     end
   else # if using fixed number of epochs
-    printGANvalid(metaData, epoch)
+    printGANvalid(metaData, epoch; training = :fixedEpochs)
   end
 end
 
@@ -54,6 +55,7 @@ function GANreport(modelName, metaData)
     metaData.trainConfig.validFreq,
     path, modelName
   )
+  GANtestPlots(modelName, metaData)
   return nothing
 end
 
@@ -88,13 +90,22 @@ function newHDF5(path, quants)
 end
 
 # print validation information during GAN training
-function printGANvalid(metaData, epoch)
-  println(
+function printGANvalid(metaData, epoch; training)
+  if training == :earlystop
+    println(
+        rpad(epoch, 12),
+        rpad <| (sciNotation(metaData.lossesVals[:genValHistory][end], 4), 18)...,
+        rpad <| (sciNotation(metaData.lossesVals[:discValHistory][end], 4), 19)...,
+        "No early-stop check yet."
+    )
+  else
+    println(
       rpad(epoch, 12),
       rpad <| (sciNotation(metaData.lossesVals[:genValHistory][end], 4), 18)...,
       rpad <| (sciNotation(metaData.lossesVals[:discValHistory][end], 4), 19)...,
-      "No early-stop check yet."
-  )
+      timeNow()
+    )
+  end
 end
 
 # Access folder "id". Apply function "func" to all samples in "numFiles" HDF5 files.
@@ -237,17 +248,15 @@ function saveGANs(metaData; finalSave = false)
   # transfer models to cpu
   cpuGenerator = cpu(metaData.generator)
   cpuDiscriminator = cpu(metaData.discriminator)
+  # save models
+  @save datasetPath * "data/checkpoints/" * timeNow() * "gen.bson" cpuGenerator
+  @save datasetPath * "data/checkpoints/" * timeNow() * "disc.bson" cpuDiscriminator
   if !finalSave
-    # save models
-    @save datasetPath * "data/checkpoints/" * timeNow() * "gen.bson" cpuGenerator
-    @save datasetPath * "data/checkpoints/" * timeNow() * "disc.bson" cpuDiscriminator
     # bring models back to gpu, if training will continue
     metaData.generator = gpu(cpuGenerator)
     metaData.discriminator = gpu(cpuDiscriminator)
-  else # save final models
-    @save datasetPath * "data/checkpoints/" * timeNow() * "finalGen.bson" cpuGenerator
-    @save datasetPath * "data/checkpoints/" * timeNow() * "finalDisc.bson" cpuDiscriminator
   end
+  writeLosses(metaData)
   return nothing
 end
 

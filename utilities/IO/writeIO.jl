@@ -47,6 +47,46 @@ function writeDispComps(quickTOdata, problemID, disp, FEAparams, numCellNode)
   return dispInterp
 end
 
+# save information in GANmetaData struct in txt file
+function writeLosses(metaData)
+  open(datasetPath * "data/checkpoints/" * timeNow() * " metaData.txt", "w") do id
+    valF = metaData.trainConfig.validFreq
+    # number of validations
+    numVals = length(metaData.lossesVals[:genValHistory])
+    write(id, "********* CONFIGURATION METADATA\n")
+    write(id, "\nOPTIMISER: " *
+      string(typeof(metaData.opt)) * " " * sciNotation(metaData.opt.eta, 1)
+    )
+    write(id, "\nTRAINING: ")
+    if typeof(metaData.trainConfig) == epochTrainConfig
+      write(id, "FIXED NUMBER OF EPOCHS - ", metaData.trainConfig.epochs |> string)
+    else
+      write(id, "EARLYSTOPPING")
+      write(id, "\n\tINTERVAL BETWEEN CHECKS (VALIDATION EPOCHS): ", metaData.trainConfig.earlyStopQuant |> string)
+      write(id, "\n\tMINIMAL PERCENTAGE DROP IN LOSS: ", metaData.trainConfig.earlyStopPercent |> string, "%")
+    end
+    write(id, "\n\tVALIDATION FREQUENCY (EPOCHS): ", valF |> string)
+    write(id, "\n\tCHECKPOINT FREQUENCY (EPOCHS): ", metaData.trainConfig.checkPointFreq |> string)
+    if metaData.trainConfig.decay == 0
+      write(id, "\n\tNO LEARNING RATE DECAY.\n")
+    else
+      write(id, "\n\tDECAY RATE: ", metaData.trainConfig.decay |> string)
+      write(id, "\n\tDECAY FREQUENCY (EPOCHS): ", metaData.trainConfig.schedule |> string * "\n")
+    end
+    # write history of validation losses
+    for (key, name) in zip([:genValHistory, :discValHistory], ["GENERATOR", "DISCRIMINATOR"])
+      write(id, "\n********* " * name * " VALIDATION LOSS HISTORY\n\n")
+      write(id, "EPOCH   VALUE\n")
+      for (epoch, value) in zip(valF:valF:valF * numVals, metaData.lossesVals[key])
+        write(id, rpad(epoch, 8) * sciNotation(value, 3) * "\n")
+      end
+    end
+    write(id, "\n********* TEST LOSSES\n\n")
+    write(id, "GENERATOR: " * sciNotation(metaData.lossesVals[:genTest][1], 3) * "\n")
+    write(id, "DISCRIMINATOR: " * sciNotation(metaData.lossesVals[:discTest][1], 3) * "\n")
+  end
+end
+
 # write data to new HDF5. Use depends on context
 function writeToHDF5(fileID, disp, vf, supp, force, topology)
   for i in axes(vf, 1)

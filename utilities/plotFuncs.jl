@@ -33,6 +33,10 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   combinePDFs(path, finalName)
 end
 
+function GANtestPlots()
+
+end
+
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
 function loadCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
@@ -173,6 +177,7 @@ function plotGANValHist(lossesVals, validFreq, path, modelName)
   ax = Axis(f[1:3, 1], yscale = log10, # axis to draw on
     xlabel = "Epochs", ylabel = "Losses", title = modelName
   )
+  # set limits of x axis
   xlims!(ax, 0, validFreq * (length(genValHistory) + 1))
   # limit y axis between 0 and maximum
   # ylims!(ax, 0, max <| (maxima .|> ceil .|> Int)...)
@@ -184,7 +189,7 @@ function plotGANValHist(lossesVals, validFreq, path, modelName)
   Legend(f[1, 2][1, 1], [lineGen, lineDisc], ["Generator", "Discriminator"], offset = (-100, 0))
   colsize!(f.layout, 2, Fixed(350))
   minimaAxis = Axis(f[2, 2])
-  text!(
+  text!( # text for validation minima for both NNs
     minimaAxis, "Validation minima:\n\n" * lpad("Epoch:", 29) * lpad("Value:", 9) * "\n" * 
     rpad("Generator:", 16) * rpad(minima[1][2] * validFreq, 12) * (sciNotation <| (minima[1][1], 3)...) * "\n" *
     "Discriminator: " * rpad(minima[2][2] * validFreq, 12) * (sciNotation <| (minima[2][1], 3)...),
@@ -192,7 +197,7 @@ function plotGANValHist(lossesVals, validFreq, path, modelName)
   )
   hidespines!(minimaAxis); hidedecorations!(minimaAxis)
   testAxis = Axis(f[3, 2])
-  text!(
+  text!( # text for test loss values
     testAxis, "Test losses:\n\n" * 
     rpad("Generator:", 16) * (sciNotation <| (testLosses[1], 3)...) * "\n" *
     "Discriminator: " * (sciNotation <| (testLosses[2], 3)...),
