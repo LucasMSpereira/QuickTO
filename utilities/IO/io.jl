@@ -44,13 +44,15 @@ function GANprints(epoch, metaData; earlyStopVals = 0)
 end
 
 # generate PDF report about GANs
-function GANreport(directory, metaData)
-  mkpath(directory) # create directory to store all PDFs
+function GANreport(modelName, metaData)
+  # create directory to store all PDFs
+  path = projPath * "/networks/GANplots/" * modelName
+  mkpath(path)
   # create pdf with line plots of validation loss histories
   plotGANValHist(
-    metaData.lossesVals[:genValHistory],
-    metaData.lossesVals[:discValHistory],
-    directory
+    metaData.lossesVals,
+    metaData.trainConfig.validFreq,
+    path, modelName
   )
   return nothing
 end
@@ -237,14 +239,14 @@ function saveGANs(metaData; finalSave = false)
   cpuDiscriminator = cpu(metaData.discriminator)
   if !finalSave
     # save models
-    @save "./networks/models/checkpoints/$(timeNow())gen.bson" cpuGenerator
-    @save "./networks/models/checkpoints/$(timeNow())disc.bson" cpuDiscriminator
+    @save datasetPath * "data/checkpoints/" * timeNow() * "gen.bson" cpuGenerator
+    @save datasetPath * "data/checkpoints/" * timeNow() * "disc.bson" cpuDiscriminator
     # bring models back to gpu, if training will continue
     metaData.generator = gpu(cpuGenerator)
     metaData.discriminator = gpu(cpuDiscriminator)
   else # save final models
-    @save "./networks/models/checkpoints/$(timeNow())finalGen.bson" cpuGenerator
-    @save "./networks/models/checkpoints/$(timeNow())finalDisc.bson" cpuDiscriminator
+    @save datasetPath * "data/checkpoints/" * timeNow() * "finalGen.bson" cpuGenerator
+    @save datasetPath * "data/checkpoints/" * timeNow() * "finalDisc.bson" cpuDiscriminator
   end
   return nothing
 end

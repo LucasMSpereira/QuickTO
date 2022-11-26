@@ -46,11 +46,8 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
   discLoss(discOutReal) = logitBinCrossEnt(discOutReal, 1) + logitBinCrossEnt(discOutFake, 0)
   # gradients and final losses of both NNs
   genInputGPU = genInput |> gpu
-  # println("ANTES DE GRADS"); CUDA.memory_status(); println()
   genLossVal, genGrads = withgradient(() -> genLoss(genInputGPU |> gen |> cpu), Flux.params(gen))
-  # println("ENTRE GRADS"); CUDA.memory_status(); println()
   discLossVal, discGrads = withgradient(() -> discLoss(discOutReal), Flux.params(disc))
-  # println("DEPOIS DE GRADS"); CUDA.memory_status(); println()
   return genGrads, genLossVal, discGrads, discLossVal
 end
 

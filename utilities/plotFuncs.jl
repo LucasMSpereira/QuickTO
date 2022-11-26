@@ -160,30 +160,47 @@ end
 
 # create line plots of GAN validation histories.
 # save plot as pdf
-function plotGANValHist(genValHistory, discValHistory, path)
-  # CairoMakie.activate!() # vector graphics
-  GLMakie.activate!() # vector graphics
-  f = Figure(resolution = (1050, 700)); # create makie figure
-  ax = Axis(f[1:2, 1], # axis to draw on
-    xlabel = "Validation epochs", ylabel = "Losses"
-  )
+function plotGANValHist(lossesVals, validFreq, path, modelName)
+  genValHistory = lossesVals[:genValHistory]
+  discValHistory = lossesVals[:discValHistory]
+  testLosses = (lossesVals[:genTest][1], lossesVals[:discTest][1])
+  CairoMakie.activate!() # vector graphics
+  # GLMakie.activate!() # rasterization
   # maxima and minima of validation histories
   maxima = maximum.((genValHistory, discValHistory))
   minima = findmin.((genValHistory, discValHistory))
-  # limit y axis between 0 and maximum
-  ylims!(ax, 0, max <| (maxima .|> ceil .|> Int)...)
-  # line plots of histories
-  lineGen = lines!(ax, genValHistory)
-  lineDisc = lines!(ax, discValHistory)
-  # add legend to plot
-  Legend(f[1, 2], [lineGen, lineDisc], ["Generator", "Discriminator"])
-  tAxis = Axis(f[2, 2])
-  display(f)
-  # hidespines!(tAxis); hidedecorations!(tAxis)
-  text!(0, 0,
-    text = "jooj",
+  f = Figure(resolution = (1500, 800)); # create makie figure
+  ax = Axis(f[1:3, 1], yscale = log10, # axis to draw on
+    xlabel = "Epochs", ylabel = "Losses", title = modelName
   )
-  # Makie.save("$path/validation histories.pdf", f) # save pdf with plot
+  xlims!(ax, 0, validFreq * (length(genValHistory) + 1))
+  # limit y axis between 0 and maximum
+  # ylims!(ax, 0, max <| (maxima .|> ceil .|> Int)...)
+  # line plots of histories
+  lineGen = lines!(ax, validFreq:validFreq:validFreq * length(genValHistory), genValHistory)
+  lineDisc = lines!(ax, validFreq:validFreq:validFreq * length(genValHistory), discValHistory)
+  # add legend to plot
+  t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
+  Legend(f[1, 2][1, 1], [lineGen, lineDisc], ["Generator", "Discriminator"], offset = (-100, 0))
+  colsize!(f.layout, 2, Fixed(350))
+  minimaAxis = Axis(f[2, 2])
+  text!(
+    minimaAxis, "Validation minima:\n\n" * lpad("Epoch:", 29) * lpad("Value:", 9) * "\n" * 
+    rpad("Generator:", 16) * rpad(minima[1][2] * validFreq, 12) * (sciNotation <| (minima[1][1], 3)...) * "\n" *
+    "Discriminator: " * rpad(minima[2][2] * validFreq, 12) * (sciNotation <| (minima[2][1], 3)...),
+    offset = (-170, -30),
+  )
+  hidespines!(minimaAxis); hidedecorations!(minimaAxis)
+  testAxis = Axis(f[3, 2])
+  text!(
+    testAxis, "Test losses:\n\n" * 
+    rpad("Generator:", 16) * (sciNotation <| (testLosses[1], 3)...) * "\n" *
+    "Discriminator: " * (sciNotation <| (testLosses[2], 3)...),
+    offset = (-170, 0),
+  )
+  hidespines!(testAxis); hidedecorations!(testAxis)
+  # display(f)
+  Makie.save("$path/validation histories.pdf", f) # save pdf with plot
 end
 
 # Line plots of evaluation histories

@@ -486,7 +486,7 @@ function suppToBinary(supp)
 end
 
 # string with current time and date
-timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
+timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-")
 
 # characteristics of training for fixed epochs on
 # certain percentage of the dataset
