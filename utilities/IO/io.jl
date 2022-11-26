@@ -43,6 +43,18 @@ function GANprints(epoch, metaData; earlyStopVals = 0)
   end
 end
 
+# generate PDF report about GANs
+function GANreport(directory, metaData)
+  mkpath(directory) # create directory to store all PDFs
+  # create pdf with line plots of validation loss histories
+  plotGANValHist(
+    metaData.lossesVals[:genValHistory],
+    metaData.lossesVals[:discValHistory],
+    directory
+  )
+  return nothing
+end
+
 # inspect contents of HDF5 file
 function HDF5inspect(HDF5path)
   h5file = h5open(HDF5path, "r") # open file

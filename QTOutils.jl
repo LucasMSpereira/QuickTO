@@ -13,7 +13,6 @@ using Suppressor
 end
 # import Nonconvex
 # Nonconvex.@load NLopt
-CairoMakie.activate!()
 CUDA.allowscalar(false)
 println("Utilities...")
 # function and type definitions in "utilities" folder

@@ -33,13 +33,6 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   combinePDFs(path, finalName)
 end
 
-# generate PDFs related to GANs
-function GANplots(directory)
-  mkpath(directory) # create directory to store all PDFs
-  # create pdf with line plots of validation loss histories
-  plotGANlostHist(losses, path)
-end
-
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
 function loadCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
@@ -167,14 +160,30 @@ end
 
 # create line plots of GAN validation histories.
 # save plot as pdf
-function plotGANlostHist(losses, path)
-  CairoMakie.activate!()
+function plotGANValHist(genValHistory, discValHistory, path)
+  # CairoMakie.activate!() # vector graphics
+  GLMakie.activate!() # vector graphics
   f = Figure(resolution = (1050, 700)); # create makie figure
-  # axis to draw on
-  ax = Axis(f[1, 1], xlabel = "Validation epochs", ylabel = "Loss")
+  ax = Axis(f[1:2, 1], # axis to draw on
+    xlabel = "Validation epochs", ylabel = "Losses"
+  )
+  # maxima and minima of validation histories
+  maxima = maximum.((genValHistory, discValHistory))
+  minima = findmin.((genValHistory, discValHistory))
+  # limit y axis between 0 and maximum
+  ylims!(ax, 0, max <| (maxima .|> ceil .|> Int)...)
   # line plots of histories
-  lines!(losses[:genValHistory]); lines!(losses[:discValHistory])
-  Makie.save("$path/validation histories.pdf", f) # save pdf with plot
+  lineGen = lines!(ax, genValHistory)
+  lineDisc = lines!(ax, discValHistory)
+  # add legend to plot
+  Legend(f[1, 2], [lineGen, lineDisc], ["Generator", "Discriminator"])
+  tAxis = Axis(f[2, 2])
+  display(f)
+  # hidespines!(tAxis); hidedecorations!(tAxis)
+  text!(0, 0,
+    text = "jooj",
+  )
+  # Makie.save("$path/validation histories.pdf", f) # save pdf with plot
 end
 
 # Line plots of evaluation histories

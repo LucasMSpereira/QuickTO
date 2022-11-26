@@ -488,10 +488,16 @@ end
 # string with current time and date
 timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
 
-# estimate of time needed to train GANs with fixed number of epochs (in hours)
-function trainTime(nEpochs, datasetPercentage)
-  tTime = (3.5 * nEpochs) * datasetPercentage
-  println(tTime, " hours, ", round(tTime/24; digits = 1), " days")
+# characteristics of training for fixed epochs on
+# certain percentage of the dataset
+function trainStats(nEpochs, datasetPercentage)
+  tTime = round((3.5 * nEpochs) * datasetPercentage; digits = 1) # estimated time
+  println(tTime, " hours   ", round(tTime/24; digits = 1), " days")
+  # estimated distributions of samples in splits
+  println("Amount of samples:")
+  println("Training: ", round(Int, datasetNonTestSize * 0.7 * datasetPercentage))
+  println("Validation: ", round(Int, datasetNonTestSize * 0.3 * datasetPercentage))
+  println("Test: ", round(Int, 15504 * datasetPercentage))
 end
 
 # notation analogue to |>, but works with multiple arguments
