@@ -326,6 +326,22 @@ function isoFeats(force, supp, topo)
   return all(neighborDens .> 0.0625)
 end
 
+# estimate total number of lines in project so far
+function numLines()
+  sum(
+    [
+      filter(x -> occursin(".", x), readdir(projPath * "/networks"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "/utilities"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "/utilities/IO"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "/utilities/ML utils"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "/docs/old"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "/docs/old/DataAnalysis"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "/docs/old/generateDataset"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "/docs/old/loadCNN"; join = true)[2:end]) .|> readlines .|> length
+    ]
+  )
+end
+
 # contextual logit binary cross-entropy. "If" statement
 # tries to avoid allocation of new vector of 1s or 0s
 # when possible (far majority of times). It will then use instead
@@ -490,14 +506,24 @@ timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-")
 
 # characteristics of training for fixed epochs on
 # certain percentage of the dataset
-function trainStats(nEpochs, datasetPercentage)
-  tTime = round((3.5 * nEpochs) * datasetPercentage; digits = 1) # estimated time
+function trainStats(nEpochs, datasetPercentage, validFreq)
+  tTime = round((2.3 * nEpochs + nEpochs/validFreq) * datasetPercentage; digits = 1) # estimated time
   println(tTime, " hours   ", round(tTime/24; digits = 1), " days")
   # estimated distributions of samples in splits
   println("Amount of samples:")
   println("Training: ", round(Int, datasetNonTestSize * 0.7 * datasetPercentage))
   println("Validation: ", round(Int, datasetNonTestSize * 0.3 * datasetPercentage))
   println("Test: ", round(Int, 15504 * datasetPercentage))
+end
+#= multiple dispatch of function above to suggest combinations of percentage
+of dataset used and number of fixed epochs to train for certain amount
+of time =#
+function trainStats(validFreq, days)
+  for dPercent in 0.1:0.1:1.0
+    println(rpad("$(dPercent * 100 |> Int)%", 7),
+      round <| (Int, (days * 24) / (dPercent * (2.3 + 1/validFreq)))..., " epochs"
+    )
+  end
 end
 
 # notation analogue to |>, but works with multiple arguments

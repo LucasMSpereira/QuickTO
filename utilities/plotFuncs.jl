@@ -435,7 +435,7 @@ end
 # Generate pdf with tests using model that was trained on normalized data
 function testNormalizedData(modelPath::String, vm, forceData, quant::Int64, FEparams, lossFun)
   files = glob("*", modelPath)
-  @load filter(x -> x[end-3:end] == "bson", files) cpu_model
+  BSON.@load filter(x -> x[end-3:end] == "bson", files) cpu_model
   mkpath(modelPath*"/normalizedTests")
   for sample in randDiffInt(quant, size(forceData, 3))
     plotVMtest(

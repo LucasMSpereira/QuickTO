@@ -9,7 +9,7 @@ using Suppressor
   using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie
   using Traceur, ChainRulesCore, Zygote, ProfileView
   using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
-  using BSON: @load, @save
+  using BSON
 end
 # import Nonconvex
 # Nonconvex.@load NLopt

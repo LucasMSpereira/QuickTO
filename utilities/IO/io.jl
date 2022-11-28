@@ -55,7 +55,7 @@ function GANreport(modelName, metaData)
     metaData.trainConfig.validFreq,
     path, modelName
   )
-  GANtestPlots(modelName, metaData)
+  # GANtestPlots(modelName, metaData)
   return nothing
 end
 
@@ -69,6 +69,22 @@ function HDF5inspect(HDF5path)
     statsum(data[ds])
   end
   close(h5file)
+end
+
+# load previous GAN models
+function loadGANs(; genPath = " ", discPath = " ")
+  if genPath == " "
+    BSON.@load filter(
+      x -> occursin("gen", x), readdir(datasetPath * "data/checkpoints/"; join = true)
+    )[1] cpuGenerator
+    BSON.@load filter(
+      x -> occursin("disc", x), readdir(datasetPath * "data/checkpoints/"; join = true)
+    )[1] cpuDiscriminator
+  else # if focusing on specific models
+    BSON.@load genPath cpuGenerator
+    BSON.@load discPath cpuDiscriminator
+  end
+  (cpuGenerator, cpuDiscriminator) .|> gpu
 end
 
 # Create hdf5 file. Store data in a more efficient way
@@ -249,8 +265,8 @@ function saveGANs(metaData; finalSave = false)
   cpuGenerator = cpu(metaData.generator)
   cpuDiscriminator = cpu(metaData.discriminator)
   # save models
-  @save datasetPath * "data/checkpoints/" * timeNow() * "gen.bson" cpuGenerator
-  @save datasetPath * "data/checkpoints/" * timeNow() * "disc.bson" cpuDiscriminator
+  BSON.@save datasetPath * "data/checkpoints/" * timeNow() * " gen.bson" cpuGenerator
+  BSON.@save datasetPath * "data/checkpoints/" * timeNow() * " disc.bson" cpuDiscriminator
   if !finalSave
     # bring models back to gpu, if training will continue
     metaData.generator = gpu(cpuGenerator)

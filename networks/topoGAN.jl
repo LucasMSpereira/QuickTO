@@ -10,8 +10,9 @@ function trainGANs(; opt = Flux.Optimise.Adam())
   # optimiser, dataloaders, training configurations,
   # validation histories, and test losses
   metaData = GANmetaData(
-    U_SE_ResNetGenerator(), topologyGANdisc(),
-    opt, epochTrainConfig(67, 5)
+    # U_SE_ResNetGenerator(), topologyGANdisc(),
+    loadGANs()...,
+    opt, epochTrainConfig(8, 5)
   )
   if typeof(metaData.trainConfig) == earlyStopTrainConfig
     @suppress_err earlyStopGANs(metaData) # train with early-stopping
@@ -22,15 +23,17 @@ function trainGANs(; opt = Flux.Optimise.Adam())
   metaData(GANepoch!(metaData, :test); context = :test)
   return metaData
 end
-# [[GC.gc(true) CUDA.reclaim()] for _ in 1:2]
-# @time experimentMetaData = trainGANs();
-begin
-  m = GANmetaData(
-    Chain(Conv((3, 3), 1 => 1)), Chain(Conv((3, 3), 1 => 1)),
-    # Flux.Optimise.Adam(), earlyStopTrainConfig(10)
-    Flux.Optimise.Adam(), epochTrainConfig(67, 5)
-  )
-  [m((randBetween(100, 1000), randBetween(0, 5))) for _ in 1:30]
-  m((randBetween(100, 1000), randBetween(0, 5)); context = :test)
-  GANreport("modelName", m)
-end
+[[GC.gc(true) CUDA.reclaim()] for _ in 1:2]
+@time experimentMetaData = trainGANs();
+GANreport("primeiroTeste", experimentMetaData)
+
+# begin
+#   m = GANmetaData(
+#     Chain(Conv((3, 3), 1 => 1)), Chain(Conv((3, 3), 1 => 1)),
+#     Flux.Optimise.Adam(), epochTrainConfig(67, 5)
+#   )
+#   [m(losses[l]) for l in axes(losses, 1)]
+#   m((randBetween(100, 1000), randBetween(0, 5)); context = :test)
+#   GANreport("modelName", m)
+#   writeLosses(m)
+# end

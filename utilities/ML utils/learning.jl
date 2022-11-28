@@ -23,9 +23,9 @@ function crossVal(data, numFolds, activ, epochs, batch, opt, save)
     println("Fold validation: $(meanEval)")
     # Save model including mean evaluation loss in the BSON file's name
     if save == "eval"
-      @save "./networks/models/$(replace(string(round( meanEval; digits = 6 )), "." => "-")).bson" cpu_model
+      BSON.@save "./networks/models/$(replace(string(round( meanEval; digits = 6 )), "." => "-")).bson" cpu_model
     elseif save == "time"
-      @save "./networks/models/$(timeNow()).bson" cpu_model
+      BSON.@save "./networks/models/$(timeNow()).bson" cpu_model
     else
       throw("Wrong 'save' specification in crossVal()")
     end
@@ -238,7 +238,7 @@ end
 function intermediateSave(MLmodel)
   println("Checkpoint save")
   cpu_model = cpu(MLmodel) # transfer model to cpu
-  @save "./networks/models/checkpoints/$(timeNow()).bson" cpu_model # save model
+  BSON.@save "./networks/models/checkpoints/$(timeNow()).bson" cpu_model # save model
   gpu(MLmodel)
 end
 
@@ -250,7 +250,7 @@ function saveModelAndReport!(k, activ, ch, params, comb, history, MLmodel, curre
   # Create folder for current model
   mkpath("./networks/models/$currentModelName")
   cpu_model = cpu(MLmodel) # transfer model back to cpu
-  @save "./networks/models/$currentModelName/$currentModelName.bson" cpu_model # save model
+  BSON.@save "./networks/models/$currentModelName/$currentModelName.bson" cpu_model # save model
   comb == 1 ? println("Saving first model and report...") : println("New best in test! Saving model and report...")
   # Store test score in "history" matrix
   comb > size(history, 1) ? (history = vcat(history, [currentModelName currentTest])) : (history[comb, 1] = currentModelName; history[comb, 2] = currentTest)
@@ -324,7 +324,7 @@ function trainEarlyStop!(
   end
   if saveModel
     cpu_model = cpu(mlModel)
-    @save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
+    BSON.@save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
   end
 end
 
@@ -346,6 +346,6 @@ function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainPa
   end
   if save
     cpu_model = cpu(mlModel)
-    @save "./networks/models/$(timeNow()).bson" cpu_model
+    BSON.@save "./networks/models/$(timeNow()).bson" cpu_model
   end
 end
