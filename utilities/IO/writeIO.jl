@@ -81,9 +81,11 @@ function writeLosses(metaData)
         write(id, rpad(epoch, 8) * sciNotation(value, 3) * "\n")
       end
     end
-    write(id, "\n********* TEST LOSSES\n\n")
-    write(id, "GENERATOR: " * sciNotation(metaData.lossesVals[:genTest][1], 3) * "\n")
-    write(id, "DISCRIMINATOR: " * sciNotation(metaData.lossesVals[:discTest][1], 3) * "\n")
+    if length(metaData.lossesVals[:genTest]) > 0
+      write(id, "\n********* TEST LOSSES\n\n")
+      write(id, "GENERATOR: " * sciNotation(metaData.lossesVals[:genTest][1], 3) * "\n")
+      write(id, "DISCRIMINATOR: " * sciNotation(metaData.lossesVals[:discTest][1], 3) * "\n")
+    end
   end
 end
 
