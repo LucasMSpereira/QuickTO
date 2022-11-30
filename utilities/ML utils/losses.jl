@@ -22,8 +22,6 @@ discLoss(gLossDreal_, gLossDfake_) = gLossDreal_ + gLossDfake_
 function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
   # concatenate data to create discriminator input with REAL topology
   discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
-  # discriminator's output for input with REAL topology
-  discOutReal = discInputReal |> disc |> cpu |> reshapeDiscOut
   # initialize for scope purposes
   discOutFake, genInputGPU, discInputFake = 0.0, 0.0, 0.0
   # function to calculate loss of generator. It's
@@ -47,7 +45,7 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
   # gradients and final losses of both NNs
   genInputGPU = genInput |> gpu
   genLossVal, genGrads = withgradient(() -> genLoss(genInputGPU |> gen |> cpu), Flux.params(gen))
-  discLossVal, discGrads = withgradient(() -> discLoss(discOutReal), Flux.params(disc))
+  discLossVal, discGrads = withgradient(() -> discLoss(discInputReal |> disc |> cpu |> reshapeDiscOut), Flux.params(disc))
   return genGrads, genLossVal, discGrads, discLossVal
 end
 

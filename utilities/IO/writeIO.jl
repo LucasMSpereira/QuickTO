@@ -74,12 +74,10 @@ function writeLosses(metaData)
       write(id, "\n\tDECAY FREQUENCY (EPOCHS): ", metaData.trainConfig.schedule |> string * "\n")
     end
     # write history of validation losses
-    for (key, name) in zip([:genValHistory, :discValHistory], ["GENERATOR", "DISCRIMINATOR"])
-      write(id, "\n********* " * name * " VALIDATION LOSS HISTORY\n\n")
-      write(id, "EPOCH   VALUE\n")
-      for (epoch, value) in zip(valF:valF:valF * numVals, metaData.lossesVals[key])
-        write(id, rpad(epoch, 8) * sciNotation(value, 3) * "\n")
-      end
+    write(id, "\n********* VALIDATION LOSS HISTORIES\n\n")
+    write(id, "EPOCH   GENERATOR      DISCRIMINATOR\n")
+    for (epoch, genLoss, discLoss) in zip(valF:valF:valF * numVals, metaData.lossesVals[:genValHistory], metaData.lossesVals[:discValHistory])
+      write(id, rpad(epoch, 8) * rpad(sciNotation(genLoss, 3), 15) * sciNotation(discLoss, 3) * "\n")
     end
     if length(metaData.lossesVals[:genTest]) > 0
       write(id, "\n********* TEST LOSSES\n\n")

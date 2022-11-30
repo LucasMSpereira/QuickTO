@@ -242,6 +242,15 @@ function estimateGrads(vals, quants, iCenter, jCenter)
 
 end
 
+# print summary statistics of GAN parameters
+function GANparamsStats(metaData)
+  println("Generator:\n")
+  vcat((Iterators.flatten.(metaData.generator |> cpu |> Flux.params) .|> collect)...) |> statsum
+  println("Discriminator:\n")
+  vcat((Iterators.flatten.(metaData.discriminator |> cpu |> Flux.params) .|> collect)...) |> statsum
+  return nothing
+end
+
 # Identify non-binary topologies
 function getNonBinaryTopos(forces, supps, vf, disp, top)
   bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
