@@ -3,16 +3,16 @@ const batchSize = 64
 # binaries for logit binary cross-entropy
 const discBinaryReal = ones(Float32, batchSize)
 const discBinaryFake = zeros(Float32, batchSize)
-percentageDataset::Float64 = 0.29
+percentageDataset::Float64 = 0.45
 Random.seed!(3111)
 
-function trainGANs(; opt = Flux.Optimise.Adam(), checkPoint = true)
+function trainGANs(; opt = Flux.Optimise.Adam(), checkpoint = true)
   # object with metadata. includes instantiation of NNs,
   # optimiser, dataloaders, training configurations,
   # validation histories, and test losses
   metaData = GANmetaData(
-    (checkPoint == true ? loadGANs() : (U_SE_ResNetGenerator(), topologyGANdisc()))...,
-    opt, epochTrainConfig(5, 5)
+    (checkpoint == true ? loadGANs() : (U_SE_ResNetGenerator(), topologyGANdisc()))...,
+    opt, epochTrainConfig(150, 5)
   )
   if typeof(metaData.trainConfig) == earlyStopTrainConfig
     @suppress_err earlyStopGANs(metaData) # train with early-stopping
@@ -25,5 +25,5 @@ function trainGANs(; opt = Flux.Optimise.Adam(), checkPoint = true)
   return metaData
 end
 [[GC.gc() CUDA.reclaim()] for _ in 1:2]
-@time experimentMetaData = trainGANs();
+@time experimentMetaData = trainGANs(; checkpoint = false);
 GANreport("teste", experimentMetaData)

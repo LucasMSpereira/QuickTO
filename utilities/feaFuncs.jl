@@ -425,5 +425,5 @@ end
 
 # volume fraction of each topology in a batch
 function volFrac(topologyBatch::Array{Float32, 4})
-  return [sum(topologyBatch[:, :, :, sample]) for sample in axes(topologyBatch, 4)] ./ FEAparams.nElements
+  [mean(topologyBatch[:, :, :, sample]) for sample in axes(topologyBatch, 4)]
 end

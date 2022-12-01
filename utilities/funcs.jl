@@ -476,6 +476,7 @@ solidify(x...) = cat(x...; dims = 3)
 
 # statistical summary of a numerical array
 function statsum(arr)
+  println(size(arr))
   data = reshape(arr, (1, :)) |> vec
   data |> summarystats |> print
   println("Standard deviation: ", sciNotation(std(data), 4))
@@ -519,10 +520,14 @@ function trainStats(nEpochs, datasetPercentage, validFreq)
   tTime = round((2.3 * nEpochs + nEpochs/validFreq) * datasetPercentage; digits = 1) # estimated time
   println(tTime, " hours   ", round(tTime/24; digits = 1), " days")
   # estimated distributions of samples in splits
+  trainingAmount = round(Int, datasetNonTestSize * 0.7 * datasetPercentage)
+  validationAmount = round(Int, datasetNonTestSize * 0.3 * datasetPercentage)
+  testAmount = round(Int, 15504 * datasetPercentage)
   println("Amount of samples:")
-  println("Training: ", round(Int, datasetNonTestSize * 0.7 * datasetPercentage))
-  println("Validation: ", round(Int, datasetNonTestSize * 0.3 * datasetPercentage))
-  println("Test: ", round(Int, 15504 * datasetPercentage))
+  println("Training: ", trainingAmount)
+  println("Validation: ", validationAmount)
+  println("Test: ", testAmount)
+  println("Total: ", trainingAmount + validationAmount + testAmount)
 end
 #= multiple dispatch of function above to suggest combinations of percentage
 of dataset used and number of fixed epochs to train for certain amount

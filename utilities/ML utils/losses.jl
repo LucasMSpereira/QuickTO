@@ -10,43 +10,39 @@ function customLoss1(x, y)
   return convert(Float32, mean(batchLoss)) |> gpu
 end
 
-# g_loss_final. Loss used to train generator
-function generatorLoss(genLossLogit_, msError_, vfAE_)
-  return genLossLogit_ + l1λ * msError_ + l2λ * vfAE_
-end
-
-# gan_loss_d. Loss used to train discriminator
-discLoss(gLossDreal_, gLossDfake_) = gLossDreal_ + gLossDfake_
-
 # use batch data and models to obtain gradients and losses
 function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
-  # concatenate data to create discriminator input with REAL topology
-  discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
-  # initialize for scope purposes
-  discOutFake, genInputGPU, discInputFake = 0.0, 0.0, 0.0
-  # function to calculate loss of generator. It's
-  # defined here for scope purposes
-  function genLoss(genOutput)
-    # batch MSE of generator output (FAKE topologies)
-    mse = (genOutput .- realTopology) .^ 2 |> mean
-    # batch mean absolute error of generator output (FAKE topologies)
+  discOutFake, discInputFake = 0.0, 0.0 # initialize for scope purposes
+  function genLoss(genOutput) # generator loss. Defined here for scope purposes
+    mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
+    # volume fraction MAE
     absError = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean
-    # concatenate data to create discriminator input with FAKE topology
+    # discriminator input with FAKE topology
     discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
-    # discriminator's output for input with FAKE topology
+    # discriminator's output for FAKE topology
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
-    # batch mean binary cross-entropy loss for generator
-    genCE = logitBinCrossEnt(discOutFake, 1)
-    return genCE + 10_000 * mse + 1 * absError # final generator loss
+    # generator's final loss
+    return logitBinCrossEnt(discOutFake, 1)  + 10_000 * mse + 1 * absError
   end
-  # function to calculate loss of discriminator. It's
-  # defined here for scope purposes
-  discLoss(discOutReal) = logitBinCrossEnt(discOutReal, 1) + logitBinCrossEnt(discOutFake, 0)
-  # gradients and final losses of both NNs
-  genInputGPU = genInput |> gpu
-  genLossVal, genGrads = withgradient(() -> genLoss(genInputGPU |> gen |> cpu), Flux.params(gen))
-  discLossVal, discGrads = withgradient(() -> discLoss(discInputReal |> disc |> cpu |> reshapeDiscOut), Flux.params(disc))
-  return genGrads, genLossVal, discGrads, discLossVal
+  function discLoss(discOutReal, discOutFake) # discriminator loss
+    return logitBinCrossEnt(discOutReal, 1) + logitBinCrossEnt(discOutFake, 0)
+  end
+  genInputGPU = genInput |> gpu # copy genertor's input to GPU
+  # discriminator input with REAL topology
+  discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
+  # get generator's loss value and gradient
+  genLossVal_, genGrads_ = withgradient(
+    gen -> genLoss(gen(genInputGPU) |> cpu), gen
+  )
+  # get discriminator's loss value and gradient
+  discLossVal_, discGrads_ = withgradient(
+    disc -> discLoss(
+        disc(discInputReal) |> cpu |> reshapeDiscOut,
+        disc(discInputFake) |> cpu |> reshapeDiscOut
+    ),
+    disc
+  )
+  return genGrads_, genLossVal_, discGrads_, discLossVal_
 end
 
 # Loss for NN architectures with more than one output
@@ -55,31 +51,4 @@ function multiLoss(output, target; lossFun)
   # function getLoaders() with multi-output: x positions,
   # y positions, components of first load, components of second load
   return mean([lossFun(modelOut, truth) for (modelOut, truth) in zip(output, target)])
-end
-
-# Errors used for loss calculation in topologyGAN
-function topoGANerrors(fakeTopo_, realTopo_)
-  # fakeTopo_: batch of predicted (FAKE) topologies
-  # realTopo_: batch of real topologies
-  return (
-    # mean of batch volume fraction absolute error
-    abs.(volFrac(fakeTopo_) .- volFrac(realTopo_)) |> mean,
-    # batch mean squared topology error
-    (fakeTopo_ .- realTopo_) .^ 2 |> mean
-    )
-end
-
-
-# logits representing the discriminator's behavior
-function topoGANlogits(logitFake_, logitReal_)
-  discReal = ones(Float32, size(logitFake_))
-  discFake = zeros(Float32, size(discReal))
-  return (
-    # generator wants discriminator to output 1 to FAKE topologies
-    Flux.Losses.logitbinarycrossentropy(logitFake_, discReal), # gan_loss_g
-    # discriminator should output 1 to TRUE topologies
-    Flux.Losses.logitbinarycrossentropy(logitReal_, discReal), # gan_loss_d_real
-    # discriminator should output 0 to FAKE topologies
-    Flux.Losses.logitbinarycrossentropy(logitFake_, discFake), # gan_loss_d_fake
-  )
 end

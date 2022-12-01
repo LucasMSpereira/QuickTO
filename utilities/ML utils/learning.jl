@@ -151,8 +151,7 @@ function fixedEpochGANs(metaData)
       # validation epoch returning avg losses for both NNs
       GANepoch!(metaData, :validate) |> metaData
       switchTraining(metaData, true) # reenable model updating after validation
-      # print information about validation
-      GANprints(epoch, metaData)
+      GANprints(epoch, metaData) # print information about validation
     end
     # save occasional checkpoints of the models
     epoch % metaData.trainConfig.checkPointFreq == 0 && saveGANs(metaData)
