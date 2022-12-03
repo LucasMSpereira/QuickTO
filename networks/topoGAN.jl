@@ -26,8 +26,8 @@ function trainGANs(; opt = Flux.Optimise.Adam(), checkpoint = true)
   return metaData
 end
 [[GC.gc() CUDA.reclaim()] for _ in 1:2]
-for lr in [2e-6, 1e-5, 2.5e-5]
+for lr in [1e-7]
   @show lr
   experimentMetaData = trainGANs(; opt = Flux.Optimise.Adam(lr), checkpoint = false);
-  GANreport("12-25%-4-$(round(Int, lr*1e5))", experimentMetaData)
+  GANreport("12-25%-4-" * sciNotation(lr, 1), experimentMetaData)
 end
