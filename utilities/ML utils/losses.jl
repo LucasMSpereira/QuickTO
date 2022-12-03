@@ -10,7 +10,7 @@ function customLoss1(x, y)
   return convert(Float32, mean(batchLoss)) |> gpu
 end
 
-# use batch data and models to obtain gradients and losses
+# use NNs and batch data to obtain gradients and losses
 function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
   discOutFake, discInputFake = 0.0, 0.0 # initialize for scope purposes
   function genLoss(genOutput) # generator loss. Defined here for scope purposes
@@ -31,18 +31,18 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
   # discriminator input with REAL topology
   discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
   # get generator's loss value and gradient
-  genLossVal_, genGrads_ = withgradient(
+  genLossVal, genGrads = withgradient(
     gen -> genLoss(gen(genInputGPU) |> cpu), gen
   )
   # get discriminator's loss value and gradient
-  discLossVal_, discGrads_ = withgradient(
+  discLossVal, discGrads = withgradient(
     disc -> discLoss(
         disc(discInputReal) |> cpu |> reshapeDiscOut,
         disc(discInputFake) |> cpu |> reshapeDiscOut
     ),
     disc
   )
-  return genGrads_, genLossVal_, discGrads_, discLossVal_
+  return genGrads, genLossVal, discGrads, discLossVal
 end
 
 # Loss for NN architectures with more than one output

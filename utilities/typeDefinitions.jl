@@ -35,11 +35,17 @@ earlyStopTrainConfig(
   earlyStopQuant, earlyStopPercent, checkPointFreq
 )
 
+mutable struct optimisationInfo
+  opt::Flux.Optimise.AbstractOptimiser # optimizer used in training
+  genState::NamedTuple # generator's optimizer state
+  discState::NamedTuple # discriminator's optimizer state
+end
+
 # Meta-data for GAN pipeline
 mutable struct GANmetaData
   generator::Chain # generator network
   discriminator::Chain # discriminator network
-  opt::Flux.Optimise.AbstractOptimiser # optimizer used in training
+  optInfo::optimisationInfo # optimisation setup
   const trainConfig::trainConfig # parameters for training
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
@@ -65,7 +71,9 @@ GANmetaData(
   generator::Chain, discriminator::Chain,
   opt::Flux.Optimise.AbstractOptimiser, myTrainConfig::trainConfig
 ) = GANmetaData(
-  generator, discriminator, opt, myTrainConfig,
+  generator, discriminator,
+  optimisationInfo(opt, Optimisers.setup(opt, generator), Optimisers.setup(opt, discriminator)),
+  myTrainConfig,
   Dict(
     :genValHistory => Float64[],
     :discValHistory => Float64[],

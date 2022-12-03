@@ -1,20 +1,24 @@
-# Packages
-println("Packages...")
+# Install packages
+import Pkg
+map(Pkg.add, ("LinearAlgebra",
+"Parameters", "Printf", "HDF5", "Statistics",
+"Random", "CUDA", "MultivariateStats",
+"StatsBase", "MLUtils", "Dates", "Flux", "Suppressor",
+"Zygote", "Optimisers", "ChainRulesCore", "BSON"
+))
 ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
+# Use packages
 using Suppressor
 @suppress_err begin
-  using Glob, LinearAlgebra, Makie, TopOpt
+  using LinearAlgebra,
   using Parameters, Printf, HDF5, Statistics
-  using Random, CUDA, Poppler_jll, MultivariateStats
-  using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie
+  using Random, CUDA, MultivariateStats
+  using StatsBase, MLUtils, Dates, Flux
   using Zygote, Optimisers, ChainRulesCore
   using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
   using BSON
 end
-# import Nonconvex
-# Nonconvex.@load NLopt
 CUDA.allowscalar(false)
-println("Utilities...")
 # function and type definitions in "utilities" folder
 readdir("./utilities"; join = true) |> x -> filter(y -> y[end - 2 : end] == ".jl", x) .|> include;
 readdir("./utilities/ML utils"; join = true) .|> include;

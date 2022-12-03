@@ -518,16 +518,16 @@ timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-")
 # certain percentage of the dataset
 function trainStats(nEpochs, datasetPercentage, validFreq)
   tTime = round((2.3 * nEpochs + nEpochs/validFreq) * datasetPercentage; digits = 1) # estimated time
-  println(tTime, " hours   ", round(tTime/24; digits = 1), " days")
+  println(tTime, " hour(s)   ", round(tTime / 24; digits = 1), " day(s)")
   # estimated distributions of samples in splits
   trainingAmount = round(Int, datasetNonTestSize * 0.7 * datasetPercentage)
   validationAmount = round(Int, datasetNonTestSize * 0.3 * datasetPercentage)
   testAmount = round(Int, 15504 * datasetPercentage)
   println("Amount of samples:")
-  println("Training: ", trainingAmount)
-  println("Validation: ", validationAmount)
-  println("Test: ", testAmount)
-  println("Total: ", trainingAmount + validationAmount + testAmount)
+  println("   Training: ", trainingAmount)
+  println("   Validation: ", validationAmount)
+  println("   Test: ", testAmount)
+  println("   Total: ", trainingAmount + validationAmount + testAmount)
 end
 #= multiple dispatch of function above to suggest combinations of percentage
 of dataset used and number of fixed epochs to train for certain amount

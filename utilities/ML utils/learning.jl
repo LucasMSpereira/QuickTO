@@ -179,8 +179,8 @@ function GANepoch!(metaData, goal)
         metaData.generator, metaData.discriminator, genInput, FEAinfo, realTopology
       )
       if goal == :train # update NNs parameters in case of training
-        Flux.Optimise.update!(metaData.opt, Flux.params(metaData.generator), genGrads)
-        Flux.Optimise.update!(metaData.opt, Flux.params(metaData.discriminator), discGrads)
+        Flux.Optimise.update!(metaData.optInfo.genState, metaData.generator, genGrads[1])
+        Flux.Optimise.update!(metaData.optInfo.discState, metaData.discriminator, discGrads[1])
       end
       # acumulate batch losses
       genLossHist += genLossVal; discLossHist += discLossVal

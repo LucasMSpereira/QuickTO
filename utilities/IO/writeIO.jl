@@ -54,8 +54,9 @@ function writeLosses(metaData)
     # number of validations
     numVals = length(metaData.lossesVals[:genValHistory])
     write(id, "********* CONFIGURATION METADATA\n")
+    write(id, "\nPERCENTAGE OF DATASET: ", round(Int, percentageDataset * 100), "%\n")
     write(id, "\nOPTIMISER: " *
-      string(typeof(metaData.opt)) * " " * sciNotation(metaData.opt.eta, 1)
+      string(typeof(metaData.optInfo.opt)) * " " * sciNotation(metaData.optInfo.opt.eta, 1)
     )
     write(id, "\nTRAINING: ")
     if typeof(metaData.trainConfig) == epochTrainConfig
