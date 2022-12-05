@@ -49,14 +49,14 @@ end
 
 # save information in GANmetaData struct in txt file
 function writeLosses(metaData)
-  open(datasetPath * "data/checkpoints/" * timeNow() * " metaData.txt", "w") do id
+  open(datasetPath * "data/checkpoints/" * timeNow() * "metaData.txt", "w") do id
     valF = metaData.trainConfig.validFreq
     # number of validations
     numVals = length(metaData.lossesVals[:genValHistory])
     write(id, "********* CONFIGURATION METADATA\n")
-    write(id, "\nPERCENTAGE OF DATASET: " * round(Int, percentageDataset * 100) |> string * "%\n")
+    write(id, "\nPERCENTAGE OF DATASET: " * string(round(Int, percentageDataset * 100)) * "%\n")
     write(id, "\nOPTIMISER: " *
-      string(typeof(metaData.optInfo.opt)) * " " * sciNotation(metaData.optInfo.opt.eta, 1)
+      string(typeof(metaData.optInfo.opt)) * " " * sciNotation(metaData.optInfo.opt.eta, 1) * "\n"
     )
     write(id, "\nTRAINING: ")
     if typeof(metaData.trainConfig) == epochTrainConfig

@@ -154,9 +154,10 @@ function fixedEpochGANs(metaData)
       GANprints(epoch, metaData) # print information about validation
     end
     # save occasional checkpoints of the models
-    epoch % metaData.trainConfig.checkPointFreq == 0 && saveGANs(metaData)
+    if epoch % metaData.trainConfig.checkPointFreq == 0 && epoch != metaData.trainConfig.epochs
+      saveGANs(metaData)
+    end
   end
-  saveGANs(metaData; finalSave = true) # save final models
 end
 
 # epoch of GAN usage, be it training, validation or test

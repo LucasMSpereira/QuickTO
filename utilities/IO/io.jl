@@ -72,18 +72,9 @@ function HDF5inspect(HDF5path)
 end
 
 # load previous GAN models
-function loadGANs(; genPath = " ", discPath = " ")
-  if genPath == " "
-    BSON.@load filter(
-      x -> occursin("gen", x), readdir(datasetPath * "data/checkpoints/"; join = true)
-    )[1] cpuGenerator
-    BSON.@load filter(
-      x -> occursin("disc", x), readdir(datasetPath * "data/checkpoints/"; join = true)
-    )[1] cpuDiscriminator
-  else # if focusing on specific models
-    BSON.@load genPath cpuGenerator
-    BSON.@load discPath cpuDiscriminator
-  end
+function loadGANs(genPath, discPath)
+  BSON.@load datasetPath * "data/checkpoints/" * genPath cpuGenerator
+  BSON.@load datasetPath * "data/checkpoints/" * discPath cpuDiscriminator
   (cpuGenerator, cpuDiscriminator) .|> gpu
 end
 
@@ -195,7 +186,6 @@ function readTopologyGANdataset(path; print = false)
   if print
     for (key, value) in dictionary
       println(key)
-      println(size(value))
       value |> statsum
     end
   end
@@ -265,8 +255,8 @@ function saveGANs(metaData; finalSave = false)
   cpuGenerator = cpu(metaData.generator)
   cpuDiscriminator = cpu(metaData.discriminator)
   # save models
-  BSON.@save datasetPath * "data/checkpoints/" * timeNow() * " gen.bson" cpuGenerator
-  BSON.@save datasetPath * "data/checkpoints/" * timeNow() * " disc.bson" cpuDiscriminator
+  BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "gen.bson" cpuGenerator
+  BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "disc.bson" cpuDiscriminator
   if !finalSave
     # bring models back to gpu, if training will continue
     metaData.generator = gpu(cpuGenerator)
