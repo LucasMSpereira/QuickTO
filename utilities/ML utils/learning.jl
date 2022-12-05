@@ -100,29 +100,27 @@ function earlyStopGANs(metaData)
 end
 
 # Evaluate (validation or test) model and print performance. To be called occasionally
-if runningInColab == false # if running locally
-  function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test = false, FEAloss = false)
-    Flux.trainmode!(mlModel, false)
-    # Go through validation dataset
-    # Batches are used for GPU memory purposes
-    if FEAloss
-      meanEvalLoss = batchEvalFEAloss!(evalDataLoader, mlModel)
+function epochEval!(evalDataLoader, mlModel, trainParams, epoch, lossFun; test = false, FEAloss = false)
+  Flux.trainmode!(mlModel, false)
+  # Go through validation dataset
+  # Batches are used for GPU memory purposes
+  if FEAloss
+    meanEvalLoss = batchEvalFEAloss!(evalDataLoader, mlModel)
+  else
+    meanEvalLoss = batchEval!(evalDataLoader, lossFun, mlModel)
+  end
+  trainmode!(mlModel, true)
+  if !test # If function was called in a validation context
+    # Keep history of evaluations
+    trainParams.evaluations = vcat(trainParams.evaluations, meanEvalLoss)
+    if length(trainParams.evaluations) > 1 # Print info
+      # @printf "Epoch %i     Δ(Validation loss): %.3e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1])
     else
-      meanEvalLoss = batchEval!(evalDataLoader, lossFun, mlModel)
+      # @printf "Epoch %i     Validation loss: %.3e     " epoch trainParams.evaluations[end]
     end
-    trainmode!(mlModel, true)
-    if !test # If function was called in a validation context
-      # Keep history of evaluations
-      trainParams.evaluations = vcat(trainParams.evaluations, meanEvalLoss)
-      if length(trainParams.evaluations) > 1 # Print info
-        # @printf "Epoch %i     Δ(Validation loss): %.3e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1])
-      else
-        # @printf "Epoch %i     Validation loss: %.3e     " epoch trainParams.evaluations[end]
-      end
-      typeof(trainParams) == epochTrainConfig && println()
-    else # If function was called in a test context
-      return meanEvalLoss
-    end
+    typeof(trainParams) == epochTrainConfig && println()
+  else # If function was called in a test context
+    return meanEvalLoss
   end
 end
 
@@ -290,45 +288,43 @@ end
 #= Train ML model with early stopping.
 In predetermined intervals of epochs, evaluate
 the current model and print validation loss.=#
-if runningIncolab == false # if running locally
-  function trainEarlyStop!(
-    mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun;
-    modelName = timeNow(), saveModel = true, FEAloss = false
-  )
-    epoch = 1
-    while true
-      # In case of learning rate scheduling, apply decay at certain interval of epochs
-      if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
-        opt.eta *= trainParams.decay
-        println("New learning rate: ", sciNotation(opt.eta, 1))
-      end
-      # Batch training and parameter update
-      if FEAloss
-        batchTrainFEAloss!(trainDataLoader, mlModel, opt)
-      else
-        batchTrain!(trainDataLoader, mlModel, opt, lossFun)
-      end
-      # Evaluate model and print info at certain epoch intervals
-      if epoch % trainParams.validFreq == 0
-        epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun; FEAloss = FEAloss)
-        if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
-          valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
-          # @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
-          if stopTraining
-            println("EARLY STOPPING")
-            break
-          end
-        else
-          println("No early stop check.")
+function trainEarlyStop!(
+  mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun;
+  modelName = timeNow(), saveModel = true, FEAloss = false
+)
+  epoch = 1
+  while true
+    # In case of learning rate scheduling, apply decay at certain interval of epochs
+    if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
+      opt.eta *= trainParams.decay
+      println("New learning rate: ", sciNotation(opt.eta, 1))
+    end
+    # Batch training and parameter update
+    if FEAloss
+      batchTrainFEAloss!(trainDataLoader, mlModel, opt)
+    else
+      batchTrain!(trainDataLoader, mlModel, opt, lossFun)
+    end
+    # Evaluate model and print info at certain epoch intervals
+    if epoch % trainParams.validFreq == 0
+      epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun; FEAloss = FEAloss)
+      if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
+        valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
+        # @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
+        if stopTraining
+          println("EARLY STOPPING")
+          break
         end
+      else
+        println("No early stop check.")
       end
-      epoch % 300 == 0 && intermediateSave(mlModel) # intermediate save checkpoint
-      epoch += 1
     end
-    if saveModel
-      cpu_model = cpu(mlModel)
-      BSON.@save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
-    end
+    epoch % 300 == 0 && intermediateSave(mlModel) # intermediate save checkpoint
+    epoch += 1
+  end
+  if saveModel
+    cpu_model = cpu(mlModel)
+    BSON.@save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
   end
 end
 
