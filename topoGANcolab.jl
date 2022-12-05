@@ -1,4 +1,4 @@
-include("./QuickTO/utilsColab.jl")
+include("./utilsColab.jl")
 const batchSize = 64
 # binaries for logit binary cross-entropy
 const discBinaryReal = ones(Float32, batchSize)

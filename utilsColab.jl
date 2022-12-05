@@ -5,7 +5,7 @@ map(
   Pkg.add,
   (
     "Makie", "CairoMakie", "StatsBase",
-    "Parameters", "HDF5", "CUDA", "MultivariateStats",
+    "Parameters", "HDF5", "MultivariateStats",
     "MLUtils", "Suppressor", "BSON",
     "Zygote", "Optimisers", "ChainRulesCore"
   )
