@@ -6,10 +6,11 @@ map(
   (
     "Makie", "CairoMakie", "StatsBase",
     "Parameters", "HDF5", "CUDA", "MultivariateStats",
-    "MLUtils", "Flux@0.13.9", "Suppressor", "BSON",
+    "MLUtils", "Suppressor", "BSON",
     "Zygote", "Optimisers", "ChainRulesCore"
   )
 )
+Pkg.add(name = "Flux", version = "0.13.9")
 ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
 # Use packages
 using Suppressor
