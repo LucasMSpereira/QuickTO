@@ -272,6 +272,7 @@ end
 function getNonTestFileLists(trainValidateFolder, trainPercentage)
   # get list of files, and shuffle it
   filePaths = readdir(trainValidateFolder; join = true) |> shuffle!
+  println(filePaths)
   # amount of samples used in training
   datasetTrainSize = trainPercentage * datasetNonTestSize |> round
   trainingFiles = 0
