@@ -1,6 +1,6 @@
 # Install packages
 import Pkg
-println("PACKAGES...")
+println("\nPACKAGES...\n")
 map(
   Pkg.add,
   (
@@ -22,7 +22,7 @@ using Suppressor
   using Zygote, Optimisers, ChainRulesCore
 end
 CUDA.allowscalar(false)
-println("DEFINITIONS...")
+println("\nDEFINITIONS...\n")
 # function and type definitions in "utilities" folder
 utilsPath = readdir("./QuickTO/utilities"; join = true) |> x -> filter(y -> y[end - 2 : end] == ".jl", x)
 utilsPath .|> x -> "." * x[10 : end] .|> include
@@ -30,7 +30,7 @@ MLutilsPath = readdir("./QuickTO/utilities/ML utils"; join = true)
 MLutilsPath .|> x -> "." * x[10 : end] .|> include
 IOutilsPath = readdir("./QuickTO/utilities/IO"; join = true)
 IOutilsPath .|> x -> "." * x[10 : end] .|> include
-println("CONSTANTS...")
+println("\nCONSTANTS...\n")
 const datasetPath = "C:/Users/LucasKaoid/Desktop/datasets/" # dataset path
 const datasetNonTestSize = 106_336 # number of samples for training and validation
 # reference number of channels used in TopologyGAN

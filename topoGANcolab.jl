@@ -1,12 +1,15 @@
-include("C:/Users/LucasKaoid/Meu Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/QTOutils.jl")
+include("./QuickTO/utilsColab.jl")
 const batchSize = 64
 # binaries for logit binary cross-entropy
 const discBinaryReal = ones(Float32, batchSize)
 const discBinaryFake = zeros(Float32, batchSize)
-percentageDataset::Float64 = 0.2
+percentageDataset::Float64 = 0.05
 Random.seed!(3111)
 
-function trainGANs(; opt = Flux.Optimise.Adam(), genPath_ = " ", discPath_ = " ")
+function trainGANs(;
+  opt = Flux.Optimise.Adam(), genPath_ = " ", discPath_ = " ",
+  epochs, valFreq
+)
   # object with metadata. includes instantiation of NNs,
   # optimiser, dataloaders, training configurations,
   # validation histories, and test losses
@@ -16,7 +19,7 @@ function trainGANs(; opt = Flux.Optimise.Adam(), genPath_ = " ", discPath_ = " "
     else # use input path to load previous models
       loadGANs(genPath_, discPath_)
     end...,
-    opt, epochTrainConfig(12, 4)
+    opt, epochTrainConfig(epochs, valFreq)
   )
   println("Starting training ", timeNow())
   if typeof(metaData.trainConfig) == earlyStopTrainConfig
@@ -30,16 +33,10 @@ function trainGANs(; opt = Flux.Optimise.Adam(), genPath_ = " ", discPath_ = " "
   switchTraining(metaData, true) # reenable model updating
   return metaData
 end
-[[GC.gc() CUDA.reclaim()] for _ in 1:2]
-for lr in [2.5e-4]
-  @show lr
-  experimentMetaData = trainGANs(;
-    opt = Flux.Optimise.NAdam(lr),
-  );
-  saveGANs(experimentMetaData; finalSave = true) # save final models
-  GANreport(
-    string(experimentMetaData.trainConfig.epochs) * "-" * string(round(Int, percentageDataset * 100)) *
-    "%-" * string(experimentMetaData.trainConfig.validFreq) * "-" * sciNotation(lr, 1),
-    experimentMetaData
-  )
-end
+experimentMetaData = trainGANs(; opt = Flux.Optimise.NAdam(lr));
+saveGANs(experimentMetaData; finalSave = true) # save final models
+GANreport(
+  string(experimentMetaData.trainConfig.epochs) * "-" * string(round(Int, percentageDataset * 100)) *
+  "%-" * string(experimentMetaData.trainConfig.validFreq) * "-" * sciNotation(lr, 1),
+  experimentMetaData
+)
