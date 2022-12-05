@@ -5,7 +5,7 @@ map(
   (
     "Makie", "CairoMakie", "StatsBase",
     "Parameters", "HDF5", "CUDA", "MultivariateStats",
-    "MLUtils", "Flux", "Suppressor", "BSON"
+    "MLUtils", "Flux", "Suppressor", "BSON",
     "Zygote", "Optimisers", "ChainRulesCore"
   )
 )
