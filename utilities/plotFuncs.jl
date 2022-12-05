@@ -171,7 +171,6 @@ function plotGANValHist(lossesVals, validFreq, path, modelName)
   CairoMakie.activate!() # vector graphics
   # GLMakie.activate!() # rasterization
   # maxima and minima of validation histories
-  maxima = maximum.((genValHistory, discValHistory))
   minima = findmin.((genValHistory, discValHistory))
   f = Figure(resolution = (1500, 800)); # create makie figure
   ax = Axis(f[1:3, 1], yscale = log10, # axis to draw on
@@ -179,8 +178,6 @@ function plotGANValHist(lossesVals, validFreq, path, modelName)
   )
   # set limits of x axis
   xlims!(ax, 0, validFreq * (length(genValHistory) + 1))
-  # limit y axis between 0 and maximum
-  # ylims!(ax, 0, max <| (maxima .|> ceil .|> Int)...)
   # line plots of histories
   lineGen = lines!(ax, validFreq:validFreq:validFreq * length(genValHistory), genValHistory)
   lineDisc = lines!(ax, validFreq:validFreq:validFreq * length(genValHistory), discValHistory)

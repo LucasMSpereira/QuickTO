@@ -9,7 +9,7 @@ function GANdataLoader(metaData, goal, group)
     if runningInColab == false # if running locally
       return GANdata([datasetPath * "/data/test"])
     else # if runningin colab
-      return GANdata([colabFilesPath * "test"])
+      return GANdata(["./gdrive/MyDrive/dataset files/test"])
     end
   end
 end

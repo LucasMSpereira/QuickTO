@@ -83,7 +83,7 @@ GANmetaData(
   if runningInColab == false # if running locally
     getNonTestFileLists(datasetPath * "data/trainValidate", 0.7)
   else # if running in colab
-    getNonTestFileLists(colabFilesPath * "trainValidate", 0.7)
+    getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
   end
 )
 

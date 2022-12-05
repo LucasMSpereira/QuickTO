@@ -47,7 +47,11 @@ end
 # generate PDF report about GANs
 function GANreport(modelName, metaData)
   # create directory to store all PDFs
-  path = projPath * "/networks/GANplots/" * modelName
+  if runningInColab == false # if running locally
+    path = projPath * "/networks/GANplots/" * modelName
+  else # if running in colab
+    path = "./gdrive/MyDrive/dataset files/GAN saves" * modelName
+  end
   mkpath(path)
   # create pdf with line plots of validation loss histories
   plotGANValHist(
@@ -255,8 +259,13 @@ function saveGANs(metaData; finalSave = false)
   cpuGenerator = cpu(metaData.generator)
   cpuDiscriminator = cpu(metaData.discriminator)
   # save models
-  BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "gen.bson" cpuGenerator
-  BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "disc.bson" cpuDiscriminator
+  if runningInColab == false # if running locally
+    BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "gen.bson" cpuGenerator
+    BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "disc.bson" cpuDiscriminator
+  else # if running in google colab
+    BSON.@save datasetPath * "./gdrive/MyDrive/dataset files/GAN saves" * timeNow() * "gen.bson" cpuGenerator
+    BSON.@save datasetPath * "./gdrive/MyDrive/dataset files/GAN saves" * timeNow() * "disc.bson" cpuDiscriminator
+  end
   if !finalSave
     # bring models back to gpu, if training will continue
     metaData.generator = gpu(cpuGenerator)

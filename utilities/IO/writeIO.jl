@@ -49,7 +49,12 @@ end
 
 # save information in GANmetaData struct in txt file
 function writeLosses(metaData)
-  open(datasetPath * "data/checkpoints/" * timeNow() * "metaData.txt", "w") do id
+  if runningInColab == false # if running locally
+    savePath = datasetPath * "data/checkpoints/"
+  else # if running in colab
+    savePath = "./gdrive/MyDrive/dataset files/GAN saves/"
+  end
+  open(savePath * timeNow() * "metaData.txt", "w") do id
     valF = metaData.trainConfig.validFreq
     # number of validations
     numVals = length(metaData.lossesVals[:genValHistory])
