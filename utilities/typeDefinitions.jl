@@ -80,7 +80,11 @@ GANmetaData(
     :genTest => Float64[],
     :discTest => Float64[]
   ),
-  getNonTestFileLists(datasetPath * "data/trainValidate", 0.7)
+  if runningInColab == false # if running locally
+    getNonTestFileLists(datasetPath * "data/trainValidate", 0.7)
+  else # if running in colab
+    getNonTestFileLists("./gdrive//mydrive/dataset files/trainValidate", 0.7)
+  end
 )
 
 function switchTraining(metaData::GANmetaData, mode::Bool)

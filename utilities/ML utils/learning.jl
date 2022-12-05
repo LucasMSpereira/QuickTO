@@ -115,9 +115,9 @@ if runningInColab == false # if running locally
       # Keep history of evaluations
       trainParams.evaluations = vcat(trainParams.evaluations, meanEvalLoss)
       if length(trainParams.evaluations) > 1 # Print info
-        @printf "Epoch %i     Δ(Validation loss): %.3e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1])
+        # @printf "Epoch %i     Δ(Validation loss): %.3e     " epoch (trainParams.evaluations[end] - trainParams.evaluations[end-1])
       else
-        @printf "Epoch %i     Validation loss: %.3e     " epoch trainParams.evaluations[end]
+        # @printf "Epoch %i     Validation loss: %.3e     " epoch trainParams.evaluations[end]
       end
       typeof(trainParams) == epochTrainConfig && println()
     else # If function was called in a test context
@@ -313,7 +313,7 @@ if runningIncolab == false # if running locally
         epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun; FEAloss = FEAloss)
         if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
           valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
-          @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
+          # @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
           if stopTraining
             println("EARLY STOPPING")
             break
