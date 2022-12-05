@@ -33,10 +33,3 @@ function trainGANs(;
   switchTraining(metaData, true) # reenable model updating
   return metaData
 end
-experimentMetaData = trainGANs(; opt = Flux.Optimise.NAdam(lr));
-saveGANs(experimentMetaData; finalSave = true) # save final models
-GANreport(
-  string(experimentMetaData.trainConfig.epochs) * "-" * string(round(Int, percentageDataset * 100)) *
-  "%-" * string(experimentMetaData.trainConfig.validFreq) * "-" * sciNotation(lr, 1),
-  experimentMetaData
-)
