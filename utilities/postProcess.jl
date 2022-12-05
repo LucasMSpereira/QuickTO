@@ -1,7 +1,5 @@
 # Functions for FEA post-processing
 
-using Ferrite, Parameters, HDF5, LinearAlgebra, Glob
-
 # calculate stresses, principal components and strain energy density
 function calcConds(nels, disp, problemID, e, v, numCellNode)
   # "Programming the finite element method", 5. ed, Wiley, pg 35

@@ -87,23 +87,24 @@ function switchTraining(metaData::GANmetaData, mode::Bool)
   Flux.trainmode!(metaData.generator, mode); Flux.trainmode!(metaData.discriminator, mode)
   return nothing
 end
-
-# Struct with FEA parameters
-@with_kw mutable struct FEAparameters
-  quants::Int = 1 # number of TO problems per section
-  V::Array{Real} = [0.4 + rand() * 0.5 for i in 1 : quants] # volume fractions
-  problems::Any = Array{Any}(undef, quants) # store FEA problem structs
-  meshSize::Tuple{Int, Int} = (140, 50) # Size of rectangular mesh
-  section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
-  nElements::Int32 = prod(meshSize) # quantity of elements
-  nNodes::Int32 = prod(meshSize .+ 1) # quantity of nodes
-  # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix::Array{Int, 2} = convert.(Int, quad(meshSize..., [i for i in 1:nElements]))
-  elementIDarray::Array{Int} = [i for i in 1:nElements] # Vector that lists element IDs
-  meshMatrixSize::Tuple{Int, Int} = (51, 141) # Size of rectangular nodal mesh as a matrix
+if runningInColab == false
+  # Struct with FEA parameters
+  @with_kw mutable struct FEAparameters
+    quants::Int = 1 # number of TO problems per section
+    V::Array{Real} = [0.4 + rand() * 0.5 for i in 1 : quants] # volume fractions
+    problems::Any = Array{Any}(undef, quants) # store FEA problem structs
+    meshSize::Tuple{Int, Int} = (140, 50) # Size of rectangular mesh
+    section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
+    nElements::Int32 = prod(meshSize) # quantity of elements
+    nNodes::Int32 = prod(meshSize .+ 1) # quantity of nodes
+    # matrix with element IDs in their respective position in the mesh
+    elementIDmatrix::Array{Int, 2} = convert.(Int, quad(meshSize..., [i for i in 1:nElements]))
+    elementIDarray::Array{Int} = [i for i in 1:nElements] # Vector that lists element IDs
+    meshMatrixSize::Tuple{Int, Int} = (51, 141) # Size of rectangular nodal mesh as a matrix
+  end
+  FEAparams = FEAparameters()
+  problem!(FEAparams)
 end
-FEAparams = FEAparameters()
-problem!(FEAparams)
 
 # Squeeze and excitation block for TopologyGAN U-SE-ResNet generator
 struct SEblock
