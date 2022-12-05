@@ -6,7 +6,11 @@ function GANdataLoader(metaData, goal, group)
   if goal != :test # if training or validating
     return GANdata(metaData.files[goal][group])
   else # if testing
-    return GANdata([datasetPath * "/data/test"])
+    if runningInColab == false # if running locally
+      return GANdata([datasetPath * "/data/test"])
+    else # if runningin colab
+      return GANdata([colabFilesPath * "test"])
+    end
   end
 end
 
