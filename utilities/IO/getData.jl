@@ -3,7 +3,7 @@
 
 # prepare data for GAN training. Receives list of HDF5 files.
 # Returns data loader to iterate in batches of samples
-function GANdata(files)
+function GANdata(files::Vector{String})
   genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
   topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
   for file in files
