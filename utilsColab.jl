@@ -1,15 +1,17 @@
 # Install packages
 import Pkg
 println("\nPACKAGES...\n")
-map(
-  Pkg.add,
-  (
-    "Makie", "CairoMakie", "StatsBase",
-    "Parameters", "HDF5", "MultivariateStats",
-    "MLUtils", "Suppressor", "BSON",
-    "Zygote", "Optimisers", "ChainRulesCore"
+if !packagesInstalled
+  map(
+    Pkg.add,
+    (
+      "Makie", "CairoMakie", "StatsBase",
+      "Parameters", "HDF5", "MultivariateStats",
+      "MLUtils", "Suppressor", "BSON",
+      "Zygote", "Optimisers", "ChainRulesCore"
+    )
   )
-)
+end
 Pkg.add(name = "Flux", version = "0.13.9")
 ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
 # Use packages

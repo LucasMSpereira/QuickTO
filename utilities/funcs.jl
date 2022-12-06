@@ -366,9 +366,16 @@ function logitBinCrossEnt(logits, label)
 end
 
 # Returns total number of samples across files in list
-numSample(files) = sum([
-  parse(Int, split(files[g][findlast(x -> x == '\\', files[g]) + 1 : end])[3]) for g in keys(files)
-])
+function numSample(files)
+  if runningInColab == false # if running locally
+    return sum([
+      parse(Int, split(files[g][findlast(==('\\'), files[g]) + 1 : end])[3]) for g in keys(files)
+    ])
+  else # if running in colab
+    return sum([
+      parse(Int, split(files[g][findlast(==('/'), files[g]) + 1 : end])[3]) for g in keys(files)
+    ])
+  end
 
 # get list of elements visited by a path
 function pathEleList(aStar)
