@@ -376,6 +376,7 @@ function numSample(files)
       parse(Int, split(files[g][findlast(==('/'), files[g]) + 1 : end])[3]) for g in keys(files)
     ])
   end
+end
 
 # get list of elements visited by a path
 function pathEleList(aStar)
