@@ -3,9 +3,6 @@
 
 # get data loader for GANs, according to context and group
 function GANdataLoader(metaData, goal, group)
-  @show metaData.files
-  @show goal
-  @show group
   if goal != :test # if training or validating
     return GANdata(metaData.files[goal][group])
   else # if testing

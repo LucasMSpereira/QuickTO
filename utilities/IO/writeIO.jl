@@ -65,11 +65,11 @@ function writeLosses(metaData)
     )
     write(id, "\nTRAINING: ")
     if typeof(metaData.trainConfig) == epochTrainConfig
-      write(id, "FIXED NUMBER OF EPOCHS - ", metaData.trainConfig.epochs |> string)
+      write(id, "FIXED NUMBER OF EPOCHS - ", string(metaData.trainConfig.epochs))
     else
       write(id, "EARLYSTOPPING")
-      write(id, "\n\tINTERVAL BETWEEN CHECKS (VALIDATION EPOCHS): ", metaData.trainConfig.earlyStopQuant |> string)
-      write(id, "\n\tMINIMAL PERCENTAGE DROP IN LOSS: ", metaData.trainConfig.earlyStopPercent |> string, "%")
+      write(id, "\n\tINTERVAL BETWEEN CHECKS (VALIDATION EPOCHS): ", string(metaData.trainConfig.earlyStopQuant))
+      write(id, "\n\tMINIMAL PERCENTAGE DROP IN LOSS: ", string(metaData.trainConfig.earlyStopPercent), "%")
     end
     write(id, "\n\tVALIDATION FREQUENCY (EPOCHS): ", valF |> string)
     write(id, "\n\tCHECKPOINT FREQUENCY (EPOCHS): ", metaData.trainConfig.checkPointFreq |> string)
@@ -82,13 +82,26 @@ function writeLosses(metaData)
     # write history of validation losses
     write(id, "\n********* VALIDATION LOSS HISTORIES\n\n")
     write(id, "EPOCH   GENERATOR      DISCRIMINATOR\n")
-    for (epoch, genLoss, discLoss) in zip(valF:valF:valF * numVals, metaData.lossesVals[:genValHistory], metaData.lossesVals[:discValHistory])
+    for (epoch, genLoss, discLoss) in zip(
+      valF:valF:valF * numVals,
+      metaData.lossesVals[:genValHistory], metaData.lossesVals[:discValHistory]
+    )
       write(id, rpad(epoch, 8) * rpad(sciNotation(genLoss, 3), 15) * sciNotation(discLoss, 3) * "\n")
     end
     if length(metaData.lossesVals[:genTest]) > 0
       write(id, "\n********* TEST LOSSES\n\n")
       write(id, "GENERATOR: " * sciNotation(metaData.lossesVals[:genTest][1], 3) * "\n")
       write(id, "DISCRIMINATOR: " * sciNotation(metaData.lossesVals[:discTest][1], 3) * "\n")
+    end
+    write(id, "\n********* SEPARATION OF FILES\n")
+    for (dataSplit, name) in zip([:train, :validate], ["\n** Training:", "\n** Validation:"])
+      write(id, name * "\n\n")
+      for file in metaData.files[dataSplit]
+        write(id, file)
+        if dataSplit != :validate || file != metaData.files[dataSplit][end]
+          write(id, "\n")
+        end
+      end
     end
   end
 end

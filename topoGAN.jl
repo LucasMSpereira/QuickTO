@@ -3,20 +3,21 @@ const batchSize = 64
 # binaries for logit binary cross-entropy
 const discBinaryReal = ones(Float32, batchSize)
 const discBinaryFake = zeros(Float32, batchSize)
-percentageDataset::Float64 = 0.2
+percentageDataset::Float64 = 0.25
 Random.seed!(3111)
 
-function trainGANs(; opt = Flux.Optimise.Adam(), genPath_ = " ", discPath_ = " ")
+function trainGANs(; opt = Flux.Optimise.Adam(), genName_ = " ", discName_ = " ", metaDataPath = "")
   # object with metadata. includes instantiation of NNs,
   # optimiser, dataloaders, training configurations,
   # validation histories, and test losses
   metaData = GANmetaData(
-    if genPath_ == " " # new NNs
+    if genName_ == " " # new NNs
       (U_SE_ResNetGenerator(), topologyGANdisc())
     else # use input path to load previous models
-      loadGANs(genPath_, discPath_)
+      loadGANs(genName_, discName_)
     end...,
-    opt, epochTrainConfig(12, 4)
+    opt, epochTrainConfig(12, 4),
+    # datasetPath * "data/checkpoints/2022-12-06T15-13-19metaData.txt"
   )
   println("Starting training ", timeNow())
   if typeof(metaData.trainConfig) == earlyStopTrainConfig
@@ -31,15 +32,12 @@ function trainGANs(; opt = Flux.Optimise.Adam(), genPath_ = " ", discPath_ = " "
   return metaData
 end
 [[GC.gc() CUDA.reclaim()] for _ in 1:2]
-for lr in [2.5e-4]
-  @show lr
-  experimentMetaData = trainGANs(;
-    opt = Flux.Optimise.NAdam(lr),
-  );
-  saveGANs(experimentMetaData; finalSave = true) # save final models
-  GANreport(
-    string(experimentMetaData.trainConfig.epochs) * "-" * string(round(Int, percentageDataset * 100)) *
-    "%-" * string(experimentMetaData.trainConfig.validFreq) * "-" * sciNotation(lr, 1),
-    experimentMetaData
-  )
-end
+experimentMetaData = trainGANs(;
+  opt = Flux.Optimise.NAdam(1e-4),
+)
+saveGANs(experimentMetaData; finalSave = true) # save final models
+GANreport(
+  string(experimentMetaData.trainConfig.epochs) * "-" * string(round(Int, percentageDataset * 100)) *
+  "%-" * string(experimentMetaData.trainConfig.validFreq) * "-" * sciNotation(lr, 1),
+  experimentMetaData
+)

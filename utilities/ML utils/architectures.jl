@@ -115,7 +115,8 @@ function U_SE_ResNetGenerator(; sizeChain = 32)
     SkipConnection(d3e1, (mx, x) -> cat(mx, x, dims = 3)), # concat d3 e1, ### d3
     relu,
     ConvTranspose((5, 5), gf_dim * 2 => 1; stride = 2, pad = SamePad()), ### self.d4
-    MeanPool((15, 13); stride = 1, pad = (0, 1, 0, 1)),
+    Conv((8, 8), 1 => 1; pad = (0, 1)),
+    Conv((8, 8), 1 => 1),
     sigmoid,
   ) |> gpu
 end

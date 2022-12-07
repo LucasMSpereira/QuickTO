@@ -177,6 +177,21 @@ function readAnalysis(pathRef)
   return ds, sec, sID, res
 end
 
+# When using GANs checkpoints, read files used in each
+# dataset split to resume training
+function readDataSplits(pathToMetaData::String)::Dict{Symbol, Vector{String}}
+  fileSplit = Dict{Symbol, Vector{String}}()
+  open(pathToMetaData, "r") do id # open file
+    content = readlines(id) # read each line
+    # indices of lines to be used as reference
+    trainSplit = findfirst(==("** Training:"), content)
+    validateSplit = findfirst(==("** Validation:"), content)
+    push!(fileSplit, :train => content[trainSplit + 2 : validateSplit - 2])
+    push!(fileSplit, :validate => content[validateSplit + 2 : end])
+  end
+  return fileSplit
+end
+
 # read file from topologyGAN dataset
 function readTopologyGANdataset(path; print = false)
   dictionary = Dict{Symbol, Array{Float32}}()

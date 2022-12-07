@@ -66,7 +66,8 @@ function (ganMD::GANmetaData)(valLossHist::NTuple{2, Float64}; context = :valida
   return nothing
 end
 
-# Outer constructor to create object in the begining
+# Outer constructor to create object in the begining.
+# Used when models will be trained from scratch
 GANmetaData(
   generator::Chain, discriminator::Chain,
   opt::Flux.Optimise.AbstractOptimiser, myTrainConfig::trainConfig
@@ -85,6 +86,25 @@ GANmetaData(
   else # if running in colab
     getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
   end
+)
+
+# Outer constructor to create object in the begining.
+# Used when models are trained from previous checkpoint
+GANmetaData(
+  generator::Chain, discriminator::Chain,
+  opt::Flux.Optimise.AbstractOptimiser,
+  myTrainConfig::trainConfig, metaDataFilepath::String
+) = GANmetaData(
+  generator, discriminator,
+  optimisationInfo(opt, Optimisers.setup(opt, generator), Optimisers.setup(opt, discriminator)),
+  myTrainConfig,
+  Dict(
+    :genValHistory => Float64[],
+    :discValHistory => Float64[],
+    :genTest => Float64[],
+    :discTest => Float64[]
+  ),
+  readDataSplits(metaDataFilepath)
 )
 
 function switchTraining(metaData::GANmetaData, mode::Bool)

@@ -3,12 +3,12 @@ println("Packages...")
 ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
 using Suppressor
 @suppress_err begin
-  using Glob, LinearAlgebra, Makie, TopOpt
-  using Parameters, Printf, HDF5, Statistics
+  using LinearAlgebra, Makie, TopOpt, Ferrite
+  using Parameters, HDF5, Statistics
   using Random, CUDA, Poppler_jll, MultivariateStats
   using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie
   using Zygote, Optimisers, ChainRulesCore
-  using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
+  # using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
   using BSON
 end
 # import Nonconvex
