@@ -3,23 +3,23 @@ const batchSize = 64
 # binaries for logit binary cross-entropy
 const discBinaryReal = ones(Float32, batchSize)
 const discBinaryFake = zeros(Float32, batchSize)
-percentageDataset::Float64 = 0.05
 Random.seed!(3111)
 
 function trainGANs(;
-  opt = Flux.Optimise.Adam(), genPath_ = " ", discPath_ = " ",
+  genOpt_, discOpt_, genName_ = " ", discName_ = " ", metaDataPath = "",
   epochs, valFreq
 )
   # object with metadata. includes instantiation of NNs,
   # optimiser, dataloaders, training configurations,
   # validation histories, and test losses
   metaData = GANmetaData(
-    if genPath_ == " " # new NNs
+    if genName_ == " " # new NNs
       (U_SE_ResNetGenerator(), topologyGANdisc())
     else # use input path to load previous models
-      loadGANs(genPath_, discPath_)
+      loadGANs(genName_, discName_)
     end...,
-    opt, epochTrainConfig(epochs, valFreq)
+    genOpt_, discOpt_, epochTrainConfig(epochs, valFreq),
+    # datasetPath * "data/checkpoints/2022-12-06T15-13-19metaData.txt"
   )
   println("Starting training ", timeNow())
   if typeof(metaData.trainConfig) == earlyStopTrainConfig
