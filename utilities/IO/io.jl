@@ -45,7 +45,10 @@ function GANprints(epoch, metaData; earlyStopVals = 0)
 end
 
 # generate PDF report about GANs
-function GANreport(modelName, metaData)
+function GANreport(metaData)
+  modelName = string(metaData.trainConfig.epochs) * "-" *
+  string(round(Int, percentageDataset * 100)) *
+  "%-" * string(metaData.trainConfig.validFreq) * "-" * timeNow()
   # create directory to store all PDFs
   if runningInColab == false # if running locally
     path = projPath * "/networks/GANplots/" * modelName

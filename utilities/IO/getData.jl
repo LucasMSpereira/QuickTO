@@ -8,31 +8,15 @@ function GANdata(files::Vector{String})
   topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
   for file in files
     dataDict = readTopologyGANdataset(file) # read data as dictionary
-    # amount of samples according to percentage of dataset being used
-    nSamples = round <| (Int, length(dataDict[:compliance]) * percentageDataset)...
-    standardSize = (FEAparams.meshMatrixSize..., 1, nSamples)
-    genInput = cat(genInput,
-      solidify(
-        reshape(dataDict[:vf][:, :, 1, 1:nSamples], standardSize),
-        reshape(dataDict[:vm][:, :, 1, 1:nSamples], standardSize),
-        reshape(dataDict[:energy][:, :, 1, 1:nSamples], standardSize)
-      );
-      dims = 4
-    )
-    FEAinfo = cat(FEAinfo,
-      solidify(
-        reshape(dataDict[:binarySupp][:, :, 1, 1:nSamples], standardSize),
-        reshape(dataDict[:Fx][:, :, 1, 1:nSamples], standardSize),
-        reshape(dataDict[:Fy][:, :, 1, 1:nSamples], standardSize)
-      );
-      dims = 4
-    )
-    topology = cat(topology,
-      reshape(dataDict[:topologies][:, :, 1, 1:nSamples], standardSize); dims = 4
-    )
+    genInput, FEAinfo, topology = groupGANdata!(genInput, FEAinfo, topology, dataDict)
   end
   # discard first position of arrays (initialization)
   genInput, FEAinfo, topology = remFirstSample.((genInput, FEAinfo, topology))
+  if normalizeDataset # optional data normalization in [-1; 1]
+    genInput = mapslices(normalizeVals, genInput; dims = [1 2])
+    FEAinfo = mapslices(normalizeVals, FEAinfo; dims = [1 2])
+    topology = mapslices(normalizeVals, topology; dims = [1 2])
+  end
   return DataLoader( # return data loader to iterate in batches
     (
       genInput, # generator input
@@ -155,6 +139,33 @@ function getStressCNNdata(path; multiOut = false)
     return forceData, forceMat, vm, principals, (xPositions, yPositions, firstComponents, secondComponents)
   end
   return forceData, forceMat, vm, principals
+end
+
+# group certain data used to train GANs
+function groupGANdata!(genInput, FEAinfo, topology, dataDict)
+  # amount of samples according to percentage of dataset being used
+  nSamples = round <| (Int, length(dataDict[:compliance]) * percentageDataset)...
+  standardSize = (FEAparams.meshMatrixSize..., 1, nSamples)
+  genInput = cat(genInput, # generator input
+      solidify(
+        reshape(dataDict[:vf][:, :, 1, 1:nSamples], standardSize),
+        reshape(dataDict[:vm][:, :, 1, 1:nSamples], standardSize),
+        reshape(dataDict[:energy][:, :, 1, 1:nSamples], standardSize)
+      );
+      dims = 4
+    )
+    FEAinfo = cat(FEAinfo, # FEA conditioning info
+      solidify(
+        reshape(dataDict[:binarySupp][:, :, 1, 1:nSamples], standardSize),
+        reshape(dataDict[:Fx][:, :, 1, 1:nSamples], standardSize),
+        reshape(dataDict[:Fy][:, :, 1, 1:nSamples], standardSize)
+      );
+      dims = 4
+    )
+    topology = cat(topology, # REAL topologies
+      reshape(dataDict[:topologies][:, :, 1, 1:nSamples], standardSize); dims = 4
+    )
+    return genInput, FEAinfo, topology
 end
 
 # load displacement dataset from file

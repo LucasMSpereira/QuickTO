@@ -59,10 +59,17 @@ function writeGANmetaData(metaData)
     # number of validations
     numVals = length(metaData.lossesVals[:genValHistory])
     write(id, "********* CONFIGURATION METADATA\n")
-    write(id, "\nPERCENTAGE OF DATASET: " * string(round(Int, percentageDataset * 100)) * "%\n")
-    write(id, "\nOPTIMISERS: " *
-      string(typeof(metaData.genOptInfo.opt)) * " " * sciNotation(metaData.genOptInfo.opt.eta, 1) * "\n" *
-      string(typeof(metaData.discOptInfo.opt)) * " " * sciNotation(metaData.discOptInfo.opt.eta, 1) * "\n"
+    write(id, "\nPERCENTAGE OF DATASET: " * string(round(Int, percentageDataset * 100)) * "%")
+    write(id, "\n\tTRAIN: " * string(round(Int, datasetNonTestSize * 0.7 * percentageDataset)))
+    write(id, "\n\tVALIDATE: " * string(round(Int, datasetNonTestSize * 0.3 * percentageDataset)))
+    if length(metaData.lossesVals[:genTest]) > 0
+      write(id, "\n\tTEST: " * string(round(Int, 15504 * percentageDataset)))
+    end
+    write(id, "\n\nOPTIMISERS:" * "\n\tGENERATOR: " *
+      printOptimizer(metaData.genOptInfo.opt) * " " *
+      sciNotation(metaData.genOptInfo.opt.eta, 1) * "\n\tDISCRIMINATOR: " *
+      printOptimizer(metaData.discOptInfo.opt) * " " *
+      sciNotation(metaData.discOptInfo.opt.eta, 1) * "\n"
     )
     write(id, "\nTRAINING: ")
     if typeof(metaData.trainConfig) == epochTrainConfig

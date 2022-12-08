@@ -368,7 +368,11 @@ end
 function normalizeVals(x)
   maxVal = maximum(x)
   minVal = minimum(x)
-  return map(e -> 2 / (maxVal - minVal) * (e - maxVal) + 1, x)
+  if maxVal == minVal
+    return x
+  else
+    return map(e -> 2 / (maxVal - minVal + 1e-10) * (e - maxVal) + 1, x)
+  end
 end
 
 # Returns total number of samples across files in list
@@ -400,6 +404,12 @@ function pathEleList(aStar)
     ele == length(list) ? (list[ele] = aStar[ele - 1].dst) : (list[ele] = aStar[ele].src)
   end
   return list
+end
+
+# generate string representing optimizer
+function printOptimizer(optimizer)
+  optString = string(typeof(optimizer))
+  return optString[findlast(".", optString)[1] + 1 : end]
 end
 
 # reshape vectors with element quantity to reflect mesh shape
@@ -562,8 +572,8 @@ end
 of dataset used and number of fixed epochs to train for certain amount
 of time =#
 function trainStats(validFreq, days)
-  for dPercent in 0.1:0.1:1.0
-    println(rpad("$(dPercent * 100 |> Int)%", 7),
+  for dPercent in Iterators.flatten((0.01:0.01:0.1, 0.2:0.1:1.0))
+    println(rpad("$(round(Int, dPercent * 100))%", 7),
       round <| (Int, (days * 24) / (dPercent * (5 + 2.5/validFreq)))..., " epochs"
     )
   end
