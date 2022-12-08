@@ -8,7 +8,7 @@ using Suppressor
   using Random, CUDA, Poppler_jll, MultivariateStats
   using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie
   using Zygote, Optimisers, ChainRulesCore
-  # using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
+  using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
   using BSON
 end
 # import Nonconvex
@@ -20,11 +20,11 @@ readdir("./utilities"; join = true) |> x -> filter(y -> y[end - 2 : end] == ".jl
 readdir("./utilities/ML utils"; join = true) .|> include;
 readdir("./utilities/IO"; join = true) .|> include;
 println("Constants...")
-const datasetPath = "C:/Users/LucasKaoid/Desktop/datasets/" # dataset path
-const datasetNonTestSize = 106_336 # number of samples for training and validation
 # reference number of channels used in TopologyGAN
 const gf_dim = 128
 const df_dim = 128
+const datasetPath = "C:/Users/LucasKaoid/Desktop/datasets/" # dataset path
+const datasetNonTestSize = 106_336 # number of samples for training and validation
 # series used for interpolation of physical fields
 const centroidY = 0.5:1:49.5
 const centroidX = 0.5:1:139.5

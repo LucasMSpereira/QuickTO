@@ -48,7 +48,7 @@ function writeDispComps(quickTOdata, problemID, disp, FEAparams, numCellNode)
 end
 
 # save information in GANmetaData struct in txt file
-function writeLosses(metaData)
+function writeGANmetaData(metaData)
   if runningInColab == false # if running locally
     savePath = datasetPath * "data/checkpoints/"
   else # if running in colab

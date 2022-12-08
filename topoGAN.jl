@@ -1,12 +1,18 @@
 include("./QTOutils.jl")
+using Logging
 const batchSize = 64
 # binaries for logit binary cross-entropy
 const discBinaryReal = ones(Float32, batchSize)
 const discBinaryFake = zeros(Float32, batchSize)
-percentageDataset::Float64 = 0.25
+# null vectors to pad generator output
+padGenOutCol = zeros(Float32, (FEAparams.meshSize[2], 1, 1, batchSize))
+padGenOutLine = zeros(Float32, (1, FEAparams.meshMatrixSize[2], 1, batchSize))
+percentageDataset::Float64 = 0.04
 Random.seed!(3111)
 
-function trainGANs(; opt = Flux.Optimise.Adam(), genName_ = " ", discName_ = " ", metaDataPath = "")
+function trainGANs(;
+  opt = Flux.Optimise.Adam(), genName_ = " ", discName_ = " ", metaDataPath = ""
+)
   # object with metadata. includes instantiation of NNs,
   # optimiser, dataloaders, training configurations,
   # validation histories, and test losses
@@ -16,7 +22,7 @@ function trainGANs(; opt = Flux.Optimise.Adam(), genName_ = " ", discName_ = " "
     else # use input path to load previous models
       loadGANs(genName_, discName_)
     end...,
-    opt, epochTrainConfig(12, 4),
+    opt, epochTrainConfig(4, 1),
     # datasetPath * "data/checkpoints/2022-12-06T15-13-19metaData.txt"
   )
   println("Starting training ", timeNow())
@@ -33,11 +39,11 @@ function trainGANs(; opt = Flux.Optimise.Adam(), genName_ = " ", discName_ = " "
 end
 [[GC.gc() CUDA.reclaim()] for _ in 1:2]
 experimentMetaData = trainGANs(;
-  opt = Flux.Optimise.NAdam(1e-4),
+  opt = Flux.Optimise.NAdam(),
 )
-saveGANs(experimentMetaData; finalSave = true) # save final models
-GANreport(
-  string(experimentMetaData.trainConfig.epochs) * "-" * string(round(Int, percentageDataset * 100)) *
-  "%-" * string(experimentMetaData.trainConfig.validFreq) * "-" * sciNotation(lr, 1),
-  experimentMetaData
-)
+# saveGANs(experimentMetaData; finalSave = true) # save final models
+# GANreport(
+#   string(experimentMetaData.trainConfig.epochs) * "-" * string(round(Int, percentageDataset * 100)) *
+#   "%-" * string(experimentMetaData.trainConfig.validFreq) * "-" * sciNotation(lr, 1),
+#   experimentMetaData
+# )

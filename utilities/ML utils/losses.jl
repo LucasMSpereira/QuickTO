@@ -12,17 +12,17 @@ end
 
 # use NNs and batch data to obtain gradients and losses
 function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
-  discOutFake, discInputFake = 0.0, 0.0 # initialize for scope purposes
+  # initialize for scope purposes
+  discOutFake, discInputFake = 0.0, 0.0
   function genLoss(genOutput) # generator loss. Defined here for scope purposes
     mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
-    # volume fraction MAE
-    absError = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean
+    absError = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean # volume fraction MAE
     # discriminator input with FAKE topology
     discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
     # discriminator's output for FAKE topology
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
     # generator's final loss
-    return logitBinCrossEnt(discOutFake, 1)  + 10_000 * mse + 1 * absError
+    return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
     return logitBinCrossEnt(discOutReal, 1) + logitBinCrossEnt(discOutFake, 0)
@@ -32,7 +32,7 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
   discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
   # get generator's loss value and gradient
   genLossVal, genGrads = withgradient(
-    gen -> genLoss(gen(genInputGPU) |> cpu), gen
+    gen -> genLoss(gen(genInputGPU) |> cpu |> padGen), gen
   )
   # get discriminator's loss value and gradient
   discLossVal, discGrads = withgradient(

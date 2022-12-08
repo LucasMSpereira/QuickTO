@@ -377,6 +377,15 @@ function numSample(files)
   end
 end
 
+# pad output of generator
+function padGen(genOut::Array{Float32, 4})::Array{Float32, 4}
+  return cat(
+    cat(genOut, zeros(Float32, (FEAparams.meshSize[2], 1, 1, size(genOut, 4))); dims = 2),
+    zeros(Float32, (1, FEAparams.meshMatrixSize[2], 1, size(genOut, 4)));
+    dims = 1
+)
+end
+
 # get list of elements visited by a path
 function pathEleList(aStar)
   list = zeros(Int, length(aStar) + 1)
@@ -438,7 +447,7 @@ end
 # print real number in scientific notation
 function sciNotation(num::Real, printDigits::Int)
   try
-    num == 0 && return "0."*repeat("0", printDigits)*"E00"
+    num == 0 && return "0." * repeat("0", printDigits) * "E00"
     base10 = num |> abs |> log10 |> floor
     mantissa = round(abs(num) / 10 ^ base10; digits = printDigits)
     num < 0 && return "-$(mantissa)E$(Int(base10))"
@@ -525,7 +534,8 @@ timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-")
 # characteristics of training for fixed epochs on
 # certain percentage of the dataset
 function trainStats(nEpochs, datasetPercentage, validFreq)
-  tTime = round((2.3 * nEpochs + nEpochs/validFreq) * datasetPercentage; digits = 1) # estimated time
+  # estimated time in hours
+  tTime = round((2.3 * nEpochs + floor(nEpochs/validFreq)) * datasetPercentage; digits = 1)
   println(tTime, " hour(s)   ", round(tTime / 24; digits = 1), " day(s)")
   # estimated distributions of samples in splits
   trainingAmount = round(Int, datasetNonTestSize * 0.7 * datasetPercentage)

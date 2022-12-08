@@ -143,7 +143,7 @@ function fixedEpochGANs(metaData)
   epoch = 0
   while epoch < metaData.trainConfig.epochs # loop in epochs
     epoch += 1 # count training epochs
-    epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
+    # epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
     GANepoch!(metaData, :train) # training epoch
     # occasionally run validation epoch
     if epoch % metaData.trainConfig.validFreq == 0

@@ -286,7 +286,7 @@ function saveGANs(metaData; finalSave = false)
     metaData.generator = gpu(cpuGenerator)
     metaData.discriminator = gpu(cpuDiscriminator)
   end
-  writeLosses(metaData)
+  writeGANmetaData(metaData)
   return nothing
 end
 
