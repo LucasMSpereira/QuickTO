@@ -335,6 +335,19 @@ function isoFeats(force, supp, topo)
   return all(neighborDens .> 0.0625)
 end
 
+# contextual logit binary cross-entropy. "If" statement
+# tries to avoid allocation of new vector of 1s or 0s
+# when possible (far majority of times). It will then use instead
+# constant global variables discBinaryReal and discBinaryFake
+function logitBinCrossEnt(logits, label)
+  if length(logits) != batchSize
+    expected = fill(label |> Float64, size(logits))
+  else
+    expected = label == 1 ? discBinaryReal : discBinaryFake
+  end
+  return Flux.Losses.logitbinarycrossentropy(logits, expected)
+end
+
 # estimate total number of lines in project so far
 function numLines()
   sum(
@@ -351,17 +364,11 @@ function numLines()
   )
 end
 
-# contextual logit binary cross-entropy. "If" statement
-# tries to avoid allocation of new vector of 1s or 0s
-# when possible (far majority of times). It will then use instead
-# constant global variables discBinaryReal and discBinaryFake
-function logitBinCrossEnt(logits, label)
-  if length(logits) != batchSize
-    expected = fill(label |> Float64, size(logits))
-  else
-    expected = label == 1 ? discBinaryReal : discBinaryFake
-  end
-  return Flux.Losses.logitbinarycrossentropy(logits, expected)
+# normalize values of array between -1 and 1
+function normalizeVals(x)
+  maxVal = maximum(x)
+  minVal = minimum(x)
+  return map(e -> 2 / (maxVal - minVal) * (e - maxVal) + 1, x)
 end
 
 # Returns total number of samples across files in list
@@ -534,8 +541,12 @@ timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-")
 # characteristics of training for fixed epochs on
 # certain percentage of the dataset
 function trainStats(nEpochs, datasetPercentage, validFreq)
-  # estimated time in hours
-  tTime = round((2.3 * nEpochs + floor(nEpochs/validFreq)) * datasetPercentage; digits = 1)
+  tTime = round( # estimated time in hours
+    (    # train               validate                     test
+      5 * nEpochs + 2.5 * (floor(nEpochs/validFreq) + 15504 / (datasetNonTestSize * 0.3))
+    ) * datasetPercentage
+    ; digits = 1
+  )
   println(tTime, " hour(s)   ", round(tTime / 24; digits = 1), " day(s)")
   # estimated distributions of samples in splits
   trainingAmount = round(Int, datasetNonTestSize * 0.7 * datasetPercentage)
@@ -553,7 +564,7 @@ of time =#
 function trainStats(validFreq, days)
   for dPercent in 0.1:0.1:1.0
     println(rpad("$(dPercent * 100 |> Int)%", 7),
-      round <| (Int, (days * 24) / (dPercent * (2.3 + 1/validFreq)))..., " epochs"
+      round <| (Int, (days * 24) / (dPercent * (5 + 2.5/validFreq)))..., " epochs"
     )
   end
 end

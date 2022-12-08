@@ -60,8 +60,9 @@ function writeGANmetaData(metaData)
     numVals = length(metaData.lossesVals[:genValHistory])
     write(id, "********* CONFIGURATION METADATA\n")
     write(id, "\nPERCENTAGE OF DATASET: " * string(round(Int, percentageDataset * 100)) * "%\n")
-    write(id, "\nOPTIMISER: " *
-      string(typeof(metaData.optInfo.opt)) * " " * sciNotation(metaData.optInfo.opt.eta, 1) * "\n"
+    write(id, "\nOPTIMISERS: " *
+      string(typeof(metaData.genOptInfo.opt)) * " " * sciNotation(metaData.genOptInfo.opt.eta, 1) * "\n" *
+      string(typeof(metaData.discOptInfo.opt)) * " " * sciNotation(metaData.discOptInfo.opt.eta, 1) * "\n"
     )
     write(id, "\nTRAINING: ")
     if typeof(metaData.trainConfig) == epochTrainConfig

@@ -37,15 +37,15 @@ earlyStopTrainConfig(
 
 mutable struct optimisationInfo
   opt::Flux.Optimise.AbstractOptimiser # optimizer used in training
-  genState::NamedTuple # generator's optimizer state
-  discState::NamedTuple # discriminator's optimizer state
+  optState::NamedTuple # optimizer's state
 end
 
 # Meta-data for GAN pipeline
 mutable struct GANmetaData
   generator::Chain # generator network
   discriminator::Chain # discriminator network
-  optInfo::optimisationInfo # optimisation setup
+  genOptInfo::optimisationInfo # generator optimisation setup
+  discOptInfo::optimisationInfo # discriminator optimisation setup
   const trainConfig::trainConfig # parameters for training
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
@@ -70,10 +70,12 @@ end
 # Used when models will be trained from scratch
 GANmetaData(
   generator::Chain, discriminator::Chain,
-  opt::Flux.Optimise.AbstractOptimiser, myTrainConfig::trainConfig
+  genOpt::Flux.Optimise.AbstractOptimiser, discOpt::Flux.Optimise.AbstractOptimiser,
+   myTrainConfig::trainConfig
 ) = GANmetaData(
   generator, discriminator,
-  optimisationInfo(opt, Optimisers.setup(opt, generator), Optimisers.setup(opt, discriminator)),
+  optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)),
+  optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)),
   myTrainConfig,
   Dict(
     :genValHistory => Float64[],
@@ -92,11 +94,12 @@ GANmetaData(
 # Used when models are trained from previous checkpoint
 GANmetaData(
   generator::Chain, discriminator::Chain,
-  opt::Flux.Optimise.AbstractOptimiser,
+  genOpt::Flux.Optimise.AbstractOptimiser, discOpt::Flux.Optimise.AbstractOptimiser,
   myTrainConfig::trainConfig, metaDataFilepath::String
 ) = GANmetaData(
   generator, discriminator,
-  optimisationInfo(opt, Optimisers.setup(opt, generator), Optimisers.setup(opt, discriminator)),
+  optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)),
+  optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)),
   myTrainConfig,
   Dict(
     :genValHistory => Float64[],
@@ -107,10 +110,12 @@ GANmetaData(
   readDataSplits(metaDataFilepath)
 )
 
+# disable/reenable training in model
 function switchTraining(metaData::GANmetaData, mode::Bool)
   Flux.trainmode!(metaData.generator, mode); Flux.trainmode!(metaData.discriminator, mode)
   return nothing
 end
+
 # Struct with FEA parameters
 @with_kw mutable struct FEAparameters
   quants::Int = 1 # number of TO problems per section

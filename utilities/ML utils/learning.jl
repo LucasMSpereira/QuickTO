@@ -143,7 +143,7 @@ function fixedEpochGANs(metaData)
   epoch = 0
   while epoch < metaData.trainConfig.epochs # loop in epochs
     epoch += 1 # count training epochs
-    # epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
+    epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
     GANepoch!(metaData, :train) # training epoch
     # occasionally run validation epoch
     if epoch % metaData.trainConfig.validFreq == 0
@@ -180,8 +180,8 @@ function GANepoch!(metaData, goal)
         metaData.generator, metaData.discriminator, genInput, FEAinfo, realTopology
       )
       if goal == :train # update NNs parameters in case of training
-        Flux.Optimise.update!(metaData.optInfo.genState, metaData.generator, genGrads[1])
-        Flux.Optimise.update!(metaData.optInfo.discState, metaData.discriminator, discGrads[1])
+        Flux.Optimise.update!(metaData.genOptInfo.optState, metaData.generator, genGrads[1])
+        Flux.Optimise.update!(metaData.discOptInfo.optState, metaData.discriminator, discGrads[1])
       end
       # acumulate batch losses
       genLossHist += genLossVal; discLossHist += discLossVal

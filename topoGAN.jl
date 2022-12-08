@@ -7,11 +7,11 @@ const discBinaryFake = zeros(Float32, batchSize)
 # null vectors to pad generator output
 padGenOutCol = zeros(Float32, (FEAparams.meshSize[2], 1, 1, batchSize))
 padGenOutLine = zeros(Float32, (1, FEAparams.meshMatrixSize[2], 1, batchSize))
-percentageDataset::Float64 = 0.04
+percentageDataset::Float64 = 0.03
 Random.seed!(3111)
 
 function trainGANs(;
-  opt = Flux.Optimise.Adam(), genName_ = " ", discName_ = " ", metaDataPath = ""
+  genOpt_, discOpt_, genName_ = " ", discName_ = " ", metaDataPath = ""
 )
   # object with metadata. includes instantiation of NNs,
   # optimiser, dataloaders, training configurations,
@@ -22,7 +22,7 @@ function trainGANs(;
     else # use input path to load previous models
       loadGANs(genName_, discName_)
     end...,
-    opt, epochTrainConfig(4, 1),
+    genOpt_, discOpt_, epochTrainConfig(4, 1),
     # datasetPath * "data/checkpoints/2022-12-06T15-13-19metaData.txt"
   )
   println("Starting training ", timeNow())
@@ -38,9 +38,11 @@ function trainGANs(;
   return metaData
 end
 [[GC.gc() CUDA.reclaim()] for _ in 1:2]
-experimentMetaData = trainGANs(;
-  opt = Flux.Optimise.NAdam(),
+@time experimentMetaData = trainGANs(;
+  genOpt_ = Flux.Optimise.NAdam(2e-4),
+  discOpt_ = Flux.Optimise.NAdam(),
 )
+writeGANmetaData(experimentMetaData)
 # saveGANs(experimentMetaData; finalSave = true) # save final models
 # GANreport(
 #   string(experimentMetaData.trainConfig.epochs) * "-" * string(round(Int, percentageDataset * 100)) *
