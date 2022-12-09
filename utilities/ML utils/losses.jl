@@ -22,7 +22,8 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
     # discriminator's output for FAKE topology
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
     # generator's final loss
-    return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
+    # return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
+    return logitBinCrossEnt(discOutFake, 1) + 10 * mse + 1 * absError
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
     return logitBinCrossEnt(discOutReal, 1) + logitBinCrossEnt(discOutFake, 0)

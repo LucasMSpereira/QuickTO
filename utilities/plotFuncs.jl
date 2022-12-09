@@ -164,26 +164,31 @@ end
 
 # create line plots of GAN validation histories.
 # save plot as pdf
-function plotGANValHist(lossesVals, validFreq, path, modelName)
-  genValHistory = lossesVals[:genValHistory]
-  discValHistory = lossesVals[:discValHistory]
-  testLosses = (lossesVals[:genTest][1], lossesVals[:discTest][1])
+function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataPath = "")
+  if length(metaDataPath) > 0
+    # get values from saved txt file
+    genValHistory, discValHistory, testLosses, validFreq = getValuesFromTxt(metaDataPath)
+  else # get values from GANmetaData struct
+    genValHistory = lossesVals[:genValHistory]
+    discValHistory = lossesVals[:discValHistory]
+    testLosses = (lossesVals[:genTest][1], lossesVals[:discTest][1])
+  end
   CairoMakie.activate!() # vector graphics
   # GLMakie.activate!() # rasterization
   # maxima and minima of validation histories
   minima = findmin.((genValHistory, discValHistory))
   f = Figure(resolution = (1500, 800)); # create makie figure
-  ax = Axis(f[1:3, 1], yscale = log10, # axis to draw on
+  ax = Axis(f[1:3, 1], yscale = lineScale, # axis to draw on
     xlabel = "Epochs", ylabel = "Losses", title = modelName
   )
   # set limits of x axis
   xlims!(ax, 0, validFreq * (length(genValHistory) + 1))
   # line plots of histories
   lineGen = lines!(ax, validFreq:validFreq:validFreq * length(genValHistory), genValHistory)
-  lineDisc = lines!(ax, validFreq:validFreq:validFreq * length(genValHistory), discValHistory)
+  lineDisc = lines!(ax, validFreq:validFreq:validFreq * length(discValHistory), discValHistory)
   # add legend to plot
   t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
-  Legend(f[1, 2][1, 1], [lineGen, lineDisc], ["Generator", "Discriminator"], offset = (-100, 0))
+  Legend(f[1, 2][1, 1], [lineGen, lineDisc], ["Generator", "Discriminator"])
   colsize!(f.layout, 2, Fixed(350))
   minimaAxis = Axis(f[2, 2])
   text!( # text for validation minima for both NNs

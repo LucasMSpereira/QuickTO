@@ -365,7 +365,7 @@ function numLines()
 end
 
 # normalize values of array between -1 and 1
-function normalizeVals(x)
+function normalizeVals(x)::Array{Float32}
   maxVal = maximum(x)
   minVal = minimum(x)
   if maxVal == minVal

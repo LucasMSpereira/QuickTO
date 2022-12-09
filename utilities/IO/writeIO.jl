@@ -59,12 +59,17 @@ function writeGANmetaData(metaData)
     # number of validations
     numVals = length(metaData.lossesVals[:genValHistory])
     write(id, "********* CONFIGURATION METADATA\n")
-    write(id, "\nPERCENTAGE OF DATASET: " * string(round(Int, percentageDataset * 100)) * "%")
-    write(id, "\n\tTRAIN: " * string(round(Int, datasetNonTestSize * 0.7 * percentageDataset)))
-    write(id, "\n\tVALIDATE: " * string(round(Int, datasetNonTestSize * 0.3 * percentageDataset)))
+    write(id, "\nPERCENTAGE OF DATASET: " * string(round(percentageDataset * 100; digits = 1)) * "%")
+    trainSize = round(Int, datasetNonTestSize * 0.7 * percentageDataset)
+    validateSize = round(Int, datasetNonTestSize * 0.3 * percentageDataset)
+    testSize = 0
+    write(id, "\n\tTRAIN: " * string(trainSize))
+    write(id, "\n\tVALIDATE: " * string(validateSize))
     if length(metaData.lossesVals[:genTest]) > 0
-      write(id, "\n\tTEST: " * string(round(Int, 15504 * percentageDataset)))
+      testSize = round(Int, 15504 * percentageDataset)
+      write(id, "\n\tTEST: " * string(testSize))
     end
+    write(id, "\n\tTOTAL: " * string(trainSize + validateSize + testSize))
     write(id, "\n\nOPTIMISERS:" * "\n\tGENERATOR: " *
       printOptimizer(metaData.genOptInfo.opt) * " " *
       sciNotation(metaData.genOptInfo.opt.eta, 1) * "\n\tDISCRIMINATOR: " *

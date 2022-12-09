@@ -66,6 +66,39 @@ function GANreport(metaData)
   return nothing
 end
 
+# get validation histories, test losses and validation frequency
+# from txt report for plotting
+function getValuesFromTxt(txtPath)
+  content = readlines(txtPath)
+  # line with heading of validation histories
+  heading = findfirst(==("EPOCH   GENERATOR      DISCRIMINATOR"), content)
+  # line with last validation
+  finalValidation = findnext(==(""), content, heading) - 1
+  genHist = zeros(Float32, finalValidation - heading)
+  discHist = zeros(Float32, finalValidation - heading)
+  for (index, line) in enumerate(heading + 1:finalValidation)
+    s = split(content[line])
+    genHist[index] = parse(Float32, s[2])
+    discHist[index] = parse(Float32, s[3])
+  end
+  # line with header for test loss values
+  testHeader = findfirst(==("********* TEST LOSSES"), content)
+  if testHeader === nothing # no testing phase
+    testLosses = (0.0, 0.0)
+  else # get test values
+    testLosses = (
+      parse(Float32, split(content[testHeader + 2])[2]),
+      parse(Float32, split(content[testHeader + 3])[2])
+    )
+    s = split.(content_) |> Iterators.flatten |> collect # all "words"
+    valFreq = 0
+    for element in 1:length(s) - 1 # get validation frequency
+      s[element : element + 1] == ["VALIDATION", "FREQUENCY"] && (valFreq = parse(Int32, s[element + 3]))
+    end
+  end
+  return genHist, discHist, testLosses, valFreq
+end
+
 # inspect contents of HDF5 file
 function HDF5inspect(HDF5path)
   h5file = h5open(HDF5path, "r") # open file

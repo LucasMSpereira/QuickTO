@@ -3,6 +3,8 @@ const batchSize = 64
 # binaries for logit binary cross-entropy
 const discBinaryReal = ones(Float32, batchSize)
 const discBinaryFake = zeros(Float32, batchSize)
+normalizeDataset::Bool = true # choose to normalize data in [-1; 1]
+lineScale = log10 # log10/identity
 Random.seed!(3111)
 
 function trainGANs(;
