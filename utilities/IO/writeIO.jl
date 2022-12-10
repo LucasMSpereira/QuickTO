@@ -85,7 +85,6 @@ function writeGANmetaData(metaData)
       write(id, "\n\tMINIMAL PERCENTAGE DROP IN LOSS: ", string(metaData.trainConfig.earlyStopPercent), "%")
     end
     write(id, "\n\tVALIDATION FREQUENCY (EPOCHS): ", valF |> string)
-    write(id, "\n\tCHECKPOINT FREQUENCY (EPOCHS): ", metaData.trainConfig.checkPointFreq |> string)
     if metaData.trainConfig.decay == 0
       write(id, "\n\tNO LEARNING RATE DECAY.\n")
     else

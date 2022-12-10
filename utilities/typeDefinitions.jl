@@ -9,11 +9,10 @@ mutable struct epochTrainConfig <: trainConfig
   const schedule::Int64 # Learning rate adjustment interval in epochs. 0 for no scheduling
   const decay::Float64 # If scheduling, periodically multiply learning rate by this value
   evaluations::Array{<:Real} # History of evaluation losses
-  const checkPointFreq::Int32 # epoch interval between intermediate saves
 end
 epochTrainConfig(
-  epochs, validFreq; schedule = 0, decay = 0.0, evaluations = Float64[], checkPointFreq = 4
-) = epochTrainConfig(epochs, validFreq, schedule, decay, evaluations, checkPointFreq)
+  epochs, validFreq; schedule = 0, decay = 0.0, evaluations = Float64[],
+) = epochTrainConfig(epochs, validFreq, schedule, decay, evaluations)
 
 # Configurations for early-stop training of neural networks
 mutable struct earlyStopTrainConfig <: trainConfig
@@ -25,14 +24,13 @@ mutable struct earlyStopTrainConfig <: trainConfig
   const earlyStopQuant::Int32
   # Minimal percentage drop in loss in the last "earlyStopQuant" validations
   const earlyStopPercent::Float32
-  const checkPointFreq::Int32 # epoch interval between intermediate saves
 end
 
 earlyStopTrainConfig(
   validFreq; decay = 0.0, schedule = 0, evaluations = Float64[],
-  earlyStopQuant = 3, earlyStopPercent = 6, checkPointFreq = 4
+  earlyStopQuant = 3, earlyStopPercent = 6
 ) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations,
-  earlyStopQuant, earlyStopPercent, checkPointFreq
+  earlyStopQuant, earlyStopPercent
 )
 
 mutable struct optimisationInfo

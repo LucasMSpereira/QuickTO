@@ -47,7 +47,7 @@ end
 # generate PDF report about GANs
 function GANreport(metaData)
   modelName = string(metaData.trainConfig.epochs) * "-" *
-  string(round(Int, percentageDataset * 100)) *
+  string(round(percentageDataset * 100; digits = 1)) *
   "%-" * string(metaData.trainConfig.validFreq) * "-" * timeNow()
   # create directory to store all PDFs
   if runningInColab == false # if running locally
@@ -68,8 +68,8 @@ end
 
 # get validation histories, test losses and validation frequency
 # from txt report for plotting
-function getValuesFromTxt(txtPath)
-  content = readlines(txtPath)
+function getValuesFromTxt(txtName)
+  content = readlines(datasetPath * "data/checkpoints/" * txtName)
   # line with heading of validation histories
   heading = findfirst(==("EPOCH   GENERATOR      DISCRIMINATOR"), content)
   # line with last validation
@@ -90,11 +90,11 @@ function getValuesFromTxt(txtPath)
       parse(Float32, split(content[testHeader + 2])[2]),
       parse(Float32, split(content[testHeader + 3])[2])
     )
-    s = split.(content_) |> Iterators.flatten |> collect # all "words"
-    valFreq = 0
-    for element in 1:length(s) - 1 # get validation frequency
-      s[element : element + 1] == ["VALIDATION", "FREQUENCY"] && (valFreq = parse(Int32, s[element + 3]))
-    end
+  end
+  s = split.(content) |> Iterators.flatten |> collect # all "words"
+  valFreq = 0
+  for element in 1:length(s) - 1 # get validation frequency
+    s[element : element + 1] == ["VALIDATION", "FREQUENCY"] && (valFreq = parse(Int32, s[element + 3]))
   end
   return genHist, discHist, testLosses, valFreq
 end
@@ -112,9 +112,9 @@ function HDF5inspect(HDF5path)
 end
 
 # load previous GAN models
-function loadGANs(genPath, discPath)
-  BSON.@load datasetPath * "data/checkpoints/" * genPath cpuGenerator
-  BSON.@load datasetPath * "data/checkpoints/" * discPath cpuDiscriminator
+function loadGANs(genName, discName)
+  BSON.@load datasetPath * "data/checkpoints/" * genName cpuGenerator
+  BSON.@load datasetPath * "data/checkpoints/" * discName cpuDiscriminator
   (cpuGenerator, cpuDiscriminator) .|> gpu
 end
 
@@ -217,7 +217,7 @@ end
 # dataset split to resume training
 function readDataSplits(pathToMetaData::String)::Dict{Symbol, Vector{String}}
   fileSplit = Dict{Symbol, Vector{String}}()
-  open(pathToMetaData, "r") do id # open file
+  open(datasetPath * "data/checkpoints/" * pathToMetaData, "r") do id # open file
     content = readlines(id) # read each line
     # indices of lines to be used as reference
     trainSplit = findfirst(==("** Training:"), content)

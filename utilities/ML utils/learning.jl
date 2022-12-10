@@ -67,6 +67,7 @@ end
 # train GANs with earlystopping
 function earlyStopGANs(metaData)
   epoch = 0
+  checkpointTime = now()
   while true # loop in epochs
     epoch += 1 # count training epochs
     epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
@@ -94,8 +95,11 @@ function earlyStopGANs(metaData)
         GANprints(epoch, metaData) # print just validation information
       end
     end
-    # save occasional checkpoints of the model
-    epoch % metaData.trainConfig.checkPointFreq == 0 && saveGANs(metaData)
+    # save checkpoints of the models if certain amount of time passed
+    if floor(now() - checkpointTime, Dates.Hour) > Dates.Hour(3)
+      checkpointTime = now()
+      saveGANs(metaData)
+    end
   end
 end
 
@@ -141,6 +145,7 @@ end
 # train GANs with fixed number of epochs
 function fixedEpochGANs(metaData)
   epoch = 0
+  checkpointTime = now()
   while epoch < metaData.trainConfig.epochs # loop in epochs
     epoch += 1 # count training epochs
     epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
@@ -153,9 +158,10 @@ function fixedEpochGANs(metaData)
       switchTraining(metaData, true) # reenable model updating after validation
       GANprints(epoch, metaData) # print information about validation
     end
-    # save occasional checkpoints of the models
-    if epoch % metaData.trainConfig.checkPointFreq == 0 && epoch != metaData.trainConfig.epochs
-      saveGANs(metaData)
+    # save checkpoints of the models if certain amount of time passed
+    if floor(now() - checkpointTime, Dates.Hour) > Dates.Hour(3)
+      checkpointTime = now() # update checkpoint time reference
+      saveGANs(metaData) # save models and txt file with metadata
     end
   end
 end
