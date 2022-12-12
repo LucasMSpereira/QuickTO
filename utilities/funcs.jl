@@ -50,6 +50,28 @@ function adjSolid(topo, elementIDmatrix)
   return g
 end
 
+# transform binary support representation
+# to dense 3x3 format
+function binaryToDenseSupport(binarySupport::Array{Float32, 3})::Array{Float32, 3}
+  denseSupport = zeros(Float32, (3, 3, size(binarySupport, 3)))
+  for sample_ in axes(binarySupport, 3) # iterate in samples
+    if all(==(1.0), binarySupport[:, :, sample_][:, 1])
+      denseSupport[:, :, sample_] .= 4 # left clamped
+    elseif all(==(1.0), binarySupport[:, :, sample_][end, :])
+      denseSupport[:, :, sample_] .= 5 # bottom clamped
+    elseif all(==(1.0), binarySupport[:, :, sample_][:, end] .== 1.0)
+      denseSupport[:, :, sample_] .= 6 # right clamped
+    elseif all(==(1.0), binarySupport[:, :, sample_][1, :])
+      denseSupport[:, :, sample_] .= 7 # top clamped
+    else # 3 random pins
+      for (index, pinPos) in findall(==(1.0), binarySupport[:, :, sample_]) |> enumerate
+        denseSupport[index, :, sample_] .= pinPos[1], pinPos[2], 3
+      end
+    end
+  end
+  return denseSupport
+end
+
 # get coordinates of centers of elements
 function centerCoords(nels, problem)
   cellValue = CellVectorValues(QuadratureRule{2, RefCube}(2), Lagrange{2,RefCube,1}())
@@ -290,6 +312,15 @@ end
 function getIDs(pathing)
   s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
   return s[1], s[2]
+end
+
+# convert loads from dataset to dense format
+function forceMatrixToDense(sparseX::Array{Float32, 3}, sparseY::Array{Float32, 3})::Array{Float32, 3}
+  denseForce = zeros(Float32, (2, 4, size(sparseX, 3)))
+  for sample_ in axes(sparseX, 3), (index, loadPos) in findall(!=(0.0), sparseX[:, :, sample_]) |> enumerate
+    denseForce[index, :, sample_] .= loadPos[1], loadPos[2], sparseX[:, :, sample_][loadPos], sparseY[:, :, sample_][loadPos]
+  end
+  return denseForce
 end
 
 function forceToMat(force)

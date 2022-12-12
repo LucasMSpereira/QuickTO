@@ -1,23 +1,16 @@
-# import Pkg
-# Pkg.activate(".")
-# Pkg. instantiate()
+import Pkg
+Pkg.activate(".")
+Pkg. instantiate()
 include("./QTOutils.jl")
 # julia --sysimage=C:/mySysImage.so topoGAN.jl
-plotGANValHist(
-  0, 0, "./networks/GANplots/14-3.0%-2-2022-12-09T21-53-28",
-  "2022-12-09T21-53-25"; metaDataPath = "2022-12-09T21-53-25metaData.txt"
-)
-const batchSize = 64
-# binaries for logit binary cross-entropy
-const discBinaryReal = ones(Float32, batchSize)
-const discBinaryFake = zeros(Float32, batchSize)
-percentageDataset::Float64 = 0.03 # fraction of dataset to be used
-normalizeDataset::Bool = true # choose to normalize data in [-1; 1]
-lineScale = identity # log10/identity
-Random.seed!(3111)
+# plotGANValHist(
+#   0, 0, "./networks/GANplots/66-10%-4-2022-12-11T15-04-41",
+#   "12-11T15-04-41"; metaDataName = "12-11T15-04-41metaData.txt"
+# )
 
 function trainGANs(;
-  genOpt_, discOpt_, genName_ = " ", discName_ = " ", metaDataName = ""
+  genOpt_, discOpt_, genName_ = " ", discName_ = " ", metaDataName = "",
+  epochs, valFreq
 )
   # object with metadata. includes instantiation of NNs,
   # optimisers, dataloaders, training configurations,
@@ -25,12 +18,12 @@ function trainGANs(;
   if genName_ == " " # new NNs
     metaData = GANmetaData(
     U_SE_ResNetGenerator(), topologyGANdisc(),
-    genOpt_, discOpt_, epochTrainConfig(14, 2)
+    genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
     )
   else # use input path to load previous models
     metaData = GANmetaData(
       loadGANs(genName_, discName_)...,
-      genOpt_, discOpt_, epochTrainConfig(14, 2),
+      genOpt_, discOpt_, epochTrainConfig(epochs, valFreq),
       metaDataName
     )
   end
@@ -48,12 +41,24 @@ function trainGANs(;
   return metaData
 end
 [[GC.gc() CUDA.reclaim()] for _ in 1:2]
+
+const batchSize = 64
+# binaries for logit binary cross-entropy
+const discBinaryReal = ones(Float32, batchSize)
+const discBinaryFake = zeros(Float32, batchSize)
+normalizeDataset::Bool = true # choose to normalize data in [-1; 1]
+lineScale = identity # log10/identity
+Random.seed!(3111)
+percentageDataset::Float64 = 0.1 # fraction of dataset to be used
+
 @time expMetaData = trainGANs(;
   genOpt_ = Flux.Optimise.Adam(4e-3),
   discOpt_ = Flux.Optimise.Adam(4e-3),
-  genName_ = "2022-12-09T17-40-41gen.bson",
-  discName_ = "2022-12-09T17-40-59disc.bson",
-  metaDataName = "2022-12-09T17-41-03metaData.txt"
+  genName_ = "12-10T23-05-24-9gen.bson",
+  discName_ = "12-10T23-05-48-9disc.bson",
+  metaDataName = "2022-12-10T23-05-50metaData.txt",
+  epochs = 16,
+  valFreq = 4
 )
-saveGANs(expMetaData; finalSave = true) # save final models
+saveGANs(expMetaData, 0; finalSave = true) # save final models
 GANreport(expMetaData)

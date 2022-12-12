@@ -1,5 +1,58 @@
 # functions used to write data to HDF5 files
 
+function appendMetaDataHistories(; oldMetaData, recentMetaData)
+  previousGenHist, previousDiscHist, _, validFreq = getValuesFromTxt(oldMetaData)
+  open(datasetPath * "data/checkpoints/" * recentMetaData, "w") do id # open file
+    content = readlines(id) # read each line
+    # indices of lines to be used as reference
+    previousHistory = findfirst(==("** Training:"), content)
+  end
+end
+
+# generate PDF report about GANs
+function GANreport(metaData)
+  modelName = string(metaData.trainConfig.epochs) * "-" *
+  string(round(percentageDataset * 100; digits = 1)) *
+  "%-" * string(metaData.trainConfig.validFreq) * "-" * timeNow()
+  # create directory to store all PDFs
+  if runningInColab == false # if running locally
+    path = projPath * "/networks/GANplots/" * modelName
+  else # if running in colab
+    path = "./gdrive/MyDrive/dataset files/GAN saves" * modelName
+  end
+  mkpath(path)
+  # create pdf with line plots of validation loss histories
+  plotGANValHist(
+    metaData.lossesVals,
+    metaData.trainConfig.validFreq,
+    path, modelName
+  )
+  # GANtestPlots(modelName, metaData)
+  return nothing
+end
+
+# save both GAN NNs to BSON files
+function saveGANs(metaData, currentEpoch; finalSave = false)
+  # transfer models to cpu
+  cpuGenerator = cpu(metaData.generator)
+  cpuDiscriminator = cpu(metaData.discriminator)
+  # save models
+  if runningInColab == false # if running locally
+    BSON.@save datasetPath * "data/checkpoints/" * timeNow()[6:end] * "-$(currentEpoch)gen.bson" cpuGenerator
+    BSON.@save datasetPath * "data/checkpoints/" * timeNow()[6:end] * "-$(currentEpoch)disc.bson" cpuDiscriminator
+  else # if running in google colab
+    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves" * timeNow()[6:end] * "-$(currentEpoch)gen.bson" cpuGenerator
+    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves" * timeNow()[6:end] * "-$(currentEpoch)disc.bson" cpuDiscriminator
+  end
+  if !finalSave
+    # bring models back to gpu, if training will continue
+    metaData.generator = gpu(cpuGenerator)
+    metaData.discriminator = gpu(cpuDiscriminator)
+  end
+  writeGANmetaData(metaData)
+  return nothing
+end
+
 # write stresses, principal components and strain energy density to file
 function writeConds(fileID, vm, σ, principals, strainEnergy, problemID, FEAparams)
 
@@ -54,7 +107,7 @@ function writeGANmetaData(metaData)
   else # if running in colab
     savePath = "./gdrive/MyDrive/dataset files/GAN saves/"
   end
-  open(savePath * timeNow() * "metaData.txt", "w") do id
+  open(savePath * timeNow()[6:end] * "metaData.txt", "w") do id
     valF = metaData.trainConfig.validFreq
     # number of validations
     numVals = length(metaData.lossesVals[:genValHistory])

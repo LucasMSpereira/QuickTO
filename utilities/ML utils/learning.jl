@@ -88,7 +88,7 @@ function earlyStopGANs(metaData)
         GANprints(epoch, metaData; earlyStopVals = (genValLossPercentDrop, discValLossPercentDrop))
         if earlyStopping
           println("EARLY-STOPPING")
-          saveGANs(metaData; finalSave = true)
+          saveGANs(metaData, epoch; finalSave = true)
           break
         end
       else # not checking for early-stop yet
@@ -96,9 +96,9 @@ function earlyStopGANs(metaData)
       end
     end
     # save checkpoints of the models if certain amount of time passed
-    if floor(now() - checkpointTime, Dates.Hour) > Dates.Hour(3)
+    if floor(now() - checkpointTime, Dates.Hour) >= Dates.Hour(3)
       checkpointTime = now()
-      saveGANs(metaData)
+      saveGANs(metaData, epoch)
     end
   end
 end
@@ -159,9 +159,9 @@ function fixedEpochGANs(metaData)
       GANprints(epoch, metaData) # print information about validation
     end
     # save checkpoints of the models if certain amount of time passed
-    if floor(now() - checkpointTime, Dates.Hour) > Dates.Hour(3)
+    if floor(now() - checkpointTime, Dates.Hour) >= Dates.Hour(3) && epoch != metaData.trainConfig.epochs
       checkpointTime = now() # update checkpoint time reference
-      saveGANs(metaData) # save models and txt file with metadata
+      saveGANs(metaData, epoch) # save models and txt file with metadata
     end
   end
 end

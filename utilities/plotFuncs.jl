@@ -33,9 +33,43 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   combinePDFs(path, finalName)
 end
 
-function GANtestPlots()
-
+# create plot with FEA inputs, and generator and real topologies.
+# uses samples from test split
+function GANtestPlots(generator, dataPath, numSamples)
+  # create makie figure and set it up
+  GLMakie.activate!()
+  @time denseDataDict, dataDict_ = denseInfoFromGANdataset(dataPath, numSamples)
+  for sample in 1:numSamples # loop in chosen samples
+    fig = Figure(resolution = (1500, 700))
+    colSize = 600
+    colsize!(fig.layout, 1, Fixed(colSize))
+    # labels for first line of grid
+    Label(fig[1, 1], "von Mises (MPa)", fontsize = 20)
+    Label(fig[1, 2], "FEA input", fontsize = 20)
+    colsize!(fig.layout, 2, Fixed(colSize))
+    # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
+    # dataDict_: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
+    FEAaxis = Axis(fig[2, 2])
+    xlims!(FEAaxis, 0, FEAparams.meshSize[1]); ylims!(FEAaxis, 0, FEAparams.meshSize[2])
+    heatmap!(FEAaxis, 1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, denseDataDict[:vm][sample]' |> Array)
+    # plot forces
+    forceAxis = plotForce(
+      FEAparams, denseDataDict[:force][:, :, sample], fig, (2, 2), (2, 3);
+      axisHeight = 200, topologyGANtest = true, newAxis = FEAaxis
+    )
+    # plot supports
+    heatmap!(forceAxis, 1:FEAparams.meshSize[2],
+      FEAparams.meshSize[1]:-1:1,
+      dataDict_[:binarySupp][1:50, 1:140, 1, sample]' |> Array
+    )
+    # plotSupps(FEAparams, denseDataDict[denseSupport][:, :, sample], fig; loadAxis = forceAxis)
+    # plotVM(FEAparams, disp, vf, fig, (2, 1))
+    display(fig)
+    break
+  end
 end
+GC.gc()
+GANtestPlots(1, datasetPath * "data/test", 10)
 
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
@@ -120,10 +154,16 @@ function plotDispTest(
   end
 end
 
+# plot positions of supports, and positions and components of loads
+function plotFEAinput()
+  
+end
+
 # plot forces
 function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
-  newAxis = "true", paintArrow = :black, paintText = :black, alignText = (:left, :center), axisHeight = 0
+  newAxis = "true", paintArrow = :black, paintText = :black,
+  alignText = (:left, :center), axisHeight = 0, topologyGANtest = false
 )
   if typeof(forces) <: Tuple
     forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
@@ -141,10 +181,12 @@ function plotForce(
     else
       axis = Axis(fig[arrowsPos[1], arrowsPos[2]]; height = axisHeight)
     end
-    xlims!(axis, -round(0.03 * FEAparams.meshSize[1]), round(1.03 * FEAparams.meshSize[1]))
-    ylims!(axis, -round(0.1 * FEAparams.meshSize[2]), round(1.1 * FEAparams.meshSize[2]))
-    hlines!(axis, [0, FEAparams.meshSize[2]], xmin = [0.0, 0.0], xmax = [FEAparams.meshSize[1], FEAparams.meshSize[1]], color = :black)
-    vlines!(axis, [0, FEAparams.meshSize[1]], ymin = [0.0, 0.0], ymax = [FEAparams.meshSize[2], FEAparams.meshSize[2]], color = :black)
+    if !topologyGANtest
+      xlims!(axis, -round(0.03 * FEAparams.meshSize[1]), round(1.03 * FEAparams.meshSize[1]))
+      ylims!(axis, -round(0.1 * FEAparams.meshSize[2]), round(1.1 * FEAparams.meshSize[2]))
+      hlines!(axis, [0, FEAparams.meshSize[2]], xmin = [0.0, 0.0], xmax = [FEAparams.meshSize[1], FEAparams.meshSize[1]], color = :black)
+      vlines!(axis, [0, FEAparams.meshSize[1]], ymin = [0.0, 0.0], ymax = [FEAparams.meshSize[2], FEAparams.meshSize[2]], color = :black)
+    end
   else
     axis = newAxis
   end
@@ -156,18 +198,21 @@ function plotForce(
   # text with values of force components
   f1 = "Forces (N):\n1: $(round(Int, forceMat[1, 3])); $(round(Int, forceMat[1, 4]))\n"
   f2 = "2: $(round(Int, forceMat[2, 3])); $(round(Int, forceMat[2, 4]))"
-  l = text(fig[textPos[1], textPos[2]],
-      f1*f2; color = paintText, align = alignText)
-  textConfig(l)
+  t = Axis(fig[textPos[1], textPos[2]]); hidespines!(t); hidedecorations!(t)
+  text!(t,
+      f1*f2; color = paintText,
+      align = alignText, offset = (-70, 0)
+  )
+  # textConfig(l)
   return axis
 end
 
 # create line plots of GAN validation histories.
 # save plot as pdf
-function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataPath = "")
-  if length(metaDataPath) > 0
+function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = "")
+  if length(metaDataName) > 0
     # get values from saved txt file
-    genValHistory, discValHistory, testLosses, validFreq = getValuesFromTxt(metaDataPath)
+    genValHistory, discValHistory, testLosses, validFreq = getValuesFromTxt(metaDataName)
   else # get values from GANmetaData struct
     genValHistory = lossesVals[:genValHistory]
     discValHistory = lossesVals[:discValHistory]
@@ -233,7 +278,7 @@ function plotLearnTries(trainParams, tries; drawLegend = true, name = timeNow(),
   else
     minimaText[1] = minimaText[1]*"\n"
   end
-  t = text(f[1,2], prod(minimaText); textsize = 15, align = (0.5, 0.0))
+  t = text(f[1,2], prod(minimaText); fontsize = 15, align = (0.5, 0.0))
   textConfig(t) # setup label
   colsize!(f.layout, 2, Fixed(300))
   Makie.save("$path/$name.pdf", f) # save pdf with plot
@@ -246,16 +291,16 @@ function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, s
   colSize = 500
   colsize!(fig.layout, 1, Fixed(colSize))
   # labels for first line of grid
-  Label(fig[1, 1], "Supports", textsize = 20)
-  Label(fig[1, 2], "Force positions", textsize = 20)
+  Label(fig[1, 1], "Supports", fontsize = 20)
+  Label(fig[1, 2], "Force positions", fontsize = 20)
   colsize!(fig.layout, 2, Fixed(colSize))
   # plot supports
   plotSupps(FEAparams, supps, fig)
   # plot forces
   plotForce(FEAparams, forces, fig, (2, 2), (2, 3))
   # labels for second line of grid
-  Label(fig[3, 1], "Topology VF = $(round(vf; digits = 3))", textsize = 20)
-  Label(fig[3, 2], "von Mises (MPa)", textsize = 20)
+  Label(fig[3, 1], "Topology VF = $(round(vf; digits = 3))", fontsize = 20)
+  Label(fig[3, 2], "von Mises (MPa)", fontsize = 20)
   # plot final topology
   heatmap(fig[4, 1], 1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, top')
   # plot von mises field
@@ -272,28 +317,28 @@ function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, s
 end
 
 # include plot of supports
-function plotSupps(FEAparams, supps, fig)
+function plotSupps(FEAparams, supps, fig; loadAxis = 0)
   # Initialize support information variable
   supports = zeros(FEAparams.meshSize)'
   if supps[1,3] > 3
-    if supps[1,3] == 4
-      # left
+    if supps[1,3] == 4 # left
       supports[:,1] .= 3
-    elseif supps[1,3] == 5
-      # bottom
+    elseif supps[1,3] == 5 # bottom
       supports[end,:] .= 3
-    elseif supps[1,3] == 6
-      # right
+    elseif supps[1,3] == 6 # right
       supports[:,end] .= 3
-    elseif supps[1,3] == 7
-      # top
+    elseif supps[1,3] == 7 # top
       supports[1,:] .= 3
     end
   else
-    [supports[supps[m, 1], supps[m, 2]] = 3 for m in 1:size(supps, 1)]
+    [supports[supps[m, 1], supps[m, 2]] = 3 for m in eachrow(supps)]
   end
   # plot supports
-  heatmap(fig[2,1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,supports')
+  if loadAxis == 0
+    heatmap(fig[2,1], 1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, supports')
+  else
+    heatmap!(loadAxis, 1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, supports')
+  end
 end
 
 # test bounds for detecting topologies with too many intermediate densities
@@ -307,8 +352,8 @@ function plotTopoIntermediate(forces, supps, vf, top, FEAparams, bound)
   fig = Figure(resolution = (1400, 700));
   colsize!(fig.layout, 1, Fixed(colSize))
   # labels for first line of grid
-  Label(fig[1, 1], "Supports", textsize = 20)
-  Label(fig[1, 2], "Force positions", textsize = 20)
+  Label(fig[1, 1], "Supports", fontsize = 20)
+  Label(fig[1, 2], "Force positions", fontsize = 20)
   colsize!(fig.layout, 2, Fixed(colSize))
   supports = zeros(FEAparams.meshSize)'
   if supps[1,3] > 3
@@ -363,7 +408,7 @@ function plotTopoIntermediate(forces, supps, vf, top, FEAparams, bound)
       intermPercent;
   )
   textConfig(l)
-  Label(fig[3, 1], "Topology VF = $(round(vf;digits=3))", textsize = 20) # labels for second line of grid
+  Label(fig[3, 1], "Topology VF = $(round(vf;digits=3))", fontsize = 20) # labels for second line of grid
   heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top') # plot final topology
   save(datasetPath*"analyses/intermediateDensities/$(rand(1:99999)).pdf", fig) # save image file
 end
@@ -371,7 +416,7 @@ end
 function plotTopoPred(targetTopo, predTopo; goal = "save")
   fig = Figure(resolution = (1100, 800)) # create makie figure
   # labels for each heatmap
-  Label(fig[1, 1], "Original", textsize = 20; tellheight = false); Label(fig[2, 1], "Prediction", textsize = 20; tellheight = false)
+  Label(fig[1, 1], "Original", fontsize = 20; tellheight = false); Label(fig[2, 1], "Prediction", fontsize = 20; tellheight = false)
   _, hmPred = heatmap(fig[2, 2], # heatmap of predicted topology
     Array(reshape(predTopo, (FEAparams.meshSize[2], FEAparams.meshSize[1]))')
   )

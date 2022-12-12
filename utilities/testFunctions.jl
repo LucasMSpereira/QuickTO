@@ -213,8 +213,8 @@ function plotSampleTest(sample, folderName, FEAparams)
     colsize!(fig.layout, 1, Fixed(colSize))
     # display(fig)
     # labels for first line of grid
-    Label(fig[1, 1], "supports", textsize = 20)
-    Label(fig[1, 2], "force positions", textsize = 20)
+    Label(fig[1, 1], "supports", fontsize = 20)
+    Label(fig[1, 2], "force positions", fontsize = 20)
     colsize!(fig.layout, 2, Fixed(colSize))
     # plot support(s) and force locations
     supports = zeros(FEAparams.meshSize)'
@@ -259,8 +259,8 @@ function plotSampleTest(sample, folderName, FEAparams)
       lengthscale = 1/fmin
     )
     # labels for second line of grid
-    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", textsize = 20)
-    Label(fig[3, 2], "von Mises (MPa)", textsize = 20)
+    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", fontsize = 20)
+    Label(fig[3, 2], "von Mises (MPa)", fontsize = 20)
     # plot final topology and von Mises, indicating final volume fraction
     heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top[:,:,i]')
     _,hm = heatmap(fig[4, 2],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm[:,:,i]')
@@ -338,8 +338,8 @@ function testSamplePlot(folderName, FEAparams, i)
     colsize!(fig.layout, 1, Fixed(colSize))
     display(fig)
     # labels for first line of grid
-    Label(fig[1, 1], "supports", textsize = 20)
-    Label(fig[1, 2], "force positions", textsize = 20)
+    Label(fig[1, 1], "supports", fontsize = 20)
+    Label(fig[1, 2], "force positions", fontsize = 20)
     colsize!(fig.layout, 2, Fixed(colSize))
     # plot support(s) and force locations
     supports = zeros(FEAparams.meshSize)'
@@ -384,8 +384,8 @@ function testSamplePlot(folderName, FEAparams, i)
       lengthscale = 1/fmin
     )
     # labels for second line of grid
-    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", textsize = 20)
-    Label(fig[3, 2], "von Mises (MPa)", textsize = 20)
+    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", fontsize = 20)
+    Label(fig[3, 2], "von Mises (MPa)", fontsize = 20)
     # plot final topology and von Mises, indicating final volume fraction
     heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top[:,:,i]')
     _,hm = heatmap(fig[4, 2],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm[:,:,i]')
