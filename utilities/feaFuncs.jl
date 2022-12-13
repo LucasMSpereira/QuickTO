@@ -414,9 +414,10 @@ function topoFEA(forces, supps, vf, top)
   return maximum(sqrt.(dispX.^2 + dispY.^2))
 end
 
-function topologyCompliance(vf::Float64, supp::Array{Int64, 2}, force::Array{Float64, 2}, savedTopology::Array{Float64, 2})::Float64
-  # InpContent struct from original problem
-  problem = rebuildProblem(vf, supp, force)
+function topologyCompliance(
+  vf::T, supp::Array{Int64, 2}, force::Array{T, 2}, savedTopology::Array{T, 2}
+)::Float64 where T<:Real
+  problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
   solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
   comp = TopOpt.Compliance(solver) # define compliance
   # use comp function in final topology and return result

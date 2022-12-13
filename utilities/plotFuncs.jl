@@ -35,45 +35,90 @@ end
 
 # create plot with FEA inputs, and generator and real topologies.
 # uses samples from test split
-function GANtestPlots(generator, dataPath, numSamples)
+function GANtestPlots(generator, dataPath, numSamples, savePath, modelName)
   # create makie figure and set it up
-  GLMakie.activate!()
-  @time denseDataDict, dataDict_ = denseInfoFromGANdataset(dataPath, numSamples)
+  # GLMakie.activate!()
+  # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
+  # dataDict_: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
+  denseDataDict, dataDict_ = denseInfoFromGANdataset(dataPath, numSamples)
+  # load generator
+  # generator, _ = loadGANs(generatorName, discriminatorName)
   for sample in 1:numSamples # loop in chosen samples
-    fig = Figure(resolution = (1500, 700))
-    colSize = 600
+    fig = Figure(resolution = (1850, 750), fontsize = 19)
+    colSize = 700; rowHeight = round(Int, colSize * (50/140))
     colsize!(fig.layout, 1, Fixed(colSize))
     # labels for first line of grid
-    Label(fig[1, 1], "von Mises (MPa)", fontsize = 20)
-    Label(fig[1, 2], "FEA input", fontsize = 20)
-    colsize!(fig.layout, 2, Fixed(colSize))
-    # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
-    # dataDict_: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
-    FEAaxis = Axis(fig[2, 2])
-    xlims!(FEAaxis, 0, FEAparams.meshSize[1]); ylims!(FEAaxis, 0, FEAparams.meshSize[2])
-    heatmap!(FEAaxis, 1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, denseDataDict[:vm][sample]' |> Array)
-    # plot forces
-    forceAxis = plotForce(
-      FEAparams, denseDataDict[:force][:, :, sample], fig, (2, 2), (2, 3);
-      axisHeight = 200, topologyGANtest = true, newAxis = FEAaxis
+    Label(fig[1, 1], "von Mises (MPa)")
+    Label(fig[1, 3], "FEA input")
+    colsize!(fig.layout, 3, Fixed(colSize))
+    _, vmHeatmap = heatmap(fig[2, 1],
+      1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1,
+      denseDataDict[:vm][sample]' |> Array
     )
-    # plot supports
-    heatmap!(forceAxis, 1:FEAparams.meshSize[2],
-      FEAparams.meshSize[1]:-1:1,
-      dataDict_[:binarySupp][1:50, 1:140, 1, sample]' |> Array
+    Colorbar(fig[2, 2], vmHeatmap)
+    FEAaxis = Axis(fig[2, 3]; height = rowHeight)
+    limits!(FEAaxis, 1, FEAparams.meshSize[1], 1, FEAparams.meshSize[2])
+    FEAaxis.yreversed = true
+    heatmap!(FEAaxis, # plot supports
+      suppToBinary(denseDataDict[:denseSupport][:, :, sample])[2]' |> Array
     )
-    # plotSupps(FEAparams, denseDataDict[denseSupport][:, :, sample], fig; loadAxis = forceAxis)
-    # plotVM(FEAparams, disp, vf, fig, (2, 1))
-    display(fig)
-    break
+    plotForce( # plot forces
+      FEAparams, denseDataDict[:force][:, :, sample],
+      fig, (2, 3), (2, 4); topologyGANtest = true,
+      newAxis = FEAaxis, paintArrow = :orange,
+      arrowWidth = 3, arrowHead = 20
+    )
+    Label(fig[3, 1],
+      rpad("True topology", 29) * "VF = $(round(denseDataDict[:vf][sample]; digits = 3))" *
+      lpad("Compliance", 23) * " = $(round(denseDataDict[:compliance][sample]; digits = 2)) N.mm"
+    )
+    trueTopoAxis, trueTopoHeatmap = heatmap(fig[4, 1],
+      denseDataDict[:topologies][:, :, sample]' |> Array
+    )
+    Colorbar(fig[4, 2], trueTopoHeatmap)
+    trueTopoAxis.yreversed = true; trueTopoAxis.height = rowHeight
+    genInput = dim4(
+      solidify( # concatenate input channels
+        dataDict_[:vf][:, :, sample],
+        dataDict_[:vm][:, :, sample],
+        dataDict_[:energy][:, :, sample]
+      )
+    )
+    # optional data normalization in [-1; 1]
+    normalizeDataset && (genInput = mapslices(normalizeVals, genInput; dims = [1 2]))
+    fakeTopology = generator(genInput |> gpu) |> cpu
+    # determine compliance of fake topology
+    fakeCompliance = 0
+    @suppress_err fakeCompliance = topologyCompliance(
+      Float64(denseDataDict[:vf][sample]),
+      Int.(denseDataDict[:denseSupport][:, :, sample]),
+      Float64.(denseDataDict[:force][:, :, sample]),
+      Float64.(fakeTopology[:, :, 1, 1])
+    )
+    Label(fig[3, 3],
+      rpad("Fake topology", 29) * "VF = $(round(volFrac(fakeTopology)[1]; digits = 3))" *
+      lpad("Compliance", 23) * " = $(round(fakeCompliance; digits = 2)) N.mm"
+    )
+    fakeTopoAxis, fakeTopoHeatmap = heatmap(fig[4, 3], fakeTopology[:, :, 1, 1]' |> Array)
+    cb = Axis(fig[4, 4][1, 2]); hidespines!(cb); hidedecorations!(cb)
+    Colorbar(fig[4, 4][1, 1], fakeTopoHeatmap)
+    colsize!(fig.layout, 4, Fixed(150))
+    fakeTopoAxis.yreversed = true
+    Makie.save("$savePath/$(modelName)-$(sample)tests.png", fig) # save pdf with plot
+    # display(fig)
   end
 end
-GC.gc()
-GANtestPlots(1, datasetPath * "data/test", 10)
+
+function GANtestPlotsReport(_modelName, _metaData, _path)
+  GANtestPlots(gpu(_metaData.generator), datasetPath * "data/test", 10, _path, _modelName)
+end
 
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
-function loadCNNtestPlots(quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3}, finalName::String, FEparams, MLmodel, lossFun)
+function loadCNNtestPlots(
+  quant::Int, path::String, vm::Array{Float32, 4}, forceData::Array{Float32, 3},
+  finalName::String, FEparams, MLmodel, lossFun
+)
   for sample in randDiffInt(quant, size(forceData, 3)) # loop in random samples
     plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
   end
@@ -154,16 +199,12 @@ function plotDispTest(
   end
 end
 
-# plot positions of supports, and positions and components of loads
-function plotFEAinput()
-  
-end
-
 # plot forces
 function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
   newAxis = "true", paintArrow = :black, paintText = :black,
-  alignText = (:left, :center), axisHeight = 0, topologyGANtest = false
+  alignText = (:left, :center), axisHeight = 0,
+  topologyGANtest = false, arrowWidth = 1.5, arrowHead = 1.5
 )
   if typeof(forces) <: Tuple
     forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
@@ -173,7 +214,7 @@ function plotForce(
   loadXcoord = zeros(size(forceMat, 1)); loadYcoord = zeros(size(forceMat, 1))
   for l in axes(forceMat, 1) # Get load positions
     loadXcoord[l] = forceMat[l, 2]
-    loadYcoord[l] = FEAparams.meshSize[2] - forceMat[l, 1] + 1
+    loadYcoord[l] = forceMat[l, 1]
   end
   if typeof(newAxis) == String # create and setup plotting axis
     if axisHeight == 0
@@ -182,28 +223,41 @@ function plotForce(
       axis = Axis(fig[arrowsPos[1], arrowsPos[2]]; height = axisHeight)
     end
     if !topologyGANtest
-      xlims!(axis, -round(0.03 * FEAparams.meshSize[1]), round(1.03 * FEAparams.meshSize[1]))
-      ylims!(axis, -round(0.1 * FEAparams.meshSize[2]), round(1.1 * FEAparams.meshSize[2]))
-      hlines!(axis, [0, FEAparams.meshSize[2]], xmin = [0.0, 0.0], xmax = [FEAparams.meshSize[1], FEAparams.meshSize[1]], color = :black)
-      vlines!(axis, [0, FEAparams.meshSize[1]], ymin = [0.0, 0.0], ymax = [FEAparams.meshSize[2], FEAparams.meshSize[2]], color = :black)
+      limits!(axis,
+        -round(0.03 * FEAparams.meshSize[1]), round(1.03 * FEAparams.meshSize[1]),
+        -round(0.1 * FEAparams.meshSize[2]), round(1.1 * FEAparams.meshSize[2])
+      )
+      hlines!(axis,
+        [0, FEAparams.meshSize[2]], xmin = [0.0, 0.0],
+        xmax = [FEAparams.meshSize[1], FEAparams.meshSize[1]], color = :black
+      )
+      vlines!(axis,
+        [0, FEAparams.meshSize[1]], ymin = [0.0, 0.0],
+        ymax = [FEAparams.meshSize[2], FEAparams.meshSize[2]], color = :black
+      )
     end
   else
     axis = newAxis
   end
   arrows!( # Plot loads as arrows
-    axis, loadXcoord, loadYcoord, forceMat[:, 3], forceMat[:, 4];
+    axis, loadXcoord, loadYcoord, forceMat[:, 3], -forceMat[:, 4];
     # norm of weakest force. Used to scale force vectors
     lengthscale = 1 / (0.1 * minimum( sqrt.( (forceMat[:, 3]) .^ 2 + (forceMat[:, 4]) .^ 2 ) )),
-    linecolor = paintArrow, arrowcolor = paintArrow)
+    linecolor = paintArrow, arrowcolor = paintArrow,
+    linewidth = arrowWidth, arrowsize = arrowHead
+  )
+  text!(#axis,
+    loadXcoord, loadYcoord,
+    text = ["1", "2"], color = :white
+  )
   # text with values of force components
   f1 = "Forces (N):\n1: $(round(Int, forceMat[1, 3])); $(round(Int, forceMat[1, 4]))\n"
   f2 = "2: $(round(Int, forceMat[2, 3])); $(round(Int, forceMat[2, 4]))"
   t = Axis(fig[textPos[1], textPos[2]]); hidespines!(t); hidedecorations!(t)
   text!(t,
       f1*f2; color = paintText,
-      align = alignText, offset = (-70, 0)
+      align = alignText, offset = (-60, 0)
   )
-  # textConfig(l)
   return axis
 end
 
@@ -307,7 +361,7 @@ function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, s
   plotVM(FEAparams, disp, vf, fig, (4, 2))
   if goal == "save"
     # save image file
-    Makie.save(datasetPath*"analyses/isolated features/imgs/$dataset $section $(string(sample)).pdf", fig)
+    Makie.save(datasetPath*"analyses/isolated features/imgs/$dataset $section $sample.pdf", fig)
   elseif goal == "display"
     GLMakie.activate!()
     display(fig)
@@ -317,27 +371,19 @@ function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, s
 end
 
 # include plot of supports
-function plotSupps(FEAparams, supps, fig; loadAxis = 0)
-  # Initialize support information variable
-  supports = zeros(FEAparams.meshSize)'
-  if supps[1,3] > 3
-    if supps[1,3] == 4 # left
-      supports[:,1] .= 3
-    elseif supps[1,3] == 5 # bottom
-      supports[end,:] .= 3
-    elseif supps[1,3] == 6 # right
-      supports[:,end] .= 3
-    elseif supps[1,3] == 7 # top
-      supports[1,:] .= 3
-    end
-  else
-    [supports[supps[m, 1], supps[m, 2]] = 3 for m in eachrow(supps)]
-  end
+function plotSupps(FEAparams, supp, fig; loadAxis = 0)
+  _ , _suppMatElement = suppToBinary(supp)
   # plot supports
   if loadAxis == 0
-    heatmap(fig[2,1], 1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, supports')
+    heatmap(fig[2, 1],
+      1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1,
+      _suppMatElement'
+    )
   else
-    heatmap!(loadAxis, 1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, supports')
+    heatmap!(loadAxis,
+      1:FEAparams.meshSize[2],
+      FEAparams.meshSize[1]:-1:1, _suppMatElement'
+    )
   end
 end
 

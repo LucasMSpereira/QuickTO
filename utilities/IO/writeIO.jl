@@ -27,7 +27,8 @@ function GANreport(metaData)
     metaData.trainConfig.validFreq,
     path, modelName
   )
-  # GANtestPlots(modelName, metaData)
+  GANtestPlotsReport(modelName, metaData, path)
+  # combinePDFs(path, modelName * " report")
   return nothing
 end
 

@@ -51,14 +51,16 @@ lineScale = identity # log10/identity
 Random.seed!(3111)
 percentageDataset::Float64 = 0.1 # fraction of dataset to be used
 
+const runningInColab = 1
+
 @time expMetaData = trainGANs(;
   genOpt_ = Flux.Optimise.Adam(4e-3),
   discOpt_ = Flux.Optimise.Adam(4e-3),
   genName_ = "12-10T23-05-24-9gen.bson",
   discName_ = "12-10T23-05-48-9disc.bson",
   metaDataName = "2022-12-10T23-05-50metaData.txt",
-  epochs = 16,
-  valFreq = 4
+  epochs = 7,
+  valFreq = 2
 )
 saveGANs(expMetaData, 0; finalSave = true) # save final models
 GANreport(expMetaData)

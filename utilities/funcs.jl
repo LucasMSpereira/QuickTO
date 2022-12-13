@@ -559,21 +559,28 @@ statsum(x...) = statsum.(x)
 # use compact 3x3 support definition to create
 # matrix used to train the GANs
 function suppToBinary(supp)
-  suppMat = zeros(FEAparams.meshMatrixSize)
+  intSupp = round.(Int, supp)
+  suppMatNode = zeros(FEAparams.meshMatrixSize)
+  suppMatElement = zeros(FEAparams.meshSize |> reverse)
   if supp[1, end] == 4 # left clamped
-    suppMat[:, 1] .= 1.0
+    suppMatNode[:, 1] .= 1.0
+    suppMatElement[:, 1] .= 1.0
   elseif supp[1, end] == 5 # bottom clamped
-    suppMat[end, :] .= 1.0
+    suppMatNode[end, :] .= 1.0
+    suppMatElement[end, :] .= 1.0
   elseif supp[1, end] == 6 # right clamped
-    suppMat[:, end] .= 1.0
+    suppMatNode[:, end] .= 1.0
+    suppMatElement[:, end] .= 1.0
   elseif supp[1, end] == 7 # top clamped
-    suppMat[1, :] .= 1.0
+    suppMatNode[1, :] .= 1.0
+    suppMatElement[1, :] .= 1.0
   else # 3 random pins
     for line in axes(supp, 1)
-      suppMat[supp[line, 1], supp[line, 2]] = 1.0
+      suppMatNode[intSupp[line, 1], intSupp[line, 2]] = 1.0
+      suppMatElement[intSupp[line, 1], intSupp[line, 2]] = 1.0
     end
   end
-  return suppMat
+  return suppMatNode, suppMatElement
 end
 
 # string with current time and date
