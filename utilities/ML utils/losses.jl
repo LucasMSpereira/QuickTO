@@ -23,10 +23,9 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
     # generator's final loss
     # return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
-    return logitBinCrossEnt(discOutFake, 1) + 10 * mse + 1 * absError
+    return logitBinCrossEnt(discOutFake, 1) + 10 * mse + absError
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
-    # return logitBinCrossEnt(discOutReal, 1) + logitBinCrossEnt(discOutFake, 0)
     return logitBinCrossEnt(discOutReal, 0.85) + logitBinCrossEnt(discOutFake, 0)
   end
   genInputGPU = genInput |> gpu # copy genertor's input to GPU

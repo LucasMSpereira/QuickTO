@@ -371,26 +371,23 @@ end
 # when possible (far majority of times). It will then use instead
 # constant global variables discBinaryReal and discBinaryFake
 function logitBinCrossEnt(logits, label)
-  if length(logits) != batchSize
-    expected = fill(label |> Float64, size(logits))
-  else
-    expected = label == 1 ? discBinaryReal : discBinaryFake
-  end
-  return Flux.Losses.logitbinarycrossentropy(logits, expected)
+  return Flux.Losses.logitbinarycrossentropy(
+    logits, fill(Float32(label), length(logits))
+  )
 end
 
 # estimate total number of lines in project so far
 function numLines()
   sum(
     [
-      filter(x -> occursin(".", x), readdir(projPath * "/networks"; join = true)) .|> readlines .|> length
-      filter(x -> occursin(".", x), readdir(projPath * "/utilities"; join = true)) .|> readlines .|> length
-      filter(x -> occursin(".", x), readdir(projPath * "/utilities/IO"; join = true)) .|> readlines .|> length
-      filter(x -> occursin(".", x), readdir(projPath * "/utilities/ML utils"; join = true)) .|> readlines .|> length
-      filter(x -> occursin(".", x), readdir(projPath * "/docs/old"; join = true)) .|> readlines .|> length
-      filter(x -> occursin(".", x), readdir(projPath * "/docs/old/DataAnalysis"; join = true)) .|> readlines .|> length
-      filter(x -> occursin(".", x), readdir(projPath * "/docs/old/generateDataset"; join = true)) .|> readlines .|> length
-      filter(x -> occursin(".", x), readdir(projPath * "/docs/old/loadCNN"; join = true)[2:end]) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "networks"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "utilities"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "utilities/IO"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "utilities/ML utils"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "docs/old"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "docs/old/DataAnalysis"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "docs/old/generateDataset"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "docs/old/loadCNN"; join = true)[2:end]) .|> readlines .|> length
     ]
   )
 end
@@ -584,16 +581,18 @@ function suppToBinary(supp)
 end
 
 # string with current time and date
-timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-")
+timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-")[6:end]
 
 # characteristics of training for fixed epochs on
 # certain percentage of the dataset
 function trainStats(nEpochs, datasetPercentage, validFreq)
-  tTime = round( # estimated time in hours
-    (    # train               validate                     test
-      5 * nEpochs + 2.5 * (floor(nEpochs/validFreq) + 15504 / (datasetNonTestSize * 0.3))
-    ) * datasetPercentage
-    ; digits = 1
+  trainEpochTime = 2.6 * nEpochs # hours spent training
+  validationEpochTime = 1.3 * floor(nEpochs/validFreq) # hours spent validating
+  testTime = 2.6 * 15504 / (datasetNonTestSize * 0.7) # hours spent testing 
+  # estimated time in hours
+  tTime = round(
+    (trainEpochTime + validationEpochTime + testTime) * datasetPercentage;
+    digits = 1
   )
   println(tTime, " hour(s)   ", round(tTime / 24; digits = 1), " day(s)")
   # estimated distributions of samples in splits
@@ -612,7 +611,7 @@ of time =#
 function trainStats(validFreq, days)
   for dPercent in Iterators.flatten((0.01:0.01:0.1, 0.2:0.1:1.0))
     println(rpad("$(round(Int, dPercent * 100))%", 7),
-      round <| (Int, (days * 24) / (dPercent * (5 + 2.5/validFreq)))..., " epochs"
+      round <| (Int, (days * 24) / (dPercent * (2.6 + 1.3/validFreq)))..., " epochs"
     )
   end
 end

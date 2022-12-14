@@ -36,14 +36,13 @@ end
 # create plot with FEA inputs, and generator and real topologies.
 # uses samples from test split
 function GANtestPlots(generator, dataPath, numSamples, savePath, modelName)
-  # create makie figure and set it up
-  # GLMakie.activate!()
   # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
   # dataDict_: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
   denseDataDict, dataDict_ = denseInfoFromGANdataset(dataPath, numSamples)
   # load generator
   # generator, _ = loadGANs(generatorName, discriminatorName)
   for sample in 1:numSamples # loop in chosen samples
+    # create makie figure and set it up
     fig = Figure(resolution = (1850, 750), fontsize = 19)
     colSize = 700; rowHeight = round(Int, colSize * (50/140))
     colsize!(fig.layout, 1, Fixed(colSize))
@@ -104,13 +103,12 @@ function GANtestPlots(generator, dataPath, numSamples, savePath, modelName)
     Colorbar(fig[4, 4][1, 1], fakeTopoHeatmap)
     colsize!(fig.layout, 4, Fixed(150))
     fakeTopoAxis.yreversed = true
-    Makie.save("$savePath/$(modelName)-$(sample)tests.png", fig) # save pdf with plot
-    # display(fig)
+    Makie.save("$savePath/$(modelName)-$(sample).png", fig) # save pdf with plot
   end
 end
 
 function GANtestPlotsReport(_modelName, _metaData, _path)
-  GANtestPlots(gpu(_metaData.generator), datasetPath * "data/test", 10, _path, _modelName)
+  GANtestPlots(gpu(_metaData.generator), datasetPath * "data/test", 15, _path, _modelName)
 end
 
 # Use a trained model to predict samples and make plots comparing
@@ -277,7 +275,7 @@ function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = "
   # maxima and minima of validation histories
   minima = findmin.((genValHistory, discValHistory))
   f = Figure(resolution = (1500, 800)); # create makie figure
-  ax = Axis(f[1:3, 1], yscale = lineScale, # axis to draw on
+  ax = Axis(f[1:3, 1], yscale = identity, # axis to draw on
     xlabel = "Epochs", ylabel = "Losses", title = modelName
   )
   # set limits of x axis

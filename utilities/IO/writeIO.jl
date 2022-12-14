@@ -12,13 +12,14 @@ end
 # generate PDF report about GANs
 function GANreport(metaData)
   modelName = string(metaData.trainConfig.epochs) * "-" *
-  string(round(percentageDataset * 100; digits = 1)) *
-  "%-" * string(metaData.trainConfig.validFreq) * "-" * timeNow()
+  string(round(percentageDataset * 100; digits = 1)) * "%-" *
+  string(metaData.trainConfig.validFreq) * "-" *
+  timeNow()
   # create directory to store all PDFs
   if runningInColab == false # if running locally
-    path = projPath * "/networks/GANplots/" * modelName
+    path = projPath * "networks/GANplots/" * modelName
   else # if running in colab
-    path = "./gdrive/MyDrive/dataset files/GAN saves" * modelName
+    path = "./gdrive/MyDrive/dataset files/GAN saves/" * modelName
   end
   mkpath(path)
   # create pdf with line plots of validation loss histories
@@ -28,6 +29,7 @@ function GANreport(metaData)
     path, modelName
   )
   GANtestPlotsReport(modelName, metaData, path)
+  writeGANmetaData(metaData; finalTxtPath = path)
   # combinePDFs(path, modelName * " report")
   return nothing
 end
@@ -39,18 +41,17 @@ function saveGANs(metaData, currentEpoch; finalSave = false)
   cpuDiscriminator = cpu(metaData.discriminator)
   # save models
   if runningInColab == false # if running locally
-    BSON.@save datasetPath * "data/checkpoints/" * timeNow()[6:end] * "-$(currentEpoch)gen.bson" cpuGenerator
-    BSON.@save datasetPath * "data/checkpoints/" * timeNow()[6:end] * "-$(currentEpoch)disc.bson" cpuDiscriminator
+    BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "-$(currentEpoch)gen.bson" cpuGenerator
+    BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "-$(currentEpoch)disc.bson" cpuDiscriminator
   else # if running in google colab
-    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves" * timeNow()[6:end] * "-$(currentEpoch)gen.bson" cpuGenerator
-    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves" * timeNow()[6:end] * "-$(currentEpoch)disc.bson" cpuDiscriminator
+    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves" * timeNow() * "-$(currentEpoch)gen.bson" cpuGenerator
+    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves" * timeNow() * "-$(currentEpoch)disc.bson" cpuDiscriminator
   end
   if !finalSave
     # bring models back to gpu, if training will continue
     metaData.generator = gpu(cpuGenerator)
     metaData.discriminator = gpu(cpuDiscriminator)
   end
-  writeGANmetaData(metaData)
   return nothing
 end
 
@@ -102,16 +103,25 @@ function writeDispComps(quickTOdata, problemID, disp, FEAparams, numCellNode)
 end
 
 # save information in GANmetaData struct in txt file
-function writeGANmetaData(metaData)
+function writeGANmetaData(metaData; finalTxtPath = " ")
   if runningInColab == false # if running locally
-    savePath = datasetPath * "data/checkpoints/"
+    if finalTxtPath == " "
+      savePath = datasetPath * "data/checkpoints"
+    else
+      savePath = finalTxtPath
+    end
   else # if running in colab
-    savePath = "./gdrive/MyDrive/dataset files/GAN saves/"
+    savePath = "./gdrive/MyDrive/dataset files/GAN saves"
   end
-  open(savePath * timeNow()[6:end] * "metaData.txt", "w") do id
+  # open(savePath * "/" * timeNow() * "metaData.txt", "w") do id
+  open(
+    join([savePath, timeNow(), "metaData.txt"], "/", ""),
+    "w"
+  ) do id
     valF = metaData.trainConfig.validFreq
     # number of validations
     numVals = length(metaData.lossesVals[:genValHistory])
+    write(id, "START TIME: $startTime\n\n")
     write(id, "********* CONFIGURATION METADATA\n")
     write(id, "\nPERCENTAGE OF DATASET: " * string(round(percentageDataset * 100; digits = 1)) * "%")
     trainSize = round(Int, datasetNonTestSize * 0.7 * percentageDataset)
