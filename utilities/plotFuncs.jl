@@ -261,14 +261,18 @@ end
 
 # create line plots of GAN validation histories.
 # save plot as pdf
-function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = "")
-  if length(metaDataName) > 0
+function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = " ", midTraining = false)
+  if metaDataName != " "
     # get values from saved txt file
     genValHistory, discValHistory, testLosses, validFreq = getValuesFromTxt(metaDataName)
   else # get values from GANmetaData struct
     genValHistory = lossesVals[:genValHistory]
     discValHistory = lossesVals[:discValHistory]
-    testLosses = (lossesVals[:genTest][1], lossesVals[:discTest][1])
+    if midTraining
+      testLosses = (0.0, 0.0)
+    else
+      testLosses = (lossesVals[:genTest][1], lossesVals[:discTest][1])
+    end
   end
   CairoMakie.activate!() # vector graphics
   # GLMakie.activate!() # rasterization
@@ -303,8 +307,11 @@ function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = "
     offset = (-170, 0),
   )
   hidespines!(testAxis); hidedecorations!(testAxis)
-  # display(f)
-  Makie.save("$path/validation histories.pdf", f) # save pdf with plot
+  if midTraining
+    display(f)
+  else
+    Makie.save("$GANfolderPath/validation histories.pdf", f) # save pdf with plot
+  end
 end
 
 # Line plots of evaluation histories

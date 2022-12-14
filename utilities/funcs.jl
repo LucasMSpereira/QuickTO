@@ -372,7 +372,8 @@ end
 # constant global variables discBinaryReal and discBinaryFake
 function logitBinCrossEnt(logits, label)
   return Flux.Losses.logitbinarycrossentropy(
-    logits, fill(Float32(label), length(logits))
+    logits,
+    fill(Float32(label), length(logits))
   )
 end
 

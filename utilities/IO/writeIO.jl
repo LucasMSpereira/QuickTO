@@ -11,25 +11,15 @@ end
 
 # generate PDF report about GANs
 function GANreport(metaData)
-  modelName = string(metaData.trainConfig.epochs) * "-" *
-  string(round(percentageDataset * 100; digits = 1)) * "%-" *
-  string(metaData.trainConfig.validFreq) * "-" *
-  timeNow()
-  # create directory to store all PDFs
-  if runningInColab == false # if running locally
-    path = projPath * "networks/GANplots/" * modelName
-  else # if running in colab
-    path = "./gdrive/MyDrive/dataset files/GAN saves/" * modelName
-  end
-  mkpath(path)
   # create pdf with line plots of validation loss histories
+  modelName = GANfolderPath[findlast("/", GANfolderPath)[1] + 1 : end]
   plotGANValHist(
     metaData.lossesVals,
     metaData.trainConfig.validFreq,
-    path, modelName
+    GANfolderPath, modelName
   )
-  GANtestPlotsReport(modelName, metaData, path)
-  writeGANmetaData(metaData; finalTxtPath = path)
+  GANtestPlotsReport(modelName, metaData, GANfolderPath)
+  writeGANmetaData(metaData; finalTxtPath = GANfolderPath)
   # combinePDFs(path, modelName * " report")
   return nothing
 end

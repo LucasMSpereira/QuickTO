@@ -27,6 +27,8 @@ function trainGANs(;
       metaDataName
     )
   end
+  # create folder to store plots and report
+  global GANfolderPath = createGANfolder(metaData)::String
   println("Starting training ", timeNow())
   if typeof(metaData.trainConfig) == earlyStopTrainConfig
     @suppress_err earlyStopGANs(metaData) # train with early-stopping
@@ -46,13 +48,13 @@ normalizeDataset::Bool = true # choose to normalize data in [-1; 1]
 const startTime = timeNow()
 # lineScale = identity # log10/identity
 Random.seed!(3111)
-percentageDataset::Float64 = 0.1 # fraction of dataset to be used
+percentageDataset::Float64 = 0.002 # fraction of dataset to be used
 
 @time expMetaData = trainGANs(;
   genOpt_ = Flux.Optimise.Adam(2e-4),
   discOpt_ = Flux.Optimise.Adam(),
-  epochs = 15,
-  valFreq = 3
+  epochs = 6,
+  valFreq = 2
 )
 saveGANs(expMetaData, 0; finalSave = true) # save final models
 GANreport(expMetaData) # create report

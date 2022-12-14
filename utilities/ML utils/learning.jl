@@ -157,11 +157,18 @@ function fixedEpochGANs(metaData)
       GANepoch!(metaData, :validate) |> metaData
       switchTraining(metaData, true) # reenable model updating after validation
       GANprints(epoch, metaData) # print information about validation
+      # plot intermediate history of validations
+      if length(metadata.lossesVals[:genValHistory]) > 1 && runningInColab == false
+        plotGANValHist(
+        metaData.lossesVals, metaData.trainConfig.validFreq,
+        GANfolderPath, "intermediate"; midTraining = true
+      )
     end
     # save checkpoints of the models if certain amount of time passed
     if floor(now() - checkpointTime, Dates.Hour) >= Dates.Hour(3) && epoch != metaData.trainConfig.epochs
       checkpointTime = now() # update checkpoint time reference
       saveGANs(metaData, epoch) # save models and txt file with metadata
+      writeGANmetaData(metaData)
     end
   end
 end

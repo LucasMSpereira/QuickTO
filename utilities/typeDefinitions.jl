@@ -47,6 +47,7 @@ mutable struct GANmetaData
   const trainConfig::trainConfig # parameters for training
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
+  const datasetUsed::Float64 # information about fraction of dataset
 end
 
 ## GANmetaData APIs
@@ -85,7 +86,8 @@ GANmetaData(
     getNonTestFileLists(datasetPath * "data/trainValidate", 0.7)
   else # if running in colab
     getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
-  end
+  end,
+  percentageDataset
 )
 
 # Outer constructor to create object in the begining.
@@ -105,7 +107,8 @@ GANmetaData(
     :genTest => Float64[],
     :discTest => Float64[]
   ),
-  readDataSplits(metaDataFilepath)
+  readDataSplits(metaDataFilepath),
+  percentageDataset
 )
 
 # disable/reenable training in model
