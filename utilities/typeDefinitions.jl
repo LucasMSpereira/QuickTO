@@ -92,24 +92,32 @@ GANmetaData(
 
 # Outer constructor to create object in the begining.
 # Used when models are trained from previous checkpoint
-GANmetaData(
+function GANmetaData(
   generator::Chain, discriminator::Chain,
   genOpt::Flux.Optimise.AbstractOptimiser, discOpt::Flux.Optimise.AbstractOptimiser,
   myTrainConfig::trainConfig, metaDataFilepath::String
-) = GANmetaData(
-  generator, discriminator,
-  optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)),
-  optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)),
-  myTrainConfig,
-  Dict(
-    :genValHistory => Float64[],
-    :discValHistory => Float64[],
-    :genTest => Float64[],
-    :discTest => Float64[]
-  ),
-  readDataSplits(metaDataFilepath),
-  percentageDataset
-)
+) 
+  if runningInColab == false # if running locally
+    getNonTestFileLists(datasetPath * "data/trainValidate", 0.7)
+  else # if running in colab
+    getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
+  end
+  genValidations_, discValidations_, testLosses_, _ = getValuesFromTxt(metaDataFilepath)
+  return GANmetaData(
+    generator, discriminator,
+    optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)),
+    optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)),
+    myTrainConfig,
+    Dict(
+      :genValHistory => Float64.(genValidations_),
+      :discValHistory => Float64.(discValidations_),
+      :genTest => [Float64(testLosses_[1])],
+      :discTest => [Float64(testLosses_[2])]
+    ),
+    readDataSplits(metaDataFilepath),
+    percentageDataset
+  )
+end
 
 # disable/reenable training in model
 function switchTraining(metaData::GANmetaData, mode::Bool)

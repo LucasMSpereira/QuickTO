@@ -103,7 +103,6 @@ function writeGANmetaData(metaData; finalTxtPath = " ")
   else # if running in colab
     savePath = "./gdrive/MyDrive/dataset files/GAN saves"
   end
-  # open(savePath * "/" * timeNow() * "metaData.txt", "w") do id
   open(
     join([savePath, timeNow(), "metaData.txt"], "/", ""),
     "w"

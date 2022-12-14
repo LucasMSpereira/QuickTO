@@ -41,9 +41,9 @@ function denseInfoFromGANdataset(path::String, sampleAmount::Int)::Tuple{Dict, D
   ) 
 end
 
-# get validation histories, test losses and validation frequency
-# from txt report for plotting
-function getValuesFromTxt(txtName)
+# get validation histories, test losses and
+# validation frequency from txt report for plotting
+function getValuesFromTxt(txtName::String)
     content = readlines(datasetPath * "data/checkpoints/" * txtName)
     # line with heading of validation histories
     heading = findfirst(==("EPOCH   GENERATOR      DISCRIMINATOR"), content)

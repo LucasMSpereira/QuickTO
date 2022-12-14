@@ -2,7 +2,7 @@
 
 julia_version = "1.8.0"
 manifest_format = "2.0"
-project_hash = "b4a0bf2bc8572603cd45f1248775fd264a4976b2"
+project_hash = "1e7908c01f7917e3cfed28a3b61a92f211806a52"
 
 [[deps.ADNLPModels]]
 deps = ["ForwardDiff", "LinearAlgebra", "NLPModels", "Requires", "ReverseDiff", "SparseArrays"]
