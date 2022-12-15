@@ -3,9 +3,14 @@ Pkg.activate(".")
 Pkg. instantiate()
 include(projPath * "QTOutils.jl")
 # julia --sysimage=C:/mySysImage.so topoGAN.jl
+# global GANfolderPath = createGANfolder(GANmetaData(
+#   Chain(Conv((3, 3), 1 => 1)), Chain(Conv((3, 3), 1 => 1)),
+#   Flux.Optimise.Adam(),Flux.Optimise.Adam(), epochTrainConfig(67, 5),
+#   "12-14T20-23-51metaData.txt"
+# ))::String
 # plotGANValHist(
-#   0, 0, "./networks/GANplots/66-10%-4-2022-12-11T15-04-41",
-#   "12-11T15-04-41"; metaDataName = "12-11T15-04-41metaData.txt"
+#   0, 0, "./networks/GANplots/67-10.0%-5-12-14T23-19-14",
+#   "aaa"; metaDataName = "12-14T20-23-51metaData.txt"
 # )
 
 function trainGANs(;
@@ -53,7 +58,10 @@ percentageDataset::Float64 = 0.1 # fraction of dataset to be used
 @time expMetaData = trainGANs(;
   genOpt_ = Flux.Optimise.Adam(),
   discOpt_ = Flux.Optimise.Adam(),
-  epochs = 12,
+  genName_ = "12-14T20-23-21-10gen.bson",
+  discName_ = "12-14T20-23-48-10disc.bson",
+  metaDataName = "12-14T20-23-51metaData.txt",
+  epochs = 26,
   valFreq = 2
 )
 saveGANs(expMetaData, 0; finalSave = true) # save final models

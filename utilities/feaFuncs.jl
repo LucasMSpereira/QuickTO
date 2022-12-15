@@ -421,7 +421,10 @@ function topologyCompliance(
   solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
   comp = TopOpt.Compliance(solver) # define compliance
   # use comp function in final topology and return result
-  comp(cat((eachslice(savedTopology; dims = 1) |> collect |> reverse)...; dims = 1))
+  return comp(cat(
+    (eachslice(savedTopology; dims = 1) |> collect |> reverse)...;
+    dims = 1
+  ))
 end
 
 # volume fraction of each topology in a batch

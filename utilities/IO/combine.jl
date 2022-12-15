@@ -77,7 +77,7 @@ end
 
 # Combine pdf files into one
 function combinePDFs(path, finalName)
-  PDFfiles = filter(x -> x[end-2:end] == "pdf", glob("*", path))
+  PDFfiles = filter(x -> x[end-2:end] == "pdf", readdir(path; join = true))
   read(`$(Poppler_jll.pdfunite()) $(PDFfiles) $(path)/$finalName.pdf`, String) # join pdfs together
   rm.(PDFfiles)
 end

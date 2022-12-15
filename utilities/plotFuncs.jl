@@ -35,7 +35,7 @@ end
 
 # create plot with FEA inputs, and generator and real topologies.
 # uses samples from test split
-function GANtestPlots(generator, dataPath, numSamples, savePath, modelName)
+function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; extension = :png)
   # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
   # dataDict_: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
   denseDataDict, dataDict_ = denseInfoFromGANdataset(dataPath, numSamples)
@@ -50,10 +50,8 @@ function GANtestPlots(generator, dataPath, numSamples, savePath, modelName)
     Label(fig[1, 1], "von Mises (MPa)")
     Label(fig[1, 3], "FEA input")
     colsize!(fig.layout, 3, Fixed(colSize))
-    _, vmHeatmap = heatmap(fig[2, 1],
-      1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1,
-      denseDataDict[:vm][sample]' |> Array
-    )
+    vmAxis = Axis(fig[2, 1]); vmAxis.yreversed = true
+    vmHeatmap = heatmap!(vmAxis,denseDataDict[:vm][sample]' |> Array)
     Colorbar(fig[2, 2], vmHeatmap)
     FEAaxis = Axis(fig[2, 3]; height = rowHeight)
     limits!(FEAaxis, 1, FEAparams.meshSize[1], 1, FEAparams.meshSize[2])
@@ -103,12 +101,21 @@ function GANtestPlots(generator, dataPath, numSamples, savePath, modelName)
     Colorbar(fig[4, 4][1, 1], fakeTopoHeatmap)
     colsize!(fig.layout, 4, Fixed(150))
     fakeTopoAxis.yreversed = true
-    Makie.save("$savePath/$(modelName)-$(sample).png", fig) # save pdf with plot
+    if extension == :png
+      GLMakie.activate!()
+      Makie.save("$savePath/$(modelName)-$(sample).png", fig) # save pdf with plot
+    elseif extension == :pdf
+      CairoMakie.activate!()
+      Makie.save("$savePath/$(modelName)-$(sample).pdf", fig) # save pdf with plot
+    end
   end
 end
 
 function GANtestPlotsReport(_modelName, _metaData, _path)
-  GANtestPlots(gpu(_metaData.generator), datasetPath * "data/test", 15, _path, _modelName)
+  GANtestPlots(
+    gpu(_metaData.generator), datasetPath * "data/test",
+    15, _path, _modelName; extension = :pdf
+  )
 end
 
 # Use a trained model to predict samples and make plots comparing
