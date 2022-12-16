@@ -22,8 +22,8 @@ function trainGANs(;
   # validation histories, and test losses
   if genName_ == " " # new NNs
     metaData = GANmetaData(
-    U_SE_ResNetGenerator(), topologyGANdisc(),
-    genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
+      U_SE_ResNetGenerator(), topologyGANdisc(),
+      genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
     )
   else # use input path to load previous models
     metaData = GANmetaData(
@@ -40,10 +40,10 @@ function trainGANs(;
   elseif typeof(metaData.trainConfig) == epochTrainConfig
     @suppress_err fixedEpochGANs(metaData) # train for fixed number of epochs
   end
-  # println("Testing ", timeNow())
+  println("Testing ", timeNow())
   switchTraining(metaData, false) # disable model updating during test
-  # metaData(GANepoch!(metaData, :test); context = :test) # test GANs
-  metaData((0.0, 0.0); context = :test)
+  metaData(GANepoch!(metaData, :test); context = :test) # test GANs
+  # metaData((0.0, 0.0); context = :test)
   switchTraining(metaData, true) # reenable model updating
   return metaData
 end
@@ -53,16 +53,16 @@ normalizeDataset::Bool = true # choose to normalize data in [-1; 1]
 const startTime = timeNow()
 # lineScale = identity # log10/identity
 Random.seed!(3111)
-percentageDataset::Float64 = 0.1 # fraction of dataset to be used
+percentageDataset::Float64 = 0.04 # fraction of dataset to be used
 
 @time expMetaData = trainGANs(;
   genOpt_ = Flux.Optimise.Adam(),
   discOpt_ = Flux.Optimise.Adam(),
-  genName_ = "12-14T20-23-21-10gen.bson",
-  discName_ = "12-14T20-23-48-10disc.bson",
-  metaDataName = "12-14T20-23-51metaData.txt",
-  epochs = 26,
-  valFreq = 2
+  # genName_ = "12-15T17-02-21-0gen.bson",
+  # discName_ = "12-15T17-02-38-0disc.bson",
+  # metaDataName = projPath * "networks/GANplots/26-10.0%-2-12-15T08-25-51/12-15T17-06-46metaData.txt",
+  epochs = 2,
+  valFreq = 1
 )
 saveGANs(expMetaData, 0; finalSave = true) # save final models
 GANreport(expMetaData) # create report

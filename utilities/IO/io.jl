@@ -24,8 +24,7 @@ end
 function createGANfolder(metaData)
   modelName = string(metaData.trainConfig.epochs) * "-" *
   string(round(percentageDataset * 100; digits = 1)) * "%-" *
-  string(metaData.trainConfig.validFreq) * "-" *
-  timeNow()
+  randstring(4)
   # create directory to store all PDFs
   if runningInColab == false # if running locally
     path = projPath * "networks/GANplots/" * modelName

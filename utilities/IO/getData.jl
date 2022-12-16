@@ -3,12 +3,39 @@
 
 # prepare data for GAN training. Receives list of HDF5 files.
 # Returns data loader to iterate in batches of samples
-function GANdata(files::Vector{String})
+# function GANdata(files::Vector{String}, goal::Symbol, percentage, _lastFileBatch)
+function GANdata(metaData::GANmetaData, group, goal::Symbol, _lastFileBatch::Bool)
   genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
   topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
-  for file in files
-    dataDict = readTopologyGANdataset(file) # read data as dictionary
-    genInput, FEAinfo, topology = groupGANdata!(genInput, FEAinfo, topology, dataDict)
+  if goal != :test
+    if _lastFileBatch
+      if length(metaData.files[goal][group]) > 1
+        for file in Iterators.take(metaData.files[goal][group], length(metaData.files[goal][group]) - 1)
+          dataDict = readTopologyGANdataset(file) # read data as dictionary
+          genInput, FEAinfo, topology = groupGANdata!(
+            genInput, FEAinfo, topology, dataDict
+          )
+        end
+      end
+      dataDict = readTopologyGANdataset(metaData.files[goal][group] |> last)
+      genInput, FEAinfo, topology = groupGANdata!(
+        genInput, FEAinfo, topology, dataDict;
+        sampleAmount = contextQuantity(goal, metaData.files[goal], metaData.datasetUsed)
+      )
+    else
+      for file in metaData.files[goal][group]
+        dataDict = readTopologyGANdataset(file) # read data as dictionary
+        genInput, FEAinfo, topology = groupGANdata!(
+          genInput, FEAinfo, topology, dataDict
+        )
+      end
+    end
+  else
+    dataDict = readTopologyGANdataset(group[1]) # read data as dictionary
+    genInput, FEAinfo, topology = groupGANdata!(
+      genInput, FEAinfo, topology, dataDict;
+      sampleAmount = contextQuantity(goal, group, metaData.datasetUsed)
+    )
   end
   # discard first position of arrays (initialization)
   genInput, FEAinfo, topology = remFirstSample.((genInput, FEAinfo, topology))
@@ -142,9 +169,13 @@ function getStressCNNdata(path; multiOut = false)
 end
 
 # group certain data used to train GANs
-function groupGANdata!(genInput, FEAinfo, topology, dataDict)
+function groupGANdata!(genInput, FEAinfo, topology, dataDict; sampleAmount = 0)
   # amount of samples according to percentage of dataset being used
-  nSamples = round <| (Int, length(dataDict[:compliance]) * percentageDataset)...
+  if sampleAmount == 0
+    nSamples = length(dataDict[:compliance])
+  else
+    nSamples = sampleAmount
+  end
   standardSize = (FEAparams.meshMatrixSize..., 1, nSamples)
   genInput = cat(genInput, # generator input
       solidify(
@@ -153,19 +184,19 @@ function groupGANdata!(genInput, FEAinfo, topology, dataDict)
         reshape(dataDict[:energy][:, :, 1, 1:nSamples], standardSize)
       );
       dims = 4
-    )
-    FEAinfo = cat(FEAinfo, # FEA conditioning info
-      solidify(
-        reshape(dataDict[:binarySupp][:, :, 1, 1:nSamples], standardSize),
-        reshape(dataDict[:Fx][:, :, 1, 1:nSamples], standardSize),
-        reshape(dataDict[:Fy][:, :, 1, 1:nSamples], standardSize)
-      );
-      dims = 4
-    )
-    topology = cat(topology, # REAL topologies
-      reshape(dataDict[:topologies][:, :, 1, 1:nSamples], standardSize); dims = 4
-    )
-    return genInput, FEAinfo, topology
+  )
+  FEAinfo = cat(FEAinfo, # FEA conditioning info
+    solidify(
+      reshape(dataDict[:binarySupp][:, :, 1, 1:nSamples], standardSize),
+      reshape(dataDict[:Fx][:, :, 1, 1:nSamples], standardSize),
+      reshape(dataDict[:Fy][:, :, 1, 1:nSamples], standardSize)
+    );
+    dims = 4
+  )
+  topology = cat(topology, # REAL topologies
+    reshape(dataDict[:topologies][:, :, 1, 1:nSamples], standardSize); dims = 4
+  )
+  return genInput, FEAinfo, topology
 end
 
 # load displacement dataset from file

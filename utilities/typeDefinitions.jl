@@ -47,7 +47,7 @@ mutable struct GANmetaData
   const trainConfig::trainConfig # parameters for training
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
-  const datasetUsed::Float64 # information about fraction of dataset
+  const datasetUsed::Float64 # fraction of dataset used
 end
 
 ## GANmetaData APIs
@@ -66,7 +66,7 @@ function (ganMD::GANmetaData)(valLossHist::NTuple{2, Float64}; context = :valida
 end
 
 # Outer constructor to create object in the begining.
-# Used when models will be trained from scratch
+# Used when training new models
 GANmetaData(
   generator::Chain, discriminator::Chain,
   genOpt::Flux.Optimise.AbstractOptimiser, discOpt::Flux.Optimise.AbstractOptimiser,
@@ -97,11 +97,6 @@ function GANmetaData(
   genOpt::Flux.Optimise.AbstractOptimiser, discOpt::Flux.Optimise.AbstractOptimiser,
   myTrainConfig::trainConfig, metaDataFilepath::String
 ) 
-  if runningInColab == false # if running locally
-    getNonTestFileLists(datasetPath * "data/trainValidate", 0.7)
-  else # if running in colab
-    getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
-  end
   genValidations_, discValidations_, testLosses_, _ = getValuesFromTxt(metaDataFilepath)
   return GANmetaData(
     generator, discriminator,
@@ -115,7 +110,7 @@ function GANmetaData(
       :discTest => [Float64(testLosses_[2])]
     ),
     readDataSplits(metaDataFilepath),
-    percentageDataset
+    readPercentage(metaDataFilepath)
   )
 end
 

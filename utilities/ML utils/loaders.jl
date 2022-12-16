@@ -2,14 +2,14 @@
 # in batches of data.
 
 # get data loader for GANs, according to context and group
-function GANdataLoader(metaData, goal, group)
+function GANdataLoader(metaData, goal, group; lastFileBatch)
   if goal != :test # if training or validating
-    return GANdata(metaData.files[goal][group])
+    return GANdata(metaData, group, goal, lastFileBatch)
   else # if testing
     if runningInColab == false # if running locally
-      return GANdata([datasetPath * "/data/test"])
+      return GANdata(metaData, [group], goal, lastFileBatch)
     else # if runningin colab
-      return GANdata(["./gdrive/MyDrive/dataset files/test"])
+      return GANdata(metaData, ["./gdrive/MyDrive/dataset files/test"], goal, lastFileBatch)
     end
   end
 end

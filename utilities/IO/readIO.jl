@@ -41,10 +41,43 @@ function denseInfoFromGANdataset(path::String, sampleAmount::Int)::Tuple{Dict, D
   ) 
 end
 
+# get lists of hdf5 files to be used in training and validation
+# using "lowest upper bound" logic across files
+function getNonTestFileLists(trainValidateFolder, trainPercentage)
+  filePaths = readdir(trainValidateFolder; join = true)
+  trainSplit = 1; validateSplit = 1
+  for i in keys(filePaths) # loop in files
+    # if amount of samples is less then the desired
+    # amount for training
+    if numSample(
+      filePaths[1 : max(1, i - 1)]
+    ) <= datasetNonTestSize * 0.7 * percentageDataset
+      trainSplit = i
+      validateSplit = copy(trainSplit) + 1
+    end
+    # if training files have been determined
+    if i > trainSplit
+      # if amount of samples is less then the desired
+      # amount for validating
+      if numSample(
+        filePaths[trainSplit + 1 : min(length(filePaths), validateSplit)]
+      ) <= datasetNonTestSize * 0.3 * percentageDataset
+        validateSplit = i
+      else
+        break
+      end
+    end
+  end
+  return Dict( # create lists of files to be used in each split
+    :train => filePaths[1:trainSplit],
+    :validate => filePaths[trainSplit + 1 : validateSplit]
+  )
+end
+
 # get validation histories, test losses and
 # validation frequency from txt report for plotting
-function getValuesFromTxt(txtName::String)
-    content = readlines(datasetPath * "data/checkpoints/" * txtName)
+function getValuesFromTxt(txtPath::String)
+    content = readlines(txtPath)
     # line with heading of validation histories
     heading = findfirst(==("EPOCH   GENERATOR      DISCRIMINATOR"), content)
     # line with last validation
@@ -112,9 +145,9 @@ end
   
 # When using GANs checkpoints, read files used in each
 # dataset split to resume training
-function readDataSplits(metaDataName::String)::Dict{Symbol, Vector{String}}
+function readDataSplits(metaDataPath::String)::Dict{Symbol, Vector{String}}
     fileSplit = Dict{Symbol, Vector{String}}()
-    open(datasetPath * "data/checkpoints/" * metaDataName, "r") do id # open file
+    open(metaDataPath, "r") do id # open file
         content = readlines(id) # read each line
         # indices of lines to be used as reference
         trainSplit = findfirst(==("** Training:"), content)
@@ -124,8 +157,24 @@ function readDataSplits(metaDataName::String)::Dict{Symbol, Vector{String}}
     end
     return fileSplit
 end
-  
-  # read file from topologyGAN dataset
+
+# read percentage of dataset used from txt metadata file
+# to continue training from checkpoint
+function readPercentage(metaDataName::String)::Float32
+  percentage = 0f0
+  open(metaDataName, "r") do id # open file
+      content = vcat((readlines(id) .|> split)...)
+      for index in keys(content)
+        if content[index : index + 2] == ["PERCENTAGE", "OF", "DATASET:"]
+          percentage = parse(Float32, content[index + 3][1 : end - 1])
+          break
+        end
+      end
+  end
+  return percentage/100f0
+end
+
+# read file from topologyGAN dataset
 function readTopologyGANdataset(path; print = false)
     dictionary = Dict{Symbol, Array{Float32}}()
     h5open(path, "r") do id # open file

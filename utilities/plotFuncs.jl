@@ -281,7 +281,6 @@ function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = "
       testLosses = (lossesVals[:genTest][1], lossesVals[:discTest][1])
     end
   end
-  CairoMakie.activate!() # vector graphics
   # GLMakie.activate!() # rasterization
   # maxima and minima of validation histories
   minima = findmin.((genValHistory, discValHistory))
@@ -315,8 +314,10 @@ function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = "
   )
   hidespines!(testAxis); hidedecorations!(testAxis)
   if midTraining
+    GLMakie.activate!()
     display(f)
   else
+    CairoMakie.activate!() # vector graphics
     Makie.save("$GANfolderPath/validation histories.pdf", f) # save pdf with plot
   end
 end

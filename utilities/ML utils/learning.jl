@@ -181,14 +181,23 @@ function GANepoch!(metaData, goal)
   # initialize variables related to whole epoch
   genLossHist, discLossHist, batchCount = 0.0, 0.0, 0
   groupFiles = defineGroupFiles(metaData, goal)
+  countGroup = 0
   # loop in groups of files used for current split
   for group in groupFiles
+    countGroup += 1
     # get loader with data for current group
-    currentLoader = GANdataLoader(metaData, goal, group)
+    currentLoader = GANdataLoader(
+      metaData, goal, group;
+      lastFileBatch = countGroup == length(groupFiles)
+    )
     # each batch of current epoch
     for (genInput, FEAinfo, realTopology) in currentLoader
       batchCount += 1
-      GC.gc(); CUDA.reclaim() # avoid GPU memory issues
+      # avoid GPU memory issues
+      GC.gc()
+      if projPath[1] != 'G'
+        CUDA.reclaim()
+      end
       # use NNs, and get gradients and losses for current batch
       genGrads, genLossVal, discGrads, discLossVal = GANgrads(
         metaData.generator, metaData.discriminator, genInput, FEAinfo, realTopology

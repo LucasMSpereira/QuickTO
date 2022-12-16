@@ -115,6 +115,20 @@ function checkSample(numForces, vals, quants, forces)
   return alignment*magnitude
 end
 
+function contextQuantity(goal::Symbol, files::Vector{String}, percent)::Int
+  if goal == :train
+    return abs(round(Int,
+      datasetNonTestSize * 0.7 * percent - numSample(files[1 : max(1, end - 1)])
+    ))
+  elseif goal == :validate
+    return abs(round(Int,
+      datasetNonTestSize * 0.3 * percent - numSample(files[1 : max(1, end - 1)])
+    ))
+  elseif goal == :test
+    return round(Int, 15504 * percent)
+  end
+end
+
 # among solid elements, get elements closest to each corner
 function cornerPos(topo)
   # list with positions of elements closest to each corner (same order as loop below)
@@ -151,10 +165,10 @@ end
 # to acces files for training/validation
 function defineGroupFiles(metaData, goal)
   if goal != :test # if training or validating
-    return groupFiles = DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 13)
+    return DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 13)
   else
     # if testing, variable 'groupFiles' has no effect.
-    return groupFiles = [1] # Return placeholder
+    return [datasetPath * "/data/test"] # Return placeholder
   end
 end
 
@@ -288,24 +302,6 @@ function getNonBinaryTopos(forces, supps, vf, disp, top)
   else
       return 0.0
   end
-end
-
-# get lists of hdf5 files to be used in training and validation
-function getNonTestFileLists(trainValidateFolder, trainPercentage)
-  # get list of files, and shuffle it
-  filePaths = readdir(trainValidateFolder; join = true) |> shuffle!
-  # amount of samples used in training
-  datasetTrainSize = trainPercentage * datasetNonTestSize |> round
-  trainingFiles = 0
-  while true # loop including more files each time
-    trainingFiles += 1
-    # if size of training split was reached, break
-    numSample(filePaths[1 : trainingFiles]) >= datasetTrainSize && break
-  end
-  return Dict( # create lists of files to be used in each split
-    :train => filePaths[1:trainingFiles],
-    :validate => filePaths[trainingFiles + 1 : end]
-  )
 end
 
 # Get section and dataset IDs of sample

@@ -12,7 +12,7 @@ end
 # generate PDF report about GANs
 function GANreport(metaData)
   # create pdf with line plots of validation loss histories
-  modelName = GANfolderPath[findlast("/", GANfolderPath)[1] + 1 : end]
+  modelName = GANfolderPath[end - 3 : end]
   plotGANValHist(
     metaData.lossesVals,
     metaData.trainConfig.validFreq,
