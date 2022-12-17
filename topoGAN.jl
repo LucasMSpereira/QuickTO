@@ -14,8 +14,8 @@ include(projPath * "QTOutils.jl")
 # )
 
 function trainGANs(;
-  genOpt_, discOpt_, genName_ = " ", discName_ = " ", metaDataName = "",
-  epochs, valFreq
+  genOpt_, discOpt_, genName_ = " ", discName_ = " ",
+  metaDataName = "", originalFolder, epochs, valFreq
 )
   # object with metadata. includes instantiation of NNs,
   # optimisers, dataloaders, training configurations,
@@ -25,15 +25,17 @@ function trainGANs(;
       U_SE_ResNetGenerator(), topologyGANdisc(),
       genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
     )
+    # create folder to store plots and report
+    global GANfolderPath = createGANfolder(metaData)::String
   else # use input path to load previous models
+    # create folder to store plots and report
+    global GANfolderPath = originalFolder
     metaData = GANmetaData(
       loadGANs(genName_, discName_)...,
       genOpt_, discOpt_, epochTrainConfig(epochs, valFreq),
       metaDataName
     )
   end
-  # create folder to store plots and report
-  global GANfolderPath = createGANfolder(metaData)::String
   println("Starting training ", timeNow())
   if typeof(metaData.trainConfig) == earlyStopTrainConfig
     @suppress_err earlyStopGANs(metaData) # train with early-stopping
@@ -53,7 +55,7 @@ normalizeDataset::Bool = true # choose to normalize data in [-1; 1]
 const startTime = timeNow()
 # lineScale = identity # log10/identity
 Random.seed!(3111)
-percentageDataset::Float64 = 0.04 # fraction of dataset to be used
+percentageDataset::Float64 = 0.1 # fraction of dataset to be used
 
 @time expMetaData = trainGANs(;
   genOpt_ = Flux.Optimise.Adam(),
@@ -61,8 +63,8 @@ percentageDataset::Float64 = 0.04 # fraction of dataset to be used
   # genName_ = "12-15T17-02-21-0gen.bson",
   # discName_ = "12-15T17-02-38-0disc.bson",
   # metaDataName = projPath * "networks/GANplots/26-10.0%-2-12-15T08-25-51/12-15T17-06-46metaData.txt",
-  epochs = 2,
-  valFreq = 1
+  epochs = 34,
+  valFreq = 2
 )
 saveGANs(expMetaData, 0; finalSave = true) # save final models
 GANreport(expMetaData) # create report

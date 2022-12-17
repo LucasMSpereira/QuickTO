@@ -76,8 +76,15 @@ function combineFiles(pathRef)
 end
 
 # Combine pdf files into one
-function combinePDFs(path, finalName)
-  PDFfiles = filter(x -> x[end-2:end] == "pdf", readdir(path; join = true))
+function combinePDFs(path, finalName; leavePDFout = " ")
+  PDFfiles = filter(x -> endswith(x, "pdf"), readdir(path; join = true))
+  # if PDFs with 'leavePDFout' in their name shouldn't be united
+  if leavePDFout != " " 
+    # amount of PDFs left out of unification
+    amountOut = filter(o -> occursin(leavePDFout, o), PDFfiles) |> length
+    finalName *= " " * string(amountOut + 1)
+    filter!(o -> !occursin(leavePDFout, o), PDFfiles)
+  end
   read(`$(Poppler_jll.pdfunite()) $(PDFfiles) $(path)/$finalName.pdf`, String) # join pdfs together
   rm.(PDFfiles)
 end

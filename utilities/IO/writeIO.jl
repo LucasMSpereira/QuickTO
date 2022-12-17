@@ -20,7 +20,7 @@ function GANreport(metaData)
   )
   GANtestPlotsReport(modelName, metaData, GANfolderPath)
   writeGANmetaData(metaData; finalTxtPath = GANfolderPath)
-  combinePDFs(GANfolderPath, modelName * " report")
+  combinePDFs(GANfolderPath, modelName * " report"; leavePDFout = "report")
   return nothing
 end
 
