@@ -15,7 +15,7 @@ include(projPath * "QTOutils.jl")
 
 function trainGANs(;
   genOpt_, discOpt_, genName_ = " ", discName_ = " ",
-  metaDataName = "", originalFolder, epochs, valFreq
+  metaDataName = "", originalFolder = " ", epochs, valFreq
 )
   # object with metadata. includes instantiation of NNs,
   # optimisers, dataloaders, training configurations,
@@ -58,12 +58,12 @@ Random.seed!(3111)
 percentageDataset::Float64 = 0.1 # fraction of dataset to be used
 
 @time expMetaData = trainGANs(;
-  genOpt_ = Flux.Optimise.Adam(),
-  discOpt_ = Flux.Optimise.Adam(),
+  genOpt_ = Flux.Optimise.Adam(2.5e-3),
+  discOpt_ = Flux.Optimise.Adam(2.5e-3),
   # genName_ = "12-15T17-02-21-0gen.bson",
   # discName_ = "12-15T17-02-38-0disc.bson",
   # metaDataName = projPath * "networks/GANplots/26-10.0%-2-12-15T08-25-51/12-15T17-06-46metaData.txt",
-  epochs = 34,
+  epochs = 12,
   valFreq = 2
 )
 saveGANs(expMetaData, 0; finalSave = true) # save final models

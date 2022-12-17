@@ -362,10 +362,7 @@ function isoFeats(force, supp, topo)
   return all(neighborDens .> 0.0625)
 end
 
-# contextual logit binary cross-entropy. "If" statement
-# tries to avoid allocation of new vector of 1s or 0s
-# when possible (far majority of times). It will then use instead
-# constant global variables discBinaryReal and discBinaryFake
+# contextual logit binary cross-entropy
 function logitBinCrossEnt(logits, label)
   return Flux.Losses.logitbinarycrossentropy(
     logits,
