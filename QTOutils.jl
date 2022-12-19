@@ -1,4 +1,5 @@
 # Packages
+Random.seed!(3111)
 using Suppressor
 @time begin
   println("Packages...")

@@ -16,7 +16,7 @@ function GANreport(metaData)
   plotGANValHist(
     metaData.lossesVals,
     metaData.trainConfig.validFreq,
-    GANfolderPath, modelName
+    modelName
   )
   GANtestPlotsReport(modelName, metaData, GANfolderPath)
   writeGANmetaData(metaData; finalTxtPath = GANfolderPath)
@@ -155,8 +155,8 @@ function writeGANmetaData(metaData; finalTxtPath = " ")
     end
     if length(metaData.lossesVals[:genTest]) > 0
       write(id, "\n********* TEST LOSSES\n\n")
-      write(id, "GENERATOR: " * sciNotation(metaData.lossesVals[:genTest][1], 3) * "\n")
-      write(id, "DISCRIMINATOR: " * sciNotation(metaData.lossesVals[:discTest][1], 3) * "\n")
+      write(id, "GENERATOR: " * sciNotation(metaData.lossesVals[:genTest][end], 3) * "\n")
+      write(id, "DISCRIMINATOR: " * sciNotation(metaData.lossesVals[:discTest][end], 3) * "\n")
     end
     write(id, "\n********* SEPARATION OF FILES\n")
     for (dataSplit, name) in zip([:train, :validate], ["\n** Training:", "\n** Validation:"])

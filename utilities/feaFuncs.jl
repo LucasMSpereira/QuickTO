@@ -415,14 +415,14 @@ function topoFEA(forces, supps, vf, top)
 end
 
 function topologyCompliance(
-  vf::T, supp::Array{Int64, 2}, force::Array{T, 2}, savedTopology::Array{T, 2}
+  vf::T, supp::Array{Int64, 2}, force::Array{T, 2}, topology_::Array{T, 2}
 )::Float64 where T<:Real
   problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
   solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
   comp = TopOpt.Compliance(solver) # define compliance
   # use comp function in final topology and return result
   return comp(cat(
-    (eachslice(savedTopology; dims = 1) |> collect |> reverse)...;
+    (eachslice(topology_; dims = 1) |> collect |> reverse)...;
     dims = 1
   ))
 end

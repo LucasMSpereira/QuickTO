@@ -23,6 +23,43 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
     # generator's final loss
     # return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
+    return logitBinCrossEnt(discOutFake, 0.85) + 10 * mse + absError
+  end
+  function discLoss(discOutReal, discOutFake) # discriminator loss
+    return logitBinCrossEnt(discOutReal, 0.85) + logitBinCrossEnt(discOutFake, 0)
+  end
+  genInputGPU = genInput |> gpu # copy genertor's input to GPU
+  # discriminator input with REAL topology
+  discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
+  # get generator's loss value and gradient
+  genLossVal, genGrads = withgradient(
+    gen -> genLoss(gen(genInputGPU) |> cpu |> padGen), gen
+  )
+  # get discriminator's loss value and gradient
+  discLossVal, discGrads = withgradient(
+    disc -> discLoss(
+        disc(discInputReal) |> cpu |> reshapeDiscOut,
+        disc(discInputFake) |> cpu |> reshapeDiscOut
+    ),
+    disc
+  )
+  return genGrads, genLossVal, discGrads, discLossVal
+end
+
+# use NNs and batch data to obtain gradients and losses
+# include compliance difference in generator loss
+function GANgradsCompliance(gen, disc, genInput, FEAinfo, realTopology)
+  # initialize for scope purposes
+  discOutFake, discInputFake = 0.0, 0.0
+  function genLoss(genOutput) # generator loss. Defined here for scope purposes
+    mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
+    absError = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean # volume fraction MAE
+    fakeComp = fakeCompliance(genOutput, genInput, FEAinfo)
+    # discriminator input with FAKE topology
+    discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
+    # discriminator's output for FAKE topology
+    discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
+    # generator's final loss
     return logitBinCrossEnt(discOutFake, 1) + 10 * mse + absError
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss

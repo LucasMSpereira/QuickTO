@@ -268,7 +268,7 @@ end
 
 # create line plots of GAN validation histories.
 # save plot as pdf
-function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = " ", midTraining = false)
+function plotGANValHist(lossesVals, validFreq, modelName; metaDataName = " ", midTraining = false)
   if metaDataName != " "
     # get values from saved txt file
     genValHistory, discValHistory, testLosses, validFreq = getValuesFromTxt(metaDataName)
@@ -278,7 +278,7 @@ function plotGANValHist(lossesVals, validFreq, path, modelName; metaDataName = "
     if midTraining
       testLosses = (0.0, 0.0)
     else
-      testLosses = (lossesVals[:genTest][1], lossesVals[:discTest][1])
+      testLosses = (lossesVals[:genTest][end], lossesVals[:discTest][end])
     end
   end
   # GLMakie.activate!() # rasterization

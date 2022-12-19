@@ -161,7 +161,7 @@ function fixedEpochGANs(metaData)
       if length(metaData.lossesVals[:genValHistory]) > 1 && runningInColab == false
         plotGANValHist(
           metaData.lossesVals, metaData.trainConfig.validFreq,
-          GANfolderPath, "intermediate"; midTraining = true
+          "intermediate"; midTraining = true
         )
       end
     end
@@ -371,4 +371,41 @@ function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainPa
     cpu_model = cpu(mlModel)
     BSON.@save "./networks/models/$(timeNow()).bson" cpu_model
   end
+end
+
+function trainGANs(;
+  genOpt_, discOpt_, genName_ = " ", discName_ = " ",
+  metaDataName = "", originalFolder = " ", epochs, valFreq
+)
+  # object with metadata. includes instantiation of NNs,
+  # optimisers, dataloaders, training configurations,
+  # validation histories, and test losses
+  if genName_ == " " # new NNs
+    metaData = GANmetaData(
+      U_SE_ResNetGenerator(), topologyGANdisc(),
+      genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
+    )
+    # create folder to store plots and report
+    global GANfolderPath = createGANfolder(metaData)::String
+  else # use input path to load previous models
+    # create folder to store plots and report
+    global GANfolderPath = originalFolder
+    metaData = GANmetaData(
+      loadGANs(genName_, discName_)...,
+      genOpt_, discOpt_, epochTrainConfig(epochs, valFreq),
+      metaDataName
+    )
+  end
+  println("Starting training ", timeNow())
+  if typeof(metaData.trainConfig) == earlyStopTrainConfig
+    @suppress_err earlyStopGANs(metaData) # train with early-stopping
+  elseif typeof(metaData.trainConfig) == epochTrainConfig
+    @suppress_err fixedEpochGANs(metaData) # train for fixed number of epochs
+  end
+  println("Testing ", timeNow())
+  switchTraining(metaData, false) # disable model updating during test
+  metaData(GANepoch!(metaData, :test); context = :test) # test GANs
+  # metaData((0.0, 0.0); context = :test)
+  switchTraining(metaData, true) # reenable model updating
+  return metaData
 end
