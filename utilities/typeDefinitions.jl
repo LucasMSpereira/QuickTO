@@ -48,6 +48,8 @@ mutable struct GANmetaData
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
   const datasetUsed::Float64 # fraction of dataset used
+  generatorValues # log values during training
+  discValues # log values during training
 end
 
 ## GANmetaData APIs
@@ -87,7 +89,7 @@ GANmetaData(
   else # if running in colab
     getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
   end,
-  percentageDataset
+  percentageDataset, MVHistory(), MVHistory()
 )
 
 # Outer constructor to create object in the begining.
@@ -110,7 +112,7 @@ function GANmetaData(
       :discTest => [Float64(testLosses_[2])]
     ),
     readDataSplits(metaDataFilepath),
-    readPercentage(metaDataFilepath)
+    readPercentage(metaDataFilepath), MVHistory(), MVHistory()
   )
 end
 

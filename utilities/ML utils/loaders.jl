@@ -7,7 +7,7 @@ function GANdataLoader(metaData, goal, group; lastFileBatch)
     return GANdata(metaData, group, goal, lastFileBatch)
   else # if testing
     if runningInColab == false # if running locally
-      return GANdata(metaData, [group], goal, lastFileBatch)
+      return GANdata(metaData, [datasetPath * "data/test"], goal, lastFileBatch)
     else # if runningin colab
       return GANdata(metaData, ["./gdrive/MyDrive/dataset files/test"], goal, lastFileBatch)
     end

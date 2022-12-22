@@ -191,17 +191,21 @@ function GANepoch!(metaData, goal)
       lastFileBatch = countGroup == length(groupFiles)
     )
     # each batch of current epoch
-    for (genInput, FEAinfo, realTopology) in currentLoader
+    for currentBatch in currentLoader
       batchCount += 1
       # avoid GPU memory issues
       GC.gc()
-      if projPath[1] != 'G'
-        CUDA.reclaim()
-      end
+      CUDA.reclaim()
       # use NNs, and get gradients and losses for current batch
-      genGrads, genLossVal, discGrads, discLossVal = GANgrads(
-        metaData.generator, metaData.discriminator, genInput, FEAinfo, realTopology
-      )
+      if complianceLoss # include compliance in generator's loss
+        genGrads, genLossVal, discGrads, discLossVal = GANgradsCompliance(
+          metaData, currentBatch...
+        )
+      else
+        genGrads, genLossVal, discGrads, discLossVal = GANgrads(
+          metaData.generator, metaData.discriminator, currentBatch...
+        )
+      end
       if goal == :train # update NNs parameters in case of training
         Flux.Optimise.update!(metaData.genOptInfo.optState, metaData.generator, genGrads[1])
         Flux.Optimise.update!(metaData.discOptInfo.optState, metaData.discriminator, discGrads[1])
@@ -396,6 +400,7 @@ function trainGANs(;
       metaDataName
     )
   end
+  initializeHistories(metaData)
   println("Starting training ", timeNow())
   if typeof(metaData.trainConfig) == earlyStopTrainConfig
     @suppress_err earlyStopGANs(metaData) # train with early-stopping
@@ -404,7 +409,7 @@ function trainGANs(;
   end
   println("Testing ", timeNow())
   switchTraining(metaData, false) # disable model updating during test
-  metaData(GANepoch!(metaData, :test); context = :test) # test GANs
+  @suppress_err metaData(GANepoch!(metaData, :test); context = :test) # test GANs
   # metaData((0.0, 0.0); context = :test)
   switchTraining(metaData, true) # reenable model updating
   return metaData

@@ -52,8 +52,8 @@ end
 
 # transform binary support representation
 # to dense 3x3 format
-function binaryToDenseSupport(binarySupport::Array{Float32, 3})::Array{Float32, 3}
-  denseSupport = zeros(Float32, (3, 3, size(binarySupport, 3)))
+function binaryToDenseSupport(binarySupport)::Array{Float32, 3}
+  denseSupport = zeros(Int64, (3, 3, size(binarySupport, 3)))
   for sample_ in axes(binarySupport, 3) # iterate in samples
     if all(==(1.0), binarySupport[:, :, sample_][:, 1])
       denseSupport[:, :, sample_] .= 4 # left clamped
@@ -311,7 +311,7 @@ function getIDs(pathing)
 end
 
 # convert loads from dataset to dense format
-function forceMatrixToDense(sparseX::Array{Float32, 3}, sparseY::Array{Float32, 3})::Array{Float32, 3}
+function forceMatrixToDense(sparseX, sparseY)::Array{Float32, 3}
   denseForce = zeros(Float32, (2, 4, size(sparseX, 3)))
   for sample_ in axes(sparseX, 3), (index, loadPos) in findall(!=(0.0), sparseX[:, :, sample_]) |> enumerate
     denseForce[index, :, sample_] .= loadPos[1], loadPos[2], sparseX[:, :, sample_][loadPos], sparseY[:, :, sample_][loadPos]
@@ -327,6 +327,15 @@ function forceToMat(force)
   forceYmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 4] # y component of first load
   forceYmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 4] # y component of second load
   return forceXmatrix, forceYmatrix
+end
+
+function initializeHistories(_metaData)
+  push!(_metaData.discValues, :discTrue, 1, 0f0)
+  push!(_metaData.discValues, :discFalse, 1, 0f0)
+  push!(_metaData.generatorValues, :foolDisc, 1, 0f0)
+  push!(_metaData.generatorValues, :mse, 1, 0f0)
+  push!(_metaData.generatorValues, :vfMAE, 1, 0f0)
+  push!(_metaData.generatorValues, :compRMSE, 1, 0f0)
 end
 
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
@@ -360,6 +369,24 @@ function isoFeats(force, supp, topo)
   # i.e. surrounding density must accumulate to at least 0.5.
   # if at least one feature is isolated, function will return false
   return all(neighborDens .> 0.0625)
+end
+
+# log discriminator batch values
+function logBatchDiscVals(metaData_, discOutReal, discOutFake, discGrad_)
+  newSize = length(metaData_.discValues[:discTrue]) + 1
+  # push!(metaData_.discValues, :gradNorm, newSize, Float32(norm(discGrad_)))
+  push!(metaData_.discValues, :discTrue, newSize, Float32(logitBinCrossEnt(discOutReal, 0.85)))
+  push!(metaData_.discValues, :discFalse, newSize, Float32(logitBinCrossEnt(discOutFake, 0)))
+end
+
+# log generator batch values
+function logBatchGenVals(metaData_, foolDisc, mse, vfMAE, compRMSE, genGrad_)
+  newSize = length(metaData_.generatorValues[:foolDisc]) + 1
+  # push!(metaData_.generatorValues, :gradNorm, newSize, Float32(norm(genGrad_)))
+  push!(metaData_.generatorValues, :foolDisc, newSize, foolDisc)
+  push!(metaData_.generatorValues, :mse, newSize, mse)
+  push!(metaData_.generatorValues, :vfMAE, newSize, vfMAE)
+  push!(metaData_.generatorValues, :compRMSE, newSize, compRMSE)
 end
 
 # contextual logit binary cross-entropy

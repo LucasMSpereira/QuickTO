@@ -29,15 +29,30 @@ function deeMat(state, e, v)
   return dee
 end
 
+# calculate compliance of fake topologies during training
+# to include value in generator's loss
+function fakeCompliance(
+  _genOutput::Array{Float32, 4}, _genInput::Array{Float32, 4},
+  _supp::Array{Float32, 3}, _force::Array{Float32, 3}
+)::Array{Float32}
+return [
+  topologyCompliance(
+      Float64.(_genInput[1, 1, 1, sample]),
+      Int64.(_supp[:, :, sample]), Float64.(_force[:, :, sample]), Float64.(_genOutput[:, :, 1, sample])
+    )
+    for sample in axes(_genOutput, 4) # iterate in batch
+  ]
+end
+
 # Generate nodeIDs used to position point loads
 # However, original article "applied loads and supports to elements", not nodes
 function loadPos(nels, dispBC, FEAparams, grid)
   # Random ID(s) to choose element(s) to be loaded
-  global loadElements = randDiffInt(2, nels)
+  loadElements = randDiffInt(2, nels)
   # Matrices to indicate position and component of load
   forces = zeros(2,4)'
   # i,j mesh positions of chosen elements
-  global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+  loadPoss = findall(x -> in(x, loadElements), FEAparams.elementIDmatrix)
   
   # Verify if load will be applied on top of support.
   # Randomize positions again if that's the case
@@ -50,32 +65,32 @@ function loadPos(nels, dispBC, FEAparams, grid)
         if prod([loadPoss[i][2] != 1 for i in keys(loadPoss)])
           break
         else
-          global loadElements = randDiffInt(2, nels)
-          global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+          loadElements = randDiffInt(2, nels)
+          loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
         end
       elseif dispBC[1,3] == 5
         # bottom
         if prod([loadPoss[i][1] != FEAparams.meshSize[2] for i in keys(loadPoss)])
           break
         else
-          global loadElements = randDiffInt(2, nels)
-          global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+          loadElements = randDiffInt(2, nels)
+          loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
         end
       elseif dispBC[1,3] == 6
         # right
         if prod([loadPoss[i][2] != FEAparams.meshSize[1] for i in keys(loadPoss)])
           break
         else
-          global loadElements = randDiffInt(2, nels)
-          global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+          loadElements = randDiffInt(2, nels)
+          loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
         end
       elseif dispBC[1,3] == 7
         # top
         if prod([loadPoss[i][1] != 1 for i in keys(loadPoss)])
           break
         else
-          global loadElements = randDiffInt(2, nels)
-          global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+          loadElements = randDiffInt(2, nels)
+          loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
         end
       else
         println("\nProblem with dispBC\n")
@@ -85,15 +100,15 @@ function loadPos(nels, dispBC, FEAparams, grid)
     else
 
 
-      global boolPos = true
+      boolPos = true
       for i in keys(loadPoss)
-        global boolPos *= !in([loadPoss[i][k] for k in 1:2], [dispBC[h,1:2] for h in 1:size(dispBC)[1]])
+        boolPos *= !in([loadPoss[i][k] for k in 1:2], [dispBC[h,1:2] for h in 1:size(dispBC)[1]])
       end
       if boolPos
         break
       else
-        global loadElements = randDiffInt(2, nels)
-        global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+        loadElements = randDiffInt(2, nels)
+        loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
       end
 
 
@@ -414,12 +429,14 @@ function topoFEA(forces, supps, vf, top)
   return maximum(sqrt.(dispX.^2 + dispY.^2))
 end
 
+# calculate compliance of topology
 function topologyCompliance(
   vf::T, supp::Array{Int64, 2}, force::Array{T, 2}, topology_::Array{T, 2}
 )::Float64 where T<:Real
-  problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
-  solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
-  comp = TopOpt.Compliance(solver) # define compliance
+  problem, solver, comp = 0, 0, 0
+  @ignore_derivatives problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
+  @ignore_derivatives solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
+  @ignore_derivatives comp = TopOpt.Compliance(solver) # define compliance
   # use comp function in final topology and return result
   return comp(cat(
     (eachslice(topology_; dims = 1) |> collect |> reverse)...;

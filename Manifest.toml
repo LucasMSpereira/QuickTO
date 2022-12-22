@@ -2,7 +2,7 @@
 
 julia_version = "1.8.0"
 manifest_format = "2.0"
-project_hash = "1e7908c01f7917e3cfed28a3b61a92f211806a52"
+project_hash = "bd506ce3b703aa2147dfa77e7b054aa11ee6753c"
 
 [[deps.ADNLPModels]]
 deps = ["ForwardDiff", "LinearAlgebra", "NLPModels", "Requires", "ReverseDiff", "SparseArrays"]
@@ -2681,6 +2681,12 @@ deps = ["Colors", "GeometryTypes", "IterTools", "ResumableFunctions", "StaticArr
 git-tree-sha1 = "bb46fd58453ebe44e740f92a6ac54e1f3c969c19"
 uuid = "10d27dd1-1d0f-5a4c-b178-bd2d0045a217"
 version = "0.1.1"
+
+[[deps.ValueHistories]]
+deps = ["DataStructures", "RecipesBase"]
+git-tree-sha1 = "9cc583107e0c09b8986ac10660653fa2e37c0f62"
+uuid = "98cad3c8-aec3-5f06-8e41-884608649ab7"
+version = "0.5.4"
 
 [[deps.VertexSafeGraphs]]
 deps = ["Graphs"]
