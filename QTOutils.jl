@@ -5,7 +5,7 @@ using Suppressor
   println("Packages...")
   ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
   Suppressor.@suppress_err begin
-    using LinearAlgebra, Makie, TopOpt, Ferrite, JLD2
+    using LinearAlgebra, Makie, TopOpt, Ferrite, JLD2, TimerOutputs
     using Parameters, HDF5, Statistics, BSON, ValueHistories
     using Random, CUDA, Poppler_jll, MultivariateStats
     using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie

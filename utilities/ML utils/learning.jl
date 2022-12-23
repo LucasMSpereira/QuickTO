@@ -192,26 +192,28 @@ function GANepoch!(metaData, goal)
     )
     # each batch of current epoch
     for currentBatch in currentLoader
-      batchCount += 1
-      # avoid GPU memory issues
-      GC.gc()
-      CUDA.reclaim()
-      # use NNs, and get gradients and losses for current batch
-      if complianceLoss # include compliance in generator's loss
-        genGrads, genLossVal, discGrads, discLossVal = GANgradsCompliance(
-          metaData, currentBatch...
-        )
-      else
-        genGrads, genLossVal, discGrads, discLossVal = GANgrads(
-          metaData.generator, metaData.discriminator, currentBatch...
-        )
+      @timeit to "batch" begin
+        batchCount += 1
+        # avoid GPU memory issues
+        GC.gc()
+        desktop && CUDA.reclaim()
+        # use NNs, and get gradients and losses for current batch
+        if complianceLoss # include compliance in generator's loss
+          genGrads, genLossVal, discGrads, discLossVal = GANgradsCompliance(
+            metaData, currentBatch...
+          )
+        else
+          genGrads, genLossVal, discGrads, discLossVal = GANgrads(
+            metaData.generator, metaData.discriminator, currentBatch...
+          )
+        end
+        if goal == :train # update NNs parameters in case of training
+          Flux.Optimise.update!(metaData.genOptInfo.optState, metaData.generator, genGrads[1])
+          Flux.Optimise.update!(metaData.discOptInfo.optState, metaData.discriminator, discGrads[1])
+        end
+        # acumulate batch losses
+        genLossHist += genLossVal; discLossHist += discLossVal
       end
-      if goal == :train # update NNs parameters in case of training
-        Flux.Optimise.update!(metaData.genOptInfo.optState, metaData.generator, genGrads[1])
-        Flux.Optimise.update!(metaData.discOptInfo.optState, metaData.discriminator, discGrads[1])
-      end
-      # acumulate batch losses
-      genLossHist += genLossVal; discLossHist += discLossVal
     end
   end
   # return avg losses for current epoch

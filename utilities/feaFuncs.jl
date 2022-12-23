@@ -433,15 +433,16 @@ end
 function topologyCompliance(
   vf::T, supp::Array{Int64, 2}, force::Array{T, 2}, topology_::Array{T, 2}
 )::Float64 where T<:Real
-  problem, solver, comp = 0, 0, 0
-  @ignore_derivatives problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
-  @ignore_derivatives solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
-  @ignore_derivatives comp = TopOpt.Compliance(solver) # define compliance
+  problem, solver, comp, topComp = 0, 0, 0, 0
+  @ignore_derivatives @timeit to "problem" problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
+  @ignore_derivatives @timeit to "solver" solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
+  @ignore_derivatives @timeit to "create comp" comp = TopOpt.Compliance(solver) # define compliance
   # use comp function in final topology and return result
-  return comp(cat(
+  topComp = comp(cat(
     (eachslice(topology_; dims = 1) |> collect |> reverse)...;
     dims = 1
   ))
+  return topComp
 end
 
 # volume fraction of each topology in a batch
