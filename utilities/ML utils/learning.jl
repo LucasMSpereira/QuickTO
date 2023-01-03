@@ -198,15 +198,9 @@ function GANepoch!(metaData, goal)
         GC.gc()
         desktop && CUDA.reclaim()
         # use NNs, and get gradients and losses for current batch
-        if complianceLoss # include compliance in generator's loss
-          genGrads, genLossVal, discGrads, discLossVal = GANgradsCompliance(
-            metaData, currentBatch...
-          )
-        else
-          genGrads, genLossVal, discGrads, discLossVal = GANgrads(
-            metaData, currentBatch...
-          )
-        end
+        genGrads, genLossVal, discGrads, discLossVal = GANgrads(
+          metaData, currentBatch...
+        )
         if goal == :train # update NNs parameters in case of training
           Flux.Optimise.update!(metaData.genOptInfo.optState, metaData.generator, genGrads[1])
           Flux.Optimise.update!(metaData.discOptInfo.optState, metaData.discriminator, discGrads[1])

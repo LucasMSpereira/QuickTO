@@ -7,7 +7,6 @@
 function GANdata(metaData::GANmetaData, group, goal::Symbol, _lastFileBatch::Bool)
   genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
   topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
-  complianceLoss && (compVals = zeros(Float32, 1))
   if goal != :test
     if _lastFileBatch
       if length(metaData.files[goal][group]) > 1
@@ -16,7 +15,6 @@ function GANdata(metaData::GANmetaData, group, goal::Symbol, _lastFileBatch::Boo
           genInput, FEAinfo, topology = groupGANdata!(
             genInput, FEAinfo, topology, dataDict
           )
-          complianceLoss && push!(compVals, dataDict[:compliance]...)
         end
       end
       # number of samples to read from last file
@@ -26,14 +24,12 @@ function GANdata(metaData::GANmetaData, group, goal::Symbol, _lastFileBatch::Boo
         genInput, FEAinfo, topology, dataDict;
         sampleAmount = sampleAmount
       )
-      complianceLoss && push!(compVals, dataDict[:compliance][1:sampleAmount]...)
     else
       for file in metaData.files[goal][group]
         dataDict = readTopologyGANdataset(file) # read data as dictionary
         genInput, FEAinfo, topology = groupGANdata!(
           genInput, FEAinfo, topology, dataDict
         )
-        complianceLoss && push!(compVals, dataDict[:compliance]...)
       end
     end
   else
@@ -44,70 +40,21 @@ function GANdata(metaData::GANmetaData, group, goal::Symbol, _lastFileBatch::Boo
       genInput, FEAinfo, topology, dataDict;
       sampleAmount = sampleAmount
     )
-    complianceLoss && push!(compVals, dataDict[:compliance][1:sampleAmount]...)
   end
   # discard first position of arrays (initialization)
   genInput, FEAinfo, topology = remFirstSample.((genInput, FEAinfo, topology))
-  complianceLoss && (compVals = compVals[2:end])
   if normalizeDataset # optional data normalization in [-1; 1]
-    if complianceLoss
-      # keep dense representations of support and
-      # force to calculate compliance loss
-      denseSupp = zeros(Float32, (3, 3)); denseForce = zeros(Float32, (2, 4))
-      # concatenate in groups to avoid stack overflow of cat()
-      for sample in Iterators.partition(1:size(FEAinfo, 4), 50)
-        denseSupp = cat(denseSupp,
-          [binaryToDenseSupport(FEAinfo[:, :, 1, s]) for s in sample]...;
-          dims = 3
-        )
-        denseForce = cat(denseForce,
-          [
-            forceMatrixToDense(
-            [FEAinfo[:, :, ch, s] for ch in 2:3]...
-            ) for s in sample
-          ]...
-          ; dims = 3
-        )
-      end
-      # discard first channel because of initialization
-      denseSupp = denseSupp[:, :, 2:end]; denseForce = denseForce[:, :, 2:end]
-      compVals = normalizeVals(compVals)
-    end
     genInput = mapslices(normalizeVals, genInput; dims = [1 2])
     FEAinfo = mapslices(normalizeVals, FEAinfo; dims = [1 2])
     topology = mapslices(normalizeVals, topology; dims = [1 2])
   end
-  if complianceLoss
-    if normalizeDataset
-      return DataLoader( # return data loader to iterate in batches
-        (
-          genInput, # generator input
-          FEAinfo, # FEA data
-          topology, # true topologies
-          compVals, # topology compliances
-          denseSupp, # dense representation of supports
-          denseForce # dense representation of loading
-        ); batchsize = batchSize, parallel = true
-      )
-    else
-      return DataLoader( # return data loader to iterate in batches
-          (
-            genInput, # generator input
-            FEAinfo, # FEA data
-            topology, # true topologies
-            compVals # topology compliances
-          ); batchsize = batchSize, parallel = true
-        )
-    end
-  else
-    return DataLoader( # return data loader to iterate in batches
-      (
-        genInput, # generator input
-        FEAinfo, # FEA data
-        topology # true topologies
-      ); batchsize = batchSize, parallel = true
-    )
-  end
+  return DataLoader( # return data loader to iterate in batches
+    (
+      genInput, # generator input
+      FEAinfo, # FEA data
+      topology # true topologies
+    ); batchsize = batchSize, parallel = true
+  )
 end
 
 # Get data from dataset file

@@ -12,7 +12,6 @@ const batchSize = 64
 normalizeDataset::Bool = true # choose to normalize data in [-1; 1]
 const startTime = timeNow()
 # const to = TimerOutput()
-complianceLoss::Bool = false # include compliance in loss
 percentageDataset::Float64 = 0.18 # fraction of dataset to be used
 # LinearAlgebra.norm(::Nothing, p::Real=2) = false
 

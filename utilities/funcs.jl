@@ -335,7 +335,6 @@ function initializeHistories(_metaData)
   push!(_metaData.generatorValues, :foolDisc, 1, 0f0)
   push!(_metaData.generatorValues, :mse, 1, 0f0)
   push!(_metaData.generatorValues, :vfMAE, 1, 0f0)
-  complianceLoss && push!(_metaData.generatorValues, :compRMSE, 1, 0f0)
 end
 
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
@@ -384,7 +383,6 @@ function logBatchGenVals(metaData_, foolDisc, mse, vfMAE; compRMSE = 0f0)
   push!(metaData_.generatorValues, :foolDisc, newSize, foolDisc)
   push!(metaData_.generatorValues, :mse, newSize, mse)
   push!(metaData_.generatorValues, :vfMAE, newSize, vfMAE)
-  complianceLoss && push!(metaData_.generatorValues, :compRMSE, newSize, compRMSE)
 end
 
 # contextual logit binary cross-entropy
