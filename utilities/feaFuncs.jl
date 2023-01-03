@@ -29,15 +29,30 @@ function deeMat(state, e, v)
   return dee
 end
 
+# calculate compliance of fake topologies during training
+# to include value in generator's loss
+function fakeCompliance(
+  _genOutput::Array{Float32, 4}, _genInput::Array{Float32, 4},
+  _supp::Array{Float32, 3}, _force::Array{Float32, 3}
+)::Array{Float32}
+return [
+  topologyCompliance(
+      Float64.(_genInput[1, 1, 1, sample]),
+      Int64.(_supp[:, :, sample]), Float64.(_force[:, :, sample]), Float64.(_genOutput[:, :, 1, sample])
+    )
+    for sample in axes(_genOutput, 4) # iterate in batch
+  ]
+end
+
 # Generate nodeIDs used to position point loads
 # However, original article "applied loads and supports to elements", not nodes
 function loadPos(nels, dispBC, FEAparams, grid)
   # Random ID(s) to choose element(s) to be loaded
-  global loadElements = randDiffInt(2, nels)
+  loadElements = randDiffInt(2, nels)
   # Matrices to indicate position and component of load
   forces = zeros(2,4)'
   # i,j mesh positions of chosen elements
-  global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+  loadPoss = findall(x -> in(x, loadElements), FEAparams.elementIDmatrix)
   
   # Verify if load will be applied on top of support.
   # Randomize positions again if that's the case
@@ -50,32 +65,32 @@ function loadPos(nels, dispBC, FEAparams, grid)
         if prod([loadPoss[i][2] != 1 for i in keys(loadPoss)])
           break
         else
-          global loadElements = randDiffInt(2, nels)
-          global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+          loadElements = randDiffInt(2, nels)
+          loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
         end
       elseif dispBC[1,3] == 5
         # bottom
         if prod([loadPoss[i][1] != FEAparams.meshSize[2] for i in keys(loadPoss)])
           break
         else
-          global loadElements = randDiffInt(2, nels)
-          global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+          loadElements = randDiffInt(2, nels)
+          loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
         end
       elseif dispBC[1,3] == 6
         # right
         if prod([loadPoss[i][2] != FEAparams.meshSize[1] for i in keys(loadPoss)])
           break
         else
-          global loadElements = randDiffInt(2, nels)
-          global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+          loadElements = randDiffInt(2, nels)
+          loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
         end
       elseif dispBC[1,3] == 7
         # top
         if prod([loadPoss[i][1] != 1 for i in keys(loadPoss)])
           break
         else
-          global loadElements = randDiffInt(2, nels)
-          global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+          loadElements = randDiffInt(2, nels)
+          loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
         end
       else
         println("\nProblem with dispBC\n")
@@ -85,15 +100,15 @@ function loadPos(nels, dispBC, FEAparams, grid)
     else
 
 
-      global boolPos = true
+      boolPos = true
       for i in keys(loadPoss)
-        global boolPos *= !in([loadPoss[i][k] for k in 1:2], [dispBC[h,1:2] for h in 1:size(dispBC)[1]])
+        boolPos *= !in([loadPoss[i][k] for k in 1:2], [dispBC[h,1:2] for h in 1:size(dispBC)[1]])
       end
       if boolPos
         break
       else
-        global loadElements = randDiffInt(2, nels)
-        global loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
+        loadElements = randDiffInt(2, nels)
+        loadPoss = findall(x->in(x, loadElements), FEAparams.elementIDmatrix)
       end
 
 
@@ -176,6 +191,30 @@ function mshDataQuadratic(meshSize)
   
 end
 
+# Run FEA with forces predicted by ML model to obtain new displacement field
+function predFEA(predForce, vf, supp)
+  # bound Fᵢ and Fⱼ predictions
+  a, b, c, d = [], [], [], []
+  @ignore_derivatives a = replace(x -> min(FEAparams.meshSize[2], x), predForce[1]) # i upper bound
+  @ignore_derivatives b = replace(x -> max(1, x), a) # i lower bound
+  @ignore_derivatives c = replace(x -> min(FEAparams.meshSize[1], x), predForce[2]) # j upper bound
+  @ignore_derivatives d = replace(x -> max(1, x), c) # j lower bound
+  predForce2 = Float64[]
+  @ignore_derivatives predForce2 = [b;;d;;predForce[3];;predForce[4]] # reshape predicted forces
+  # load prediction -> problem definition -> FEA -> new displacements
+  solver = []
+  @ignore_derivatives solver = FEASolver(
+      Direct,
+      rebuildProblem(convert.(Float64, cpu(vf)), convert.(Float64, cpu(supp)), convert.(Float64, cpu(predForce2)));
+      xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0)
+  ) # FEA solver
+  feaDisp = Displacement(solver)(fill(vf, FEAparams.nElements))
+  # reshape result from FEA to [nodesY, nodesX, 2]
+  xDisp, yDisp = [], []
+  @ignore_derivatives xDisp = quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 1:2:length(feaDisp)])
+  @ignore_derivatives yDisp = quad(FEAparams.meshSize .+ 1..., [feaDisp[i] for i in 2:2:length(feaDisp)])
+  return solidify(xDisp, yDisp)
+end
 
 # Create randomized FEA problem
 function problem!(FEAparams)
@@ -186,9 +225,7 @@ function problem!(FEAparams)
     grid = generate_grid(QuadraticQuadrilateral, FEAparams.meshSize)
   end
   numCellNodes = length(grid.cells[1].nodes) # number of nodes per cell/element
-
   nels = prod(FEAparams.meshSize) # number of elements in the mesh
-
   # nodeCoords = Vector of tuples with node coordinates
   # cells = Vector of tuples of integers. Each line refers to an element
   # and lists the IDs of its nodes
@@ -197,50 +234,45 @@ function problem!(FEAparams)
   elseif elType == "CPS8"
     nodeCoords, cells = mshDataQuadratic(FEAparams.meshSize)
   end
-
   # Similar to nodeSets, but refers to groups of cells (FEA elements) 
   cellSets = Dict(
     "SolidMaterialSolid" => FEAparams.elementIDarray,
     "Eall"               => FEAparams.elementIDarray,
     "Evolumes"           => FEAparams.elementIDarray
   )
-
-        dispBC = zeros(Int, (3,3))
-        
-        # nodeSets = dictionary mapping strings to vectors of integers. The vector groups 
-        # node IDs that can be later referenced by the name in the string
-        if rand() > 0.6
-            # "clamp" a side
-            nodeSets, dispBC = simplePins!("rand", dispBC, FEAparams)
-        else
-            # position pins randomly
-            nodeSets, dispBC = randPins!(nels, FEAparams, dispBC, grid)
-        end
-        
-        # lpos has the IDs of the loaded nodes.
-        # each line in "forces" contains [forceLine forceCol forceXcomponent forceYcomponent]
-        lpos, forces = loadPos(nels, dispBC, FEAparams, grid)
-        # Dictionary mapping integers to vectors of floats. The vector
-        # represents a force applied to the node with
-        # the respective integer ID.
-        cLoads = Dict(lpos[1] => forces[1,3:4])
-        [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
-        if length(lpos) > numCellNodes+1
-            for pos in (numCellNodes+1):length(lpos)
-                pos == (numCellNodes+1) && (global ll = 2)
-                merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
-                pos % numCellNodes == 0 && (global ll += 1)
-            end
-        end
-        
-        FEAparams.problems[1] = InpStiffness(
-            InpContent(
-                nodeCoords, elType, cells, nodeSets, cellSets,  FEAparams.V[1]*210e3, 0.3,
-                0.0, Dict("supps" => [(1, 0.0), (2, 0.0)]), cLoads,
-                Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)
-            )
-        )
-    return FEAparams
+  dispBC = zeros(Int, (3,3))
+  # nodeSets = dictionary mapping strings to vectors of integers. The vector groups 
+  # node IDs that can be later referenced by the name in the string
+  if rand() > 0.6
+      # "clamp" a side
+      nodeSets, dispBC = simplePins!("rand", dispBC, FEAparams)
+  else
+      # position pins randomly
+      nodeSets, dispBC = randPins!(nels, FEAparams, dispBC, grid)
+  end
+  # lpos has the IDs of the loaded nodes.
+  # each line in "forces" contains [forceLine forceCol forceXcomponent forceYcomponent]
+  lpos, forces = loadPos(nels, dispBC, FEAparams, grid)
+  # Dictionary mapping integers to vectors of floats. The vector
+  # represents a force applied to the node with
+  # the respective integer ID.
+  cLoads = Dict(lpos[1] => forces[1,3:4])
+  [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
+  if length(lpos) > numCellNodes+1
+      for pos in (numCellNodes+1):length(lpos)
+          pos == (numCellNodes+1) && (global ll = 2)
+          merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
+          pos % numCellNodes == 0 && (global ll += 1)
+      end
+  end
+  FEAparams.problems[1] = InpStiffness(
+      InpContent(
+          nodeCoords, elType, cells, nodeSets, cellSets,  FEAparams.V[1]*210e3, 0.3,
+          0.0, Dict("supps" => [(1, 0.0), (2, 0.0)]), cLoads,
+          Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)
+      )
+  )
+  return FEAparams
 end
 
 # Pin a few random elements
@@ -264,39 +296,39 @@ end
 
 # Rebuild FEA problem
 function rebuildProblem(vf, BCs, forces)
-  elementIDarray = [i for i in 1:prod(FEAparams.meshSize)] # Vector that lists element IDs
+  elementIDarray = [i for i in 1:FEAparams.nElements] # Vector that lists element IDs
   nodeCoords, cells = mshData(FEAparams.meshSize) # node coordinates and element definitions
   cellSets = Dict("SolidMaterialSolid" => elementIDarray, # associate certain properties to all elements
                   "Eall"               => elementIDarray,
                   "Evolumes"           => elementIDarray)
   grid = generate_grid(Quadrilateral, FEAparams.meshSize)
-  numCellNodes = 4
+  numCellNodes = 4 # quantity of nodes per element (QUAD4)
   # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix = convert.(Int, quad(FEAparams.meshSize...,[i for i in 1:prod(FEAparams.meshSize)]))
+  elementIDmatrix = convert.(Int, quad(FEAparams.meshSize...,[i for i in 1:FEAparams.nElements]))
   # [forces[1,1:2] = ij -> elementIDmatrix -> elementID -> grid -> nodeIDs] = lpos
   # place loads
-  eID = [elementIDmatrix[floor(Int, forces[f,1]), floor(Int, forces[f,2])] for f in 1:2]
+  eID = [elementIDmatrix[floor(Int, forces[f, 1]), floor(Int, forces[f, 2])] for f in 1:2]
   lpos = collect(Iterators.flatten([[grid.cells[eID[f]].nodes[e] for e in 1:4] for f in 1:2]))
-  cLoads = Dict(lpos[1] => forces[1,3:4])
-  [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
-  if length(lpos) > numCellNodes+1
+  cLoads = Dict(lpos[1] => forces[1, 3:4])
+  [merge!(cLoads, Dict(lpos[c] => forces[1, 3:4])) for c in 2:numCellNodes];
+  if length(lpos) > numCellNodes + 1
     ll = 0
-      for pos in (numCellNodes+1):length(lpos)
-          pos == (numCellNodes+1) && (ll = 2)
-          merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
+      for pos in (numCellNodes + 1) : length(lpos)
+          pos == (numCellNodes + 1) && (ll = 2)
+          merge!(cLoads, Dict(lpos[pos] => forces[ll, 3:4]))
           pos % numCellNodes == 0 && (ll += 1)
       end
   end
   # define nodeSets according to boundary condition (BC) definition
-  if BCs[1,3] == 4
-    firstCol = [(n-1)*(FEAparams.meshSize[1]+1) + 1 for n in 1:(FEAparams.meshSize[2]+1)]
+  if BCs[1, 3] == 4
+    firstCol = [(n - 1)*(FEAparams.meshSize[1] + 1) + 1 for n in 1:(FEAparams.meshSize[2] + 1)]
     secondCol = firstCol .+ 1
     nodeSets = Dict("supps" => vcat(firstCol, secondCol))
-  elseif BCs[1,3] == 6
-    firstCol = [(FEAparams.meshSize[1]+1)*n for n in 1:(FEAparams.meshSize[2]+1)]
+  elseif BCs[1, 3] == 6
+    firstCol = [(FEAparams.meshSize[1] + 1) * n for n in 1:(FEAparams.meshSize[2] + 1)]
     secondCol = firstCol .- 1
     nodeSets = Dict("supps" => vcat(firstCol, secondCol))
-  elseif BCs[1,3] == 5
+  elseif BCs[1, 3] == 5
     nodeSets = Dict("supps" => [n for n in 1:(FEAparams.meshSize[1]+1)*2])
   elseif BCs[1,3] == 7
     nodeSets = Dict("supps" => [n for n in ((FEAparams.meshSize[1]+1)*(FEAparams.meshSize[2]-1)+1):((FEAparams.meshSize[1]+1)*((FEAparams.meshSize[2]+1)))])
@@ -382,10 +414,7 @@ function topoFEA(forces, supps, vf, top)
   comp = TopOpt.Compliance(problem, solver) # compliance
   filter = DensityFilter(solver; rmin=3.0) # filtering to avoid checkerboard
   obj = x -> comp(filter(x)); # objective
-  meshSize = (140, 50) # size of mesh
-  nEle = prod(meshSize) # number of elements
-  elementIDmatrix = convert.(Int, quad(meshSize...,[i for i in 1:nEle])); # matrix with element IDs in the right positions
-  dens = [top[findfirst(x -> x == ele, elementIDmatrix)] for ele in 1:nEle]
+  dens = [top[findfirst(x -> x == ele, FEAparams.elementIDmatrix)] for ele in 1:FEAparams.nElements]
   objVal = obj(dens)
   disp = solver.u
   dispX = []
@@ -398,5 +427,25 @@ function topoFEA(forces, supps, vf, top)
     end
   end
   return maximum(sqrt.(dispX.^2 + dispY.^2))
-  
+end
+
+# calculate compliance of topology
+function topologyCompliance(
+  vf::T, supp::Array{Int64, 2}, force::Array{T, 2}, topology_::Array{T, 2}
+)::Float64 where T<:Real
+  problem, solver, comp, topComp = 0, 0, 0, 0
+  @ignore_derivatives problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
+  @ignore_derivatives solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
+  @ignore_derivatives comp = TopOpt.Compliance(solver) # define compliance
+  # use comp function in final topology and return result
+  topComp = comp(cat(
+    (eachslice(topology_; dims = 1) |> collect |> reverse)...;
+    dims = 1
+  ))
+  return topComp
+end
+
+# volume fraction of each topology in a batch
+function volFrac(topologyBatch::Array{Float32, 4})
+  [mean(topologyBatch[:, :, :, sample]) for sample in axes(topologyBatch, 4)]
 end

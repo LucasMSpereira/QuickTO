@@ -50,6 +50,28 @@ function adjSolid(topo, elementIDmatrix)
   return g
 end
 
+# transform binary support representation
+# to dense 3x3 format
+function binaryToDenseSupport(binarySupport)::Array{Float32, 3}
+  denseSupport = zeros(Int64, (3, 3, size(binarySupport, 3)))
+  for sample_ in axes(binarySupport, 3) # iterate in samples
+    if all(==(1.0), binarySupport[:, :, sample_][:, 1])
+      denseSupport[:, :, sample_] .= 4 # left clamped
+    elseif all(==(1.0), binarySupport[:, :, sample_][end, :])
+      denseSupport[:, :, sample_] .= 5 # bottom clamped
+    elseif all(==(1.0), binarySupport[:, :, sample_][:, end] .== 1.0)
+      denseSupport[:, :, sample_] .= 6 # right clamped
+    elseif all(==(1.0), binarySupport[:, :, sample_][1, :])
+      denseSupport[:, :, sample_] .= 7 # top clamped
+    else # 3 random pins
+      for (index, pinPos) in findall(==(1.0), binarySupport[:, :, sample_]) |> enumerate
+        denseSupport[index, :, sample_] .= pinPos[1], pinPos[2], 3
+      end
+    end
+  end
+  return denseSupport
+end
+
 # get coordinates of centers of elements
 function centerCoords(nels, problem)
   cellValue = CellVectorValues(QuadratureRule{2, RefCube}(2), Lagrange{2,RefCube,1}())
@@ -93,6 +115,20 @@ function checkSample(numForces, vals, quants, forces)
   return alignment*magnitude
 end
 
+function contextQuantity(goal::Symbol, files::Vector{String}, percent)::Int
+  if goal == :train
+    return abs(round(Int,
+      datasetNonTestSize * 0.7 * percent - numSample(files[1 : max(1, end - 1)])
+    ))
+  elseif goal == :validate
+    return abs(round(Int,
+      datasetNonTestSize * 0.3 * percent - numSample(files[1 : max(1, end - 1)])
+    ))
+  elseif goal == :test
+    return round(Int, 15504 * percent)
+  end
+end
+
 # among solid elements, get elements closest to each corner
 function cornerPos(topo)
   # list with positions of elements closest to each corner (same order as loop below)
@@ -124,6 +160,23 @@ function cornerPos(topo)
   end
   return closeEles
 end
+
+# define 'groupFiles' variable in GANepoch!(). Used to get indices
+# to acces files for training/validation
+function defineGroupFiles(metaData, goal)
+  if goal != :test # if training or validating
+    return DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 13)
+  else
+    # if testing, variable 'groupFiles' has no effect.
+    return [datasetPath * "/data/test"] # Return placeholder
+  end
+end
+
+# add fourth dimension to Flux data (width, height, channels, batch)
+dim4 = unsqueeze(; dims = 5)
+
+# discard first channel of 3D array
+discardFirstChannel(x) = x[:, :, 2:end]
 
 # identify samples with structural disconnection in final topology
 function disconnections(topology, dataset, section, sample)
@@ -161,7 +214,7 @@ function disconnections(topology, dataset, section, sample)
     fig = Figure(;resolution = (1200, 400));
     heatmap(fig[1, 1], 1:size(topo, 1), size(topo, 2):-1:1, topo');
     # save image file
-    save("C:/Users/LucasKaoid/Desktop/datasets/post/disconnection/problems imgs/$dataset $section $(string(sample)).png", fig)
+    save(datasetPath*"analyses/disconnection/problems imgs/$dataset $section $(string(sample)).png", fig)
   end
   #=
     product of lengths of A* paths connecting extreme elements
@@ -172,14 +225,14 @@ function disconnections(topology, dataset, section, sample)
   return prod(length.(paths))
 end
 
+# rearrange disp into vector
 function dispVec(disp)
-  # rearrange disp into vector
-  dispX = reshape(disp[end:-1:1,:,1]',(1,:))
-  dispY = reshape(disp[end:-1:1,:,2]',(1,:))
-  disps = zeros(length(dispX)*2)
-  for i in 1:length(dispX)
-    disps[2*i-1] = dispX[i]
-    disps[2*i] = dispY[i]
+  dispX = reshape(disp[end : -1 : 1 , :, 1]', (1, :))
+  dispY = reshape(disp[end : -1 : 1, :, 2]', (1, :))
+  disps = zeros(length(dispX) * 2)
+  for i in axes(dispX, 2)
+    disps[2 * i - 1] = dispX[i]
+    disps[2 * i] = dispY[i]
   end
   return disps
 end
@@ -225,6 +278,15 @@ function estimateGrads(vals, quants, iCenter, jCenter)
 
 end
 
+# print summary statistics of GAN parameters
+function GANparamsStats(metaData)
+  println("Generator:\n")
+  vcat((Iterators.flatten.(metaData.generator |> cpu |> Flux.params) .|> collect)...) |> statsum
+  println("Discriminator:\n")
+  vcat((Iterators.flatten.(metaData.discriminator |> cpu |> Flux.params) .|> collect)...) |> statsum
+  return nothing
+end
+
 # Identify non-binary topologies
 function getNonBinaryTopos(forces, supps, vf, disp, top)
   bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
@@ -246,6 +308,34 @@ end
 function getIDs(pathing)
   s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
   return s[1], s[2]
+end
+
+# convert loads from dataset to dense format
+function forceMatrixToDense(sparseX, sparseY)::Array{Float32, 3}
+  denseForce = zeros(Float32, (2, 4, size(sparseX, 3)))
+  for sample_ in axes(sparseX, 3), (index, loadPos) in findall(!=(0.0), sparseX[:, :, sample_]) |> enumerate
+    denseForce[index, :, sample_] .= loadPos[1], loadPos[2], sparseX[:, :, sample_][loadPos], sparseY[:, :, sample_][loadPos]
+  end
+  return denseForce
+end
+
+function forceToMat(force)
+  forceXmatrix = zeros(FEAparams.meshMatrixSize)
+  forceYmatrix = zeros(FEAparams.meshMatrixSize)
+  forceXmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 3] # x component of first load
+  forceXmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 3] # x component of second load
+  forceYmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 4] # y component of first load
+  forceYmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 4] # y component of second load
+  return forceXmatrix, forceYmatrix
+end
+
+function initializeHistories(_metaData)
+  push!(_metaData.discValues, :discTrue, 1, 0f0)
+  push!(_metaData.discValues, :discFalse, 1, 0f0)
+  push!(_metaData.generatorValues, :foolDisc, 1, 0f0)
+  push!(_metaData.generatorValues, :mse, 1, 0f0)
+  push!(_metaData.generatorValues, :vfMAE, 1, 0f0)
+  complianceLoss && push!(_metaData.generatorValues, :compRMSE, 1, 0f0)
 end
 
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
@@ -281,8 +371,78 @@ function isoFeats(force, supp, topo)
   return all(neighborDens .> 0.0625)
 end
 
+# log discriminator batch values
+function logBatchDiscVals(metaData_, discOutReal, discOutFake)
+  newSize = length(metaData_.discValues[:discTrue]) + 1
+  push!(metaData_.discValues, :discTrue, newSize, Float32(logitBinCrossEnt(discOutReal, 0.85)))
+  push!(metaData_.discValues, :discFalse, newSize, Float32(logitBinCrossEnt(discOutFake, 0)))
+end
+
+# log generator batch values
+function logBatchGenVals(metaData_, foolDisc, mse, vfMAE; compRMSE = 0f0)
+  newSize = length(metaData_.generatorValues[:foolDisc]) + 1
+  push!(metaData_.generatorValues, :foolDisc, newSize, foolDisc)
+  push!(metaData_.generatorValues, :mse, newSize, mse)
+  push!(metaData_.generatorValues, :vfMAE, newSize, vfMAE)
+  complianceLoss && push!(metaData_.generatorValues, :compRMSE, newSize, compRMSE)
+end
+
+# contextual logit binary cross-entropy
+function logitBinCrossEnt(logits, label)
+  return Flux.Losses.logitbinarycrossentropy(
+    logits,
+    fill(Float32(label), length(logits))
+  )
+end
+
+# estimate total number of lines in project so far
+function numLines()
+  sum(
+    [
+      filter(x -> occursin(".", x), readdir(projPath * "networks"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "utilities"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "utilities/IO"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "utilities/ML utils"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "docs/old"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "docs/old/DataAnalysis"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "docs/old/generateDataset"; join = true)) .|> readlines .|> length
+      filter(x -> occursin(".", x), readdir(projPath * "docs/old/loadCNN"; join = true)[2:end]) .|> readlines .|> length
+    ]
+  )
+end
+
+# normalize values of array between -1 and 1
+function normalizeVals(x)::Array{Float32}
+  maxVal = maximum(x)
+  minVal = minimum(x)
+  if maxVal == minVal
+    return x
+  else
+    return map(e -> 2 / (maxVal - minVal + 1e-10) * (e - maxVal) + 1, x)
+  end
+end
+
 # Returns total number of samples across files in list
-numSample(files) = sum([parse(Int, split(files[g][findlast(x->x=='\\', files[g])+1:end])[3]) for g in keys(files)])
+function numSample(files)
+  if runningInColab == false # if running locally
+    return sum([
+      parse(Int, split(files[g][findlast(==('\\'), files[g]) + 1 : end])[3]) for g in keys(files)
+    ])
+  else # if running in colab
+    return sum([
+      parse(Int, split(files[g][findlast(==('/'), files[g]) + 1 : end])[3]) for g in keys(files)
+    ])
+  end
+end
+
+# pad output of generator
+function padGen(genOut::Array{Float32, 4})::Array{Float32, 4}
+  return cat(
+    cat(genOut, zeros(Float32, (FEAparams.meshSize[2], 1, 1, size(genOut, 4))); dims = 2),
+    zeros(Float32, (1, FEAparams.meshMatrixSize[2], 1, size(genOut, 4)));
+    dims = 1
+)
+end
 
 # get list of elements visited by a path
 function pathEleList(aStar)
@@ -293,16 +453,22 @@ function pathEleList(aStar)
   return list
 end
 
+# generate string representing optimizer
+function printOptimizer(optimizer)
+  optString = string(typeof(optimizer))
+  return optString[findlast(".", optString)[1] + 1 : end]
+end
+
 # reshape vectors with element quantity to reflect mesh shape
-function quad(nelx,nely,vec)
+function quad(nelx::Int, nely::Int, vec::Vector{<:Real})
   # nelx = number of elements along x axis (number of columns in matrix)
   # nely = number of elements along y axis (number of lines in matrix)
   # vec = vector of scalars, each one associated to an element.
     # this vector is already ordered according to element IDs
-  quadd=zeros(nely,nelx)
+  quadd = zeros(nely, nelx)
   for i in 1:nely
     for j in 1:nelx
-      quadd[nely-(i-1),j] = vec[(i-1)*nelx+1+(j-1)]
+      quadd[nely - (i - 1), j] = vec[(i - 1) * nelx + 1 + (j - 1)]
     end
   end
   return quadd
@@ -321,6 +487,12 @@ function randDiffInt(n, val)
   return randVec
 end
 
+# remove first position along 4th dimension in 4D array
+remFirstSample(x::Array{<:Real, 4})::Array{<:Real, 4} = x[:, :, :, 2:end]
+
+# reshape output of discriminator
+reshapeDiscOut(x) = dropdims(x |> transpose |> Array; dims = 2)
+
 # Reshape output from stressCNN
 function reshapeForces(predForces)
   forces = zeros(Float32, (2, 4))
@@ -336,34 +508,132 @@ function reshapeForces(predForces)
   return forces
 end
 
+# print real number in scientific notation
 function sciNotation(num::Real, printDigits::Int)
-  num < 0 && return "sciNotation: negative 'num' input"
-  base10 = floor(log10(num))
-  mantissa = round(num/10^base10; digits = printDigits)
-  return "$(mantissa)E$(Int(base10))"
+  try
+    num == 0 && return "0." * repeat("0", printDigits) * "E00"
+    base10 = num |> abs |> log10 |> floor
+    mantissa = round(abs(num) / 10 ^ base10; digits = printDigits)
+    num < 0 && return "-$(mantissa)E$(Int(base10))"
+    return "$(mantissa)E$(Int(base10))"
+  catch
+    @warn "sciNotation problem"
+    return "0"
+  end
 end
 
 showVal(x) = println(round.(x; digits = 4)) # auxiliary print function
 
+# print order of layers and variation in data size along Flux chain
+# problem with number print and recursion
+function sizeLayers(myChain, input; currentLayer = 0)
+  @show currentLayer
+  if currentLayer == 0
+    println("Input size: ", size(input))
+    layer = 1
+  else
+    layer = copy(currentLayer)
+  end
+  for _ in 1:length(myChain) # iterate in NN layers
+    if typeof(myChain[layer]) <: SkipConnection # recursion in case of skip connection
+      sizeLayers(
+        myChain[layer].layers,
+        input |> myChain[1 : layer - 1];
+        currentLayer = max(layer - 1, 1)
+      )
+    else # print size of output if not skip connection
+      println(
+        layer + currentLayer, ": ", typeof(myChain[layer]),
+        "   -   output size: ", input |> myChain[1:layer] |> size
+      )
+      layer += 1
+    end
+  end
+  return currentLayer
+end
+
+# concatenate multiple 2D or 3D arrays in the 3rd dimension
+solidify(x...) = cat(x...; dims = 3)
+
 # statistical summary of a numerical array
 function statsum(arr)
+  println(size(arr))
   data = reshape(arr, (1, :)) |> vec
   data |> summarystats |> print
   println("Standard deviation: ", sciNotation(std(data), 4))
+  nonZeros = findall(x -> Float64(x) != 0.0, arr) |> length
+  println(
+    nonZeros,
+    "/", length(arr),
+    " (", round(nonZeros/length(arr)*100; digits = 1),
+    "%) non-zero elements.\n"
+  )
+  return nothing
+end
+statsum(x...) = statsum.(x)
+
+# use compact 3x3 support definition to create
+# matrix used to train the GANs
+function suppToBinary(supp)
+  intSupp = round.(Int, supp)
+  suppMatNode = zeros(FEAparams.meshMatrixSize)
+  suppMatElement = zeros(FEAparams.meshSize |> reverse)
+  if supp[1, end] == 4 # left clamped
+    suppMatNode[:, 1] .= 1.0
+    suppMatElement[:, 1] .= 1.0
+  elseif supp[1, end] == 5 # bottom clamped
+    suppMatNode[end, :] .= 1.0
+    suppMatElement[end, :] .= 1.0
+  elseif supp[1, end] == 6 # right clamped
+    suppMatNode[:, end] .= 1.0
+    suppMatElement[:, end] .= 1.0
+  elseif supp[1, end] == 7 # top clamped
+    suppMatNode[1, :] .= 1.0
+    suppMatElement[1, :] .= 1.0
+  else # 3 random pins
+    for line in axes(supp, 1)
+      suppMatNode[intSupp[line, 1], intSupp[line, 2]] = 1.0
+      suppMatElement[intSupp[line, 1], intSupp[line, 2]] = 1.0
+    end
+  end
+  return suppMatNode, suppMatElement
 end
 
-timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-") # string with current time and date
+# string with current time and date
+timeNow() = replace(string(ceil(now(), Dates.Second)), ":" => "-")[6:end]
 
-# Struct with simulation parameters
-@with_kw mutable struct FEAparameters
-  quants::Int = 1 # number of TO problems per section
-  V::Array{Real} = [0.4+rand()*0.5 for i in 1:quants] # volume fractions
-  problems::Any = Array{Any}(undef, quants) # store FEA problem structs
-  meshSize::Tuple{Int, Int} = (140, 50) # Size of rectangular mesh
-  elementIDarray::Array{Int} = [i for i in 1:prod(meshSize)] # Vector that lists element IDs
-  # matrix with element IDs in their respective position in the mesh
-  elementIDmatrix::Array{Int,2} = convert.(Int, quad(meshSize...,[i for i in 1:prod(meshSize)]))
-  section::Int = 1 # Number of dataset HDF5 files with "quants" samples each
+# characteristics of training for fixed epochs on
+# certain percentage of the dataset
+function trainStats(nEpochs, datasetPercentage, validFreq)
+  trainEpochTime = 2.6 * nEpochs # hours spent training
+  validationEpochTime = 1.3 * floor(nEpochs/validFreq) # hours spent validating
+  testTime = 2.6 * 15504 / (datasetNonTestSize * 0.7) # hours spent testing 
+  # estimated time in hours
+  tTime = round(
+    (trainEpochTime + validationEpochTime + testTime) * datasetPercentage;
+    digits = 1
+  )
+  println(tTime, " hour(s)   ", round(tTime / 24; digits = 1), " day(s)")
+  # estimated distributions of samples in splits
+  trainingAmount = round(Int, datasetNonTestSize * 0.7 * datasetPercentage)
+  validationAmount = round(Int, datasetNonTestSize * 0.3 * datasetPercentage)
+  testAmount = round(Int, 15504 * datasetPercentage)
+  println("Amount of samples:")
+  println("   Training: ", trainingAmount)
+  println("   Validation: ", validationAmount)
+  println("   Test: ", testAmount)
+  println("   Total: ", trainingAmount + validationAmount + testAmount)
 end
-FEAparams = FEAparameters()
-problem!(FEAparams)
+#= multiple dispatch of function above to suggest combinations of percentage
+of dataset used and number of fixed epochs to train for certain amount
+of time =#
+function trainStats(validFreq, days)
+  for dPercent in Iterators.flatten((0.01:0.01:0.1, 0.2:0.1:1.0))
+    println(rpad("$(round(Int, dPercent * 100))%", 7),
+      round <| (Int, (days * 24) / (dPercent * (2.6 + 1.3/validFreq)))..., " epochs"
+    )
+  end
+end
+
+# notation analogue to |>, but works with multiple arguments
+<|(f, args...) = f(args...)

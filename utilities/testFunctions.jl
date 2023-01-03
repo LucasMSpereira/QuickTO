@@ -79,7 +79,7 @@ function miniPlot(vals, folderName, i, j, vf)
   t = round(0.2*bigVal)
   t == 0 && (t = 1)
   Colorbar(fig[1, 3], hm, ticks = 0:t:bigVal)
-  save("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/fotos/sample $i/$j.png", fig)
+  save(datasetPath*"$(folderName)/fotos/sample $i/$j.png", fig)
 end
 
 function plotCheck(forces, vals, sample; quants=3)
@@ -193,7 +193,7 @@ end
 
 function plotSampleTest(sample, folderName, FEAparams)
   # open file and read data to be plotted
-  id = h5open("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/$(folderName)data", "r")
+  id = h5open(datasetPath*"$(folderName)/$(folderName)data", "r")
   global top = read(id["topologies"])
   global forces = read(id["inputs"]["forces"])
   global supps = read(id["inputs"]["dispBoundConds"])
@@ -213,8 +213,8 @@ function plotSampleTest(sample, folderName, FEAparams)
     colsize!(fig.layout, 1, Fixed(colSize))
     # display(fig)
     # labels for first line of grid
-    Label(fig[1, 1], "supports", textsize = 20)
-    Label(fig[1, 2], "force positions", textsize = 20)
+    Label(fig[1, 1], "supports", fontsize = 20)
+    Label(fig[1, 2], "force positions", fontsize = 20)
     colsize!(fig.layout, 2, Fixed(colSize))
     # plot support(s) and force locations
     supports = zeros(FEAparams.meshSize)'
@@ -259,8 +259,8 @@ function plotSampleTest(sample, folderName, FEAparams)
       lengthscale = 1/fmin
     )
     # labels for second line of grid
-    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", textsize = 20)
-    Label(fig[3, 2], "von Mises (MPa)", textsize = 20)
+    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", fontsize = 20)
+    Label(fig[3, 2], "von Mises (MPa)", fontsize = 20)
     # plot final topology and von Mises, indicating final volume fraction
     heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top[:,:,i]')
     _,hm = heatmap(fig[4, 2],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm[:,:,i]')
@@ -297,7 +297,7 @@ function plotSampleTest(sample, folderName, FEAparams)
         # l = Label(fig[2,3], "JOOOOOOOJ\nJOOOOOJOJOJOJ"; tellheight = false, tellwidth = false, halign = :left)
     #
     
-    save("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/fotos/sample $i.png", fig)
+    save(datasetPath*"$(folderName)/fotos/sample $i.png", fig)
   end
   println()
 end
@@ -324,7 +324,7 @@ end
 
 function testSamplePlot(folderName, FEAparams, i)
   # open file and read data to be plotted
-  id = h5open("C:/Users/LucasKaoid/Desktop/datasets/$(folderName)/$(folderName)data2", "r")
+  id = h5open(datasetPath*"$(folderName)/$(folderName)data2", "r")
   global top = read(id["topologies"])
   global forces = read(id["inputs"]["forces"])
   global supps = read(id["inputs"]["dispBoundConds"])
@@ -338,8 +338,8 @@ function testSamplePlot(folderName, FEAparams, i)
     colsize!(fig.layout, 1, Fixed(colSize))
     display(fig)
     # labels for first line of grid
-    Label(fig[1, 1], "supports", textsize = 20)
-    Label(fig[1, 2], "force positions", textsize = 20)
+    Label(fig[1, 1], "supports", fontsize = 20)
+    Label(fig[1, 2], "force positions", fontsize = 20)
     colsize!(fig.layout, 2, Fixed(colSize))
     # plot support(s) and force locations
     supports = zeros(FEAparams.meshSize)'
@@ -384,8 +384,8 @@ function testSamplePlot(folderName, FEAparams, i)
       lengthscale = 1/fmin
     )
     # labels for second line of grid
-    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", textsize = 20)
-    Label(fig[3, 2], "von Mises (MPa)", textsize = 20)
+    Label(fig[3, 1], "topology VF = $(round(vf[i];digits=3))", fontsize = 20)
+    Label(fig[3, 2], "von Mises (MPa)", fontsize = 20)
     # plot final topology and von Mises, indicating final volume fraction
     heatmap(fig[4, 1],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,top[:,:,i]')
     _,hm = heatmap(fig[4, 2],1:FEAparams.meshSize[2],FEAparams.meshSize[1]:-1:1,vm[:,:,i]')
