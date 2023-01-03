@@ -266,6 +266,28 @@ function plotForce(
   return axis
 end
 
+# line plots of histories of GAN losses
+function plotGANlogs(JLDpath)
+  savedStruct = load(JLDpath)["single_stored_object"]
+  GLMakie.activate!()
+  f = Figure(resolution = (1500, 800)); # create makie figure
+  ax = Axis(f[1:3, 1], # axis to draw on
+    xlabel = "Batches", title = "Logged values"
+  )
+  # line plots of logs
+  gfd = lines!(ax, get(savedStruct.generatorValues[:foolDisc])[2][2 : end])
+  gmse = lines!(ax, get(savedStruct.generatorValues[:mse])[2][2 : end])
+  gvfmae = lines!(ax, get(savedStruct.generatorValues[:vfMAE])[2][2 : end])
+  ddt = lines!(ax, get(savedStruct.discValues[:discTrue])[2][2 : end])
+  ddf = lines!(ax, get(savedStruct.discValues[:discFalse])[2][2 : end])
+  logPlots = [gfd, gmse, gvfmae, ddt, ddf]
+  strings = ["foolDisc", "mse", "vfMAE", "discTrue", "discFalse"]
+  t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
+  Legend(f[1, 2][1, 1], logPlots, strings)
+  colsize!(f.layout, 2, Fixed(130))
+  display(f)
+end
+
 # create line plots of GAN validation histories.
 # save plot as pdf
 function plotGANValHist(lossesVals, validFreq, modelName; metaDataName = " ", midTraining = false)

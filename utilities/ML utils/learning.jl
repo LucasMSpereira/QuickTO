@@ -192,7 +192,7 @@ function GANepoch!(metaData, goal)
     )
     # each batch of current epoch
     for currentBatch in currentLoader
-      @timeit to "batch" begin
+      # @timeit to "batch" begin
         batchCount += 1
         # avoid GPU memory issues
         GC.gc()
@@ -204,7 +204,7 @@ function GANepoch!(metaData, goal)
           )
         else
           genGrads, genLossVal, discGrads, discLossVal = GANgrads(
-            metaData.generator, metaData.discriminator, currentBatch...
+            metaData, currentBatch...
           )
         end
         if goal == :train # update NNs parameters in case of training
@@ -213,7 +213,7 @@ function GANepoch!(metaData, goal)
         end
         # acumulate batch losses
         genLossHist += genLossVal; discLossHist += discLossVal
-      end
+      # end
     end
   end
   # return avg losses for current epoch

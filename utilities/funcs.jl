@@ -335,7 +335,7 @@ function initializeHistories(_metaData)
   push!(_metaData.generatorValues, :foolDisc, 1, 0f0)
   push!(_metaData.generatorValues, :mse, 1, 0f0)
   push!(_metaData.generatorValues, :vfMAE, 1, 0f0)
-  push!(_metaData.generatorValues, :compRMSE, 1, 0f0)
+  complianceLoss && push!(_metaData.generatorValues, :compRMSE, 1, 0f0)
 end
 
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
@@ -372,21 +372,19 @@ function isoFeats(force, supp, topo)
 end
 
 # log discriminator batch values
-function logBatchDiscVals(metaData_, discOutReal, discOutFake, discGrad_)
+function logBatchDiscVals(metaData_, discOutReal, discOutFake)
   newSize = length(metaData_.discValues[:discTrue]) + 1
-  # push!(metaData_.discValues, :gradNorm, newSize, Float32(norm(discGrad_)))
   push!(metaData_.discValues, :discTrue, newSize, Float32(logitBinCrossEnt(discOutReal, 0.85)))
   push!(metaData_.discValues, :discFalse, newSize, Float32(logitBinCrossEnt(discOutFake, 0)))
 end
 
 # log generator batch values
-function logBatchGenVals(metaData_, foolDisc, mse, vfMAE, compRMSE, genGrad_)
+function logBatchGenVals(metaData_, foolDisc, mse, vfMAE; compRMSE = 0f0)
   newSize = length(metaData_.generatorValues[:foolDisc]) + 1
-  # push!(metaData_.generatorValues, :gradNorm, newSize, Float32(norm(genGrad_)))
   push!(metaData_.generatorValues, :foolDisc, newSize, foolDisc)
   push!(metaData_.generatorValues, :mse, newSize, mse)
   push!(metaData_.generatorValues, :vfMAE, newSize, vfMAE)
-  push!(metaData_.generatorValues, :compRMSE, newSize, compRMSE)
+  complianceLoss && push!(metaData_.generatorValues, :compRMSE, newSize, compRMSE)
 end
 
 # contextual logit binary cross-entropy

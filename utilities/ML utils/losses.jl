@@ -11,9 +11,14 @@ function customLoss1(x, y)
 end
 
 # use NNs and batch data to obtain gradients and losses
-function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
+function GANgrads(metaData_, genInput, FEAinfo, realTopology)
+  logBatch = rand() < 0.1 # choose if this batch will be logged
+  gen = metaData_.generator
+  disc = metaData_.discriminator
   # initialize for scope purposes
-  discOutFake, discInputFake = 0.0, 0.0
+  discOutFake, discInputFake, foolDisc = 0f0, 0f0, 0f0
+  discOutRealLog, vfMAE, mse = 0f0, 0f0, 0f0
+  foolDiscMult, mseMult, vfMAEmult = 0.5f0, 10f0, 10f0
   function genLoss(genOutput) # generator loss. Defined here for scope purposes
     mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
     # volume fraction mean absolute error
@@ -22,14 +27,16 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
     discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
     # discriminator's output for FAKE topology
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
+    foolDisc = logitBinCrossEnt(discOutFake, 0.85)
     # generator's final loss
     # return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
-    return logitBinCrossEnt(discOutFake, 0.85) + 10 * mse + vfMAE
+    return foolDiscMult * foolDisc + mseMult * mse + vfMAEmult * vfMAE
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
+    discOutRealLog = discOutReal
     return logitBinCrossEnt(discOutReal, 0.85) + logitBinCrossEnt(discOutFake, 0)
   end
-  genInputGPU = genInput |> gpu # copy genertor's input to GPU
+  genInputGPU = genInput |> gpu # copy generator's input to GPU
   # discriminator input with REAL topology
   discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
   # get generator's loss value and gradient
@@ -44,6 +51,9 @@ function GANgrads(gen, disc, genInput, FEAinfo, realTopology)
     ),
     disc
   )
+  # log histories
+  logBatch && logBatchGenVals(metaData_, foolDiscMult * foolDisc, mseMult * mse, vfMAEmult * vfMAE)
+  logBatch && logBatchDiscVals(metaData_, discOutRealLog, discOutFake)
   return genGrads, genLossVal, discGrads, discLossVal
 end
 
@@ -54,8 +64,8 @@ function GANgradsCompliance(metaData_, genInput, FEAinfo, realTopology, trueComp
   gen = metaData_.generator
   disc = metaData_.discriminator
   # initialize for scope purposes
-  discOutFake, discInputFake, foolDisc, mse = 0.0, 0.0, 0.0, 0.0
-  discOutReal, discOutFake, vfMAE, compRMSE = 0.0, 0.0, 0.0, 0.0
+  discOutFake, discInputFake, foolDisc, mse = 0f0, 0f0, 0f0, 0f0
+  discOutReal, vfMAE, compRMSE = 0f0, 0f0, 0f0
   function genLoss(genOutput) # generator loss. Defined here for scope purposes
     mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
     # volume fraction mean absolute error
@@ -91,8 +101,8 @@ function GANgradsCompliance(metaData_, genInput, FEAinfo, realTopology, trueComp
     disc
   )
   # log histories
-  logBatch && logBatchGenVals(metaData_, foolDisc, mse, vfMAE, compRMSE, genGrads)
-  logBatch && logBatchDiscVals(metaData_, discOutReal, discOutFake, discGrads)
+  logBatch && logBatchGenVals(metaData_, foolDisc, mse, vfMAE; compRMSE = compRMSE)
+  logBatch && logBatchDiscVals(metaData_, discOutReal, discOutFake)
   return genGrads, genLossVal, discGrads, discLossVal
 end
 
