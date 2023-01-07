@@ -13,8 +13,8 @@ end
 # use NNs and batch data to obtain gradients and losses
 function GANgrads(metaData_, genInput, FEAinfo, realTopology)
   logBatch = rand() < 0.1 # choose if this batch will be logged
-  gen = metaData_.generator
-  disc = metaData_.discriminator
+  gen = getGen(metaData_)
+  disc = getDisc(metaData_)
   # initialize for scope purposes
   discOutFake, discInputFake, foolDisc = 0f0, 0f0, 0f0
   discOutRealLog, vfMAE, mse = 0f0, 0f0, 0f0
@@ -64,3 +64,4 @@ function multiLoss(output, target; lossFun)
   # y positions, components of first load, components of second load
   return mean([lossFun(modelOut, truth) for (modelOut, truth) in zip(output, target)])
 end
+

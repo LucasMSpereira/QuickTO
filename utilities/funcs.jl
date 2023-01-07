@@ -117,10 +117,12 @@ end
 
 function contextQuantity(goal::Symbol, files::Vector{String}, percent)::Int
   if goal == :train
+    length(files) == 1 && return round(Int,datasetNonTestSize * 0.7 * percent)
     return abs(round(Int,
       datasetNonTestSize * 0.7 * percent - numSample(files[1 : max(1, end - 1)])
     ))
   elseif goal == :validate
+    length(files) == 1 && return round(Int,datasetNonTestSize * 0.3 * percent)
     return abs(round(Int,
       datasetNonTestSize * 0.3 * percent - numSample(files[1 : max(1, end - 1)])
     ))
@@ -281,9 +283,9 @@ end
 # print summary statistics of GAN parameters
 function GANparamsStats(metaData)
   println("Generator:\n")
-  vcat((Iterators.flatten.(metaData.generator |> cpu |> Flux.params) .|> collect)...) |> statsum
+  vcat((Iterators.flatten.(getGen(metaData) |> cpu |> Flux.params) .|> collect)...) |> statsum
   println("Discriminator:\n")
-  vcat((Iterators.flatten.(metaData.discriminator |> cpu |> Flux.params) .|> collect)...) |> statsum
+  vcat((Iterators.flatten.(getDisc(metaData) |> cpu |> Flux.params) .|> collect)...) |> statsum
   return nothing
 end
 
@@ -330,11 +332,17 @@ function forceToMat(force)
 end
 
 function initializeHistories(_metaData)
-  push!(_metaData.discValues, :discTrue, 1, 0f0)
-  push!(_metaData.discValues, :discFalse, 1, 0f0)
-  push!(_metaData.generatorValues, :foolDisc, 1, 0f0)
-  push!(_metaData.generatorValues, :mse, 1, 0f0)
-  push!(_metaData.generatorValues, :vfMAE, 1, 0f0)
+  push!(_metaData.discDefinition.nnValues, :discTrue, 1, 0f0)
+  push!(_metaData.discDefinition.nnValues, :discFalse, 1, 0f0)
+  push!(_metaData.genDefinition.nnValues, :foolDisc, 1, 0f0)
+  push!(_metaData.genDefinition.nnValues, :mse, 1, 0f0)
+  push!(_metaData.genDefinition.nnValues, :vfMAE, 1, 0f0)
+end
+
+# for wgan-gp loss, interpolate between fake and real topologies
+function interpolateTopologies(realTopology_::Array{Float32, 4}, fakeTopology_::Array{Float32, 4})::Array{Float32, 4}
+  ϵ = reshape(rand(Float32, size(realTopology_, 4)), (1, 1, 1, size(realTopology_, 4)))
+  return @. ϵ * realTopology_ + (1 - ϵ) * fakeTopology_
 end
 
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
@@ -372,17 +380,17 @@ end
 
 # log discriminator batch values
 function logBatchDiscVals(metaData_, discOutReal, discOutFake)
-  newSize = length(metaData_.discValues[:discTrue]) + 1
-  push!(metaData_.discValues, :discTrue, newSize, Float32(logitBinCrossEnt(discOutReal, 0.85)))
-  push!(metaData_.discValues, :discFalse, newSize, Float32(logitBinCrossEnt(discOutFake, 0)))
+  newSize = length(metaData_.discDefinition.nnValues[:discTrue]) + 1
+  push!(metaData_.discDefinition.nnValues, :discTrue, newSize, Float32(logitBinCrossEnt(discOutReal, 0.85)))
+  push!(metaData_.discDefinition.nnValues, :discFalse, newSize, Float32(logitBinCrossEnt(discOutFake, 0)))
 end
 
 # log generator batch values
 function logBatchGenVals(metaData_, foolDisc, mse, vfMAE; compRMSE = 0f0)
-  newSize = length(metaData_.generatorValues[:foolDisc]) + 1
-  push!(metaData_.generatorValues, :foolDisc, newSize, foolDisc)
-  push!(metaData_.generatorValues, :mse, newSize, mse)
-  push!(metaData_.generatorValues, :vfMAE, newSize, vfMAE)
+  newSize = length(metaData_.genDefinition.nnValues[:foolDisc]) + 1
+  push!(metaData_.genDefinition.nnValues, :foolDisc, newSize, foolDisc)
+  push!(metaData_.genDefinition.nnValues, :mse, newSize, mse)
+  push!(metaData_.genDefinition.nnValues, :vfMAE, newSize, vfMAE)
 end
 
 # contextual logit binary cross-entropy
@@ -434,12 +442,12 @@ function numSample(files)
 end
 
 # pad output of generator
-function padGen(genOut::Array{Float32, 4})::Array{Float32, 4}
+function padGen(genOut)
   return cat(
     cat(genOut, zeros(Float32, (FEAparams.meshSize[2], 1, 1, size(genOut, 4))); dims = 2),
     zeros(Float32, (1, FEAparams.meshMatrixSize[2], 1, size(genOut, 4)));
     dims = 1
-)
+  )
 end
 
 # get list of elements visited by a path

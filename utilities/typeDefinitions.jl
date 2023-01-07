@@ -38,18 +38,20 @@ mutable struct optimisationInfo
   optState::NamedTuple # optimizer's state
 end
 
+mutable struct nnInfo
+  neuralNetwork::Chain # network
+  optInfo::optimisationInfo # optimisation setup
+  nnValues # log values during training
+end
+
 # Meta-data for GAN pipeline
 mutable struct GANmetaData
-  generator::Chain # generator network
-  discriminator::Chain # discriminator network
-  genOptInfo::optimisationInfo # generator optimisation setup
-  discOptInfo::optimisationInfo # discriminator optimisation setup
+  genDefinition::nnInfo # generator information
+  discDefinition::nnInfo # discriminator information
   const trainConfig::trainConfig # parameters for training
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
   const datasetUsed::Float64 # fraction of dataset used
-  generatorValues # log values during training
-  discValues # log values during training
 end
 
 ## GANmetaData APIs
@@ -74,9 +76,8 @@ GANmetaData(
   genOpt::Flux.Optimise.AbstractOptimiser, discOpt::Flux.Optimise.AbstractOptimiser,
    myTrainConfig::trainConfig
 ) = GANmetaData(
-  generator, discriminator,
-  optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)),
-  optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)),
+  nnInfo(generator, optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)), MVHistory()),
+  nnInfo(discriminator, optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)), MVHistory()),
   myTrainConfig,
   Dict(
     :genValHistory => Float64[],
@@ -89,7 +90,7 @@ GANmetaData(
   else # if running in colab
     getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
   end,
-  percentageDataset, MVHistory(), MVHistory()
+  percentageDataset
 )
 
 # Outer constructor to create object in the begining.
@@ -101,9 +102,8 @@ function GANmetaData(
 ) 
   genValidations_, discValidations_, testLosses_, _ = getValuesFromTxt(metaDataFilepath)
   return GANmetaData(
-    generator, discriminator,
-    optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)),
-    optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)),
+    nnInfo(generator, optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)), MVHistory()),
+    nnInfo(discriminator, optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)), MVHistory()),
     myTrainConfig,
     Dict(
       :genValHistory => Float64.(genValidations_),
@@ -112,13 +112,20 @@ function GANmetaData(
       :discTest => [Float64(testLosses_[2])]
     ),
     readDataSplits(metaDataFilepath),
-    readPercentage(metaDataFilepath), MVHistory(), MVHistory()
+    readPercentage(metaDataFilepath)
   )
+end
+
+function getGen(metaData::GANmetaData)
+  return metaData.genDefinition.neuralNetwork
+end
+function getDisc(metaData::GANmetaData)
+  return metaData.discDefinition.neuralNetwork
 end
 
 # disable/reenable training in model
 function switchTraining(metaData::GANmetaData, mode::Bool)
-  Flux.trainmode!(metaData.generator, mode); Flux.trainmode!(metaData.discriminator, mode)
+  Flux.trainmode!(getGen(metaData), mode); Flux.trainmode!(getGen(metaData), mode)
   return nothing
 end
 
@@ -168,3 +175,11 @@ end
 Split(paths...) = Split(paths)
 Flux.@functor Split
 (m::Split)(x::AbstractArray) = map(f -> f(x), m.paths)
+
+struct convNext
+  chain::Chain
+end
+function (m::convNext)(x)
+  return m.chain(x)
+end
+Flux.@functor convNext

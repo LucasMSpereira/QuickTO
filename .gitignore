@@ -2,3 +2,5 @@ old
 networks
 mySysImage.so
 experiments.jl
+convnext.jl
+mwe.jl

@@ -1,27 +1,25 @@
 # Builders for different NN architectures
 
-# Discriminator for TopologyGAN
-# https://arxiv.org/abs/2003.04685
-function topologyGANdisc()
-  m1 = Chain(
-    Conv((5, 5), 7 => df_dim; stride = 2, pad = SamePad()),
-    leakyrelu, # h0
-    Conv((5, 5), df_dim => df_dim * 2; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 2),
-    leakyrelu, # h1
-    Conv((5, 5), df_dim * 2 => df_dim * 4; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 4),
-    leakyrelu, # h2
-    Conv((5, 5), df_dim * 4 => df_dim * 8; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 8),
-    leakyrelu, # h3
-    flatten,
+function convNextModel(blockChannel, blockRepeat)
+  stage = Chain[]
+  for (ch, rep) in zip(blockChannel, blockRepeat)
+    push!(
+      stage,
+      Chain(
+        ntuple(i ->
+          Chain(
+            DepthwiseConv((7, 7), ch => 4 * ch; stride = 7),
+            Conv((1, 1), 4 * ch => 4 * ch),
+            Conv((1, 1), 4 * ch => ch)
+          ),
+        rep)
+      )
+    )
+  end
+  return Chain(
+    Conv((4, 4), 3 => blockChannel[1]; stride = 4),
+    foldl((x, m) -> m(x), stage, init = x)
   )
-  m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
-  m2 = Chain(
-    Dense(m1size => 1) # h4 (don't need sigmoid)
-  )
-  return Chain(m1, m2) |> gpu
 end
 
 # loadCNN structure 14. Predict positions and components of loads from displacement field
@@ -54,6 +52,30 @@ function multiOutputs(kernel, activ, ch)
     Chain(Dense(m1size => m1size ÷ 10), Dense(m1size ÷ 10 => 2, activ)),
   )
   return Chain(module1, module2) |> gpu
+end
+
+# Discriminator for TopologyGAN
+# https://arxiv.org/abs/2003.04685
+function topologyGANdisc()
+  m1 = Chain(
+    Conv((5, 5), 7 => df_dim; stride = 2, pad = SamePad()),
+    leakyrelu, # h0
+    Conv((5, 5), df_dim => df_dim * 2; stride = 2, pad = SamePad()),
+    BatchNorm(df_dim * 2),
+    leakyrelu, # h1
+    Conv((5, 5), df_dim * 2 => df_dim * 4; stride = 2, pad = SamePad()),
+    BatchNorm(df_dim * 4),
+    leakyrelu, # h2
+    Conv((5, 5), df_dim * 4 => df_dim * 8; stride = 2, pad = SamePad()),
+    BatchNorm(df_dim * 8),
+    leakyrelu, # h3
+    flatten,
+  )
+  m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
+  m2 = Chain(
+    Dense(m1size => 1) # h4 (don't need sigmoid)
+  )
+  return Chain(m1, m2) |> gpu
 end
 
 # Return Flux Chain of SE-ResNet blocks of desired size.

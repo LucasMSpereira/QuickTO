@@ -12,7 +12,7 @@ end
 # generate PDF report about GANs
 function GANreport(metaData)
   # create pdf with line plots of validation loss histories
-  modelName = GANfolderPath[end - 3 : end]
+  modelName = GANfolderPath[end - 4 : end - 1]
   plotGANValHist(
     metaData.lossesVals,
     metaData.trainConfig.validFreq,
@@ -20,15 +20,18 @@ function GANreport(metaData)
   )
   GANtestPlotsReport(modelName, metaData, GANfolderPath)
   writeGANmetaData(metaData; finalTxtPath = GANfolderPath)
-  combinePDFs(GANfolderPath, modelName * " report"; leavePDFout = "report")
+  JLDfiles = readdir(GANfolderPath; join = true) |> x -> filter(y -> y[end - 4 : end] == ".jld2", x)
+  save_object(GANfolderPath * string(length(JLDfiles) + 1) * ".jld2", metaData)
+  plotGANlogs(readdir(GANfolderPath; join = true) |> x -> filter(y -> y[end - 4 : end] == ".jld2", x))
+  combinePDFs(GANfolderPath[1 : end - 1], modelName * " report"; leavePDFout = "report")
   return nothing
 end
 
 # save both GAN NNs to BSON files
 function saveGANs(metaData, currentEpoch; finalSave = false)
-  # transfer models to cpu
-  cpuGenerator = cpu(metaData.generator)
-  cpuDiscriminator = cpu(metaData.discriminator)
+  # copy models to cpu
+  cpuGenerator = metaData.genDefinition.neuralNetwork |> cpu
+  cpuDiscriminator = metaData.discDefinition.neuralNetwork |> cpu
   # save models
   if runningInColab == false # if running locally
     BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "-$(currentEpoch)gen.bson" cpuGenerator
@@ -39,8 +42,8 @@ function saveGANs(metaData, currentEpoch; finalSave = false)
   end
   if !finalSave
     # bring models back to gpu, if training will continue
-    metaData.generator = gpu(cpuGenerator)
-    metaData.discriminator = gpu(cpuDiscriminator)
+    metaData.genDefinition.neuralNetwork = gpu(cpuGenerator)
+    metaData.discDefinition.neuralNetwork = gpu(cpuDiscriminator)
   end
   return nothing
 end
@@ -96,15 +99,15 @@ end
 function writeGANmetaData(metaData; finalTxtPath = " ")
   if runningInColab == false # if running locally
     if finalTxtPath == " "
-      savePath = datasetPath * "data/checkpoints"
+      savePath = datasetPath * "data/checkpoints/"
     else
       savePath = finalTxtPath
     end
   else # if running in colab
-    savePath = "./gdrive/MyDrive/dataset files/GAN saves"
+    savePath = "./gdrive/MyDrive/dataset files/GAN saves/"
   end
   open(
-    join([savePath, timeNow(), "metaData.txt"], "/", ""),
+    prod([savePath, timeNow(), "metaData.txt"]),
     "w"
   ) do id
     valF = metaData.trainConfig.validFreq
@@ -124,10 +127,10 @@ function writeGANmetaData(metaData; finalTxtPath = " ")
     end
     write(id, "\n\tTOTAL: " * string(trainSize + validateSize + testSize))
     write(id, "\n\nOPTIMISERS:" * "\n\tGENERATOR: " *
-      printOptimizer(metaData.genOptInfo.opt) * " " *
-      sciNotation(metaData.genOptInfo.opt.eta, 1) * "\n\tDISCRIMINATOR: " *
-      printOptimizer(metaData.discOptInfo.opt) * " " *
-      sciNotation(metaData.discOptInfo.opt.eta, 1) * "\n"
+      printOptimizer(metaData.genDefinition.optInfo.opt) * " " *
+      sciNotation(metaData.genDefinition.optInfo.opt.eta, 1) * "\n\tDISCRIMINATOR: " *
+      printOptimizer(metaData.discDefinition.optInfo.opt) * " " *
+      sciNotation(metaData.discDefinition.optInfo.opt.eta, 1) * "\n"
     )
     write(id, "\nTRAINING: ")
     if typeof(metaData.trainConfig) == epochTrainConfig

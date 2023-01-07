@@ -179,9 +179,8 @@ end
 function GANepoch!(metaData, goal)
   !in(goal, [:train, :validate, :test]) && error("GANepoch!() called with invalid 'goal'.")
   # initialize variables related to whole epoch
-  genLossHist, discLossHist, batchCount = 0.0, 0.0, 0
+  genLossHist, discLossHist, batchCount, countGroup = 0.0, 0.0, 0, 0
   groupFiles = defineGroupFiles(metaData, goal)
-  countGroup = 0
   # loop in groups of files used for current split
   for group in groupFiles
     countGroup += 1
@@ -192,22 +191,21 @@ function GANepoch!(metaData, goal)
     )
     # each batch of current epoch
     for currentBatch in currentLoader
-      # @timeit to "batch" begin
         batchCount += 1
         # avoid GPU memory issues
-        GC.gc()
-        desktop && CUDA.reclaim()
+        GC.gc(); desktop && CUDA.reclaim()
         # use NNs, and get gradients and losses for current batch
         genGrads, genLossVal, discGrads, discLossVal = GANgrads(
           metaData, currentBatch...
         )
         if goal == :train # update NNs parameters in case of training
-          Flux.Optimise.update!(metaData.genOptInfo.optState, metaData.generator, genGrads[1])
-          Flux.Optimise.update!(metaData.discOptInfo.optState, metaData.discriminator, discGrads[1])
+          Flux.Optimise.update!(metaData.genDefinition.optInfo.optState,
+            getGen(metaData), genGrads[1])
+          Flux.Optimise.update!(metaData.discDefinition.optInfo.optState,
+            getDisc(metaData), discGrads[1])
         end
         # acumulate batch losses
         genLossHist += genLossVal; discLossHist += discLossVal
-      # end
     end
   end
   # return avg losses for current epoch

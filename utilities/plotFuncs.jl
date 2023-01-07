@@ -103,17 +103,17 @@ function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; exte
     fakeTopoAxis.yreversed = true
     if extension == :png
       GLMakie.activate!()
-      Makie.save("$savePath/$(modelName)-$(sample).png", fig) # save pdf with plot
+      Makie.save(savePath * "$(modelName)-$(sample).png", fig) # save pdf with plot
     elseif extension == :pdf
       CairoMakie.activate!()
-      Makie.save("$savePath/$(modelName)-$(sample).pdf", fig) # save pdf with plot
+      Makie.save(savePath * "$(modelName)-$(sample).pdf", fig) # save pdf with plot
     end
   end
 end
 
 function GANtestPlotsReport(_modelName, _metaData, _path)
   GANtestPlots(
-    gpu(_metaData.generator), datasetPath * "data/test",
+    gpu(getGen(_metaData)), datasetPath * "data/test",
     15, _path, _modelName; extension = :pdf
   )
 end
@@ -268,24 +268,47 @@ end
 
 # line plots of histories of GAN losses
 function plotGANlogs(JLDpath)
-  savedStruct = load(JLDpath)["single_stored_object"]
-  GLMakie.activate!()
+  mkpath(GANfolderPath * "logs") # folder for PDFs with plots
+  CairoMakie.activate!()
+  foolDisc, mse, vfMAE, discTrue, discFalse = Float32[], Float32[], Float32[], Float32[], Float32[]
+  for filePath in JLDpath
+    savedStruct = load(filePath)["single_stored_object"]
+    foolDisc = vcat(foolDisc, get(savedStruct.generatorValues[:foolDisc])[2][2 : end])
+    mse = vcat(mse, get(savedStruct.generatorValues[:mse])[2][2 : end])
+    vfMAE = vcat(vfMAE, get(savedStruct.generatorValues[:vfMAE])[2][2 : end])
+    discTrue = vcat(discTrue, get(savedStruct.generatorValues[:discTrue])[2][2 : end])
+    discFalse = vcat(discFalse, get(savedStruct.generatorValues[:discFalse])[2][2 : end])
+  end
+  logsLines( # all intermediate terms
+    [foolDisc mse vfMAE discTrue discFalse],
+    ["foolDisc" "mse" "vfMAE" "discTrue" "discFalse"]
+  )
+  logsLines( # both final losses
+    [foolDisc + mse + vfMAE discTrue + discFalse],
+    ["generator loss" "discriminator loss"]
+  )
+  logsLines( # intermediate and final generator values
+    [foolDisc mse vfMAE foolDisc + mse + vfMAE],
+    ["foolDisc" "mse" "vfMAE" "generator loss"]
+  )
+  logsLines( # intermediate and final discriminator values
+    [discTrue discFalse discTrue + discFalse],
+    ["discTrue" "discFalse" "discriminator loss"]
+  )
+  combinePDFs(GANfolderPath * "logs", "logPlots")
+end
+
+function logsLines(value, name)
   f = Figure(resolution = (1500, 800)); # create makie figure
   ax = Axis(f[1:3, 1], # axis to draw on
-    xlabel = "Batches", title = "Logged values"
-  )
+    xlabel = "Batches", title = "Logged values")
   # line plots of logs
-  gfd = lines!(ax, get(savedStruct.generatorValues[:foolDisc])[2][2 : end])
-  gmse = lines!(ax, get(savedStruct.generatorValues[:mse])[2][2 : end])
-  gvfmae = lines!(ax, get(savedStruct.generatorValues[:vfMAE])[2][2 : end])
-  ddt = lines!(ax, get(savedStruct.discValues[:discTrue])[2][2 : end])
-  ddf = lines!(ax, get(savedStruct.discValues[:discFalse])[2][2 : end])
-  logPlots = [gfd, gmse, gvfmae, ddt, ddf]
-  strings = ["foolDisc", "mse", "vfMAE", "discTrue", "discFalse"]
+  linePlots = [lines!(ax, val) for val in value]
+  # legend
   t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
-  Legend(f[1, 2][1, 1], logPlots, strings)
+  Legend(f[1, 2][1, 1], linePlots, name)
   colsize!(f.layout, 2, Fixed(130))
-  display(f)
+  Makie.save(GANfolderPath * "logs/$(rand(1:9999)).pdf", f) # save pdf
 end
 
 # create line plots of GAN validation histories.
@@ -340,7 +363,7 @@ function plotGANValHist(lossesVals, validFreq, modelName; metaDataName = " ", mi
     display(f)
   else
     CairoMakie.activate!() # vector graphics
-    Makie.save("$GANfolderPath/validation histories.pdf", f) # save pdf with plot
+    Makie.save(GANfolderPath * "validation histories.pdf", f) # save pdf with plot
   end
 end
 
