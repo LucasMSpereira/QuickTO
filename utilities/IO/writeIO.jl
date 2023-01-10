@@ -19,11 +19,11 @@ function GANreport(metaData)
     modelName
   )
   GANtestPlotsReport(modelName, metaData, GANfolderPath)
+  combinePDFs(GANfolderPath[1 : end - 1], modelName * " report"; leavePDFout = "report")
   writeGANmetaData(metaData; finalTxtPath = GANfolderPath)
   JLDfiles = readdir(GANfolderPath; join = true) |> x -> filter(y -> y[end - 4 : end] == ".jld2", x)
   save_object(GANfolderPath * string(length(JLDfiles) + 1) * ".jld2", metaData)
   plotGANlogs(readdir(GANfolderPath; join = true) |> x -> filter(y -> y[end - 4 : end] == ".jld2", x))
-  combinePDFs(GANfolderPath[1 : end - 1], modelName * " report"; leavePDFout = "report")
   return nothing
 end
 

@@ -18,10 +18,10 @@ const percentageDataset = 0.18 # fraction of dataset to be used
 @time expMetaData = trainGANs(;
   genOpt_ = Flux.Optimise.Adam(2e-3),
   discOpt_ = Flux.Optimise.Adam(2e-3),
-  genName_ = "01-04T16-48-20-0gen.bson",
-  discName_ = "01-04T16-48-36-0disc.bson",
-  metaDataName = projPath * "networks/GANplots/12-18.0%-7W7B/01-04T16-50-57metaData.txt",
-  originalFolder = "C:/Users/kaoid/My Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/networks/GANplots/12-18.0%-7W7B",
+  # genName_ = "01-04T16-48-20-0gen.bson",
+  # discName_ = "01-04T16-48-36-0disc.bson",
+  # metaDataName = projPath * "networks/GANplots/12-18.0%-7W7B/01-04T16-50-57metaData.txt",
+  # originalFolder = "C:/Users/kaoid/My Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/networks/GANplots/12-18.0%-7W7B",
   epochs = 15,
   valFreq = 3
 )

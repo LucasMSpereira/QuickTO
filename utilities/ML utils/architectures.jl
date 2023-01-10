@@ -1,26 +1,6 @@
 # Builders for different NN architectures
 
-function convNextModel(blockChannel, blockRepeat)
-  stage = Chain[]
-  for (ch, rep) in zip(blockChannel, blockRepeat)
-    push!(
-      stage,
-      Chain(
-        ntuple(i ->
-          Chain(
-            DepthwiseConv((7, 7), ch => 4 * ch; stride = 7),
-            Conv((1, 1), 4 * ch => 4 * ch),
-            Conv((1, 1), 4 * ch => ch)
-          ),
-        rep)
-      )
-    )
-  end
-  return Chain(
-    Conv((4, 4), 3 => blockChannel[1]; stride = 4),
-    foldl((x, m) -> m(x), stage, init = x)
-  )
-end
+
 
 # loadCNN structure 14. Predict positions and components of loads from displacement field
 function multiOutputs(kernel, activ, ch)
@@ -141,4 +121,57 @@ function U_SE_ResNetGenerator(; sizeChain = 32)
     Conv((8, 8), 1 => 1),
     sigmoid,
   ) |> gpu
+end
+
+#= ConvNeXt model
+original code (pytorch): https://github.com/facebookresearch/ConvNeXt
+paper: https://arxiv.org/abs/2201.03545
+Metalhead.jl implementation https://github.com/FluxML/Metalhead.jl/blob/cc486bf00c60874de426dece97956528ce406564/src/convnets/convnext.jl
+=#
+function convNextModel(blockChannel::Int, blockRepeat::Array{Int}, maxDropPathChance::AbstractFloat)
+  dropPathProb = Float32.(range(0, maxDropPathChance, sum(blockRepeat)))
+  block = 0
+  # downSample = Chain[]; stage = Chain[]
+  step = Chain[]
+  channelSequence = [blockChannel * 2 ^ (stageIndex - 1) for stageIndex in axes(blockRepeat, 1)]
+  for (index, rep) in enumerate(blockRepeat)
+    push!( # current stage's downsample
+      step,
+      if block == 0
+        Chain(
+          Conv((4, 4), 3 => channelSequence[index]; stride = 4),
+          x -> Flux.normalise(x; dims = ndims(x) - 1),
+        )
+      else
+        Chain(
+          x -> Flux.normalise(x; dims = ndims(x) - 1),
+          Conv((2, 2), channelSequence[index - 1] => channelSequence[index]; stride = 2)
+        )
+      end
+    )
+    for _ in 1:rep # current stage's ConvNeXt block stack
+      block += 1
+      push!(step, Chain(
+        SkipConnection(
+          Chain(DepthwiseConv((7, 7), channelSequence[index] => channelSequence[index]; pad = 3),
+            x -> permutedims(x, (3, 1, 2, 4)),
+            LayerNorm(channelSequence[index]; ϵ = 1.0f-6),
+            Dense(channelSequence[index], 4 * channelSequence[index], relu),
+            Dense(4 * channelSequence[index], channelSequence[index]),
+            Flux.Scale(fill(Float32(1.0f-6), channelSequence[index]), false),
+            x -> permutedims(x, (2, 3, 1, 4)),
+            dropPathProb[block] > 0 ? stochasticDepth(dropPathProb[block]) : k -> k),
+        +)
+      ))
+    end
+  end
+  resizeBlock = Chain(
+    ConvTranspose((9, 9), channelSequence[end] => channelSequence[end] ÷ 8, stride = 6),
+    ConvTranspose((9, 9), channelSequence[end] ÷ 8 => 1, stride = 6),
+    Conv((9, 9), 1 => 1; pad = (3, 0)),
+    Conv((9, 9), 1 => 1; pad = (3, 0)),
+    Conv((10, 10), 1 => 1; pad = (3, 0)),
+    sigmoid
+  )
+  return Chain(step..., resizeBlock) |> gpu
 end

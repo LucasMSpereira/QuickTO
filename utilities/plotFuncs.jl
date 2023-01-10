@@ -273,11 +273,11 @@ function plotGANlogs(JLDpath)
   foolDisc, mse, vfMAE, discTrue, discFalse = Float32[], Float32[], Float32[], Float32[], Float32[]
   for filePath in JLDpath
     savedStruct = load(filePath)["single_stored_object"]
-    foolDisc = vcat(foolDisc, get(savedStruct.generatorValues[:foolDisc])[2][2 : end])
-    mse = vcat(mse, get(savedStruct.generatorValues[:mse])[2][2 : end])
-    vfMAE = vcat(vfMAE, get(savedStruct.generatorValues[:vfMAE])[2][2 : end])
-    discTrue = vcat(discTrue, get(savedStruct.generatorValues[:discTrue])[2][2 : end])
-    discFalse = vcat(discFalse, get(savedStruct.generatorValues[:discFalse])[2][2 : end])
+    foolDisc = vcat(foolDisc, get(savedStruct.genDefinition.nnValues[:foolDisc])[2][2 : end])
+    mse = vcat(mse, get(savedStruct.genDefinition.nnValues[:mse])[2][2 : end])
+    vfMAE = vcat(vfMAE, get(savedStruct.genDefinition.nnValues[:vfMAE])[2][2 : end])
+    discTrue = vcat(discTrue, get(savedStruct.discDefinition.nnValues[:discTrue])[2][2 : end])
+    discFalse = vcat(discFalse, get(savedStruct.discDefinition.nnValues[:discFalse])[2][2 : end])
   end
   logsLines( # all intermediate terms
     [foolDisc mse vfMAE discTrue discFalse],
@@ -303,10 +303,10 @@ function logsLines(value, name)
   ax = Axis(f[1:3, 1], # axis to draw on
     xlabel = "Batches", title = "Logged values")
   # line plots of logs
-  linePlots = [lines!(ax, val) for val in value]
+  [lines!(ax, val; label = str) for (val, str) in zip(value, name)]
   # legend
   t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
-  Legend(f[1, 2][1, 1], linePlots, name)
+  Legend(f[1, 2][1, 1])
   colsize!(f.layout, 2, Fixed(130))
   Makie.save(GANfolderPath * "logs/$(rand(1:9999)).pdf", f) # save pdf
 end

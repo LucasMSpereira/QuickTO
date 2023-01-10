@@ -373,14 +373,19 @@ end
 
 function trainGANs(;
   genOpt_, discOpt_, genName_ = " ", discName_ = " ",
-  metaDataName = "", originalFolder = " ", epochs, valFreq
+  metaDataName = "", originalFolder = " ", epochs,
+  valFreq, architectures = :none
 )
   # object with metadata. includes instantiation of NNs,
   # optimisers, dataloaders, training configurations,
   # validation histories, and test losses
   if genName_ == " " # new NNs
     metaData = GANmetaData(
-      U_SE_ResNetGenerator(), topologyGANdisc(),
+      if architectures == :none
+        (U_SE_ResNetGenerator(), topologyGANdisc())
+      else
+        architectures
+      end...,
       genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
     )
     # create folder to store plots and report

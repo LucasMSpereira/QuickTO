@@ -151,35 +151,23 @@ else
 end
 
 # Squeeze and excitation block for TopologyGAN U-SE-ResNet generator
-struct SEblock
-  chain::Chain
-end
-function (m::SEblock)(input)
-  return m.chain(input)
-end
+struct SEblock chain::Chain end
+function (m::SEblock)(input) return m.chain(input) end
 Flux.@functor SEblock
 
 # Residual block for TopologyGAN U-SE-ResNet generator
-struct SEresNet
-  chain::Chain
-end
-function (m::SEresNet)(input)
-  return m.chain(input)
-end
+struct SEresNet chain::Chain end
+function (m::SEresNet)(input) return m.chain(input) end
 Flux.@functor SEresNet
 
 # custom Flux.jl split layer
-struct Split{T}
-  paths::T
-end
+struct Split{T} paths::T end
 Split(paths...) = Split(paths)
 Flux.@functor Split
 (m::Split)(x::AbstractArray) = map(f -> f(x), m.paths)
 
-struct convNext
-  chain::Chain
-end
-function (m::convNext)(x)
-  return m.chain(x)
-end
+struct convNext chain::Chain end
+function (m::convNext)(x) return m.chain(x) end
 Flux.@functor convNext
+
+stochasticDepth(x::Float32) = Flux.Dropout(x; dims = 4)
