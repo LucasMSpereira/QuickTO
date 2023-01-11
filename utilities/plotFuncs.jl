@@ -267,33 +267,39 @@ function plotForce(
 end
 
 # line plots of histories of GAN losses
-function plotGANlogs(JLDpath)
+function plotGANlogs(JLDpath::Vector{String})
   mkpath(GANfolderPath * "logs") # folder for PDFs with plots
   CairoMakie.activate!()
-  foolDisc, mse, vfMAE, discTrue, discFalse = Float32[], Float32[], Float32[], Float32[], Float32[]
+  foolDisc, mse, vfMAE, discTrue, discFalse = Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[]
   for filePath in JLDpath
-    savedStruct = load(filePath)["single_stored_object"]
-    foolDisc = vcat(foolDisc, get(savedStruct.genDefinition.nnValues[:foolDisc])[2][2 : end])
-    mse = vcat(mse, get(savedStruct.genDefinition.nnValues[:mse])[2][2 : end])
-    vfMAE = vcat(vfMAE, get(savedStruct.genDefinition.nnValues[:vfMAE])[2][2 : end])
-    discTrue = vcat(discTrue, get(savedStruct.discDefinition.nnValues[:discTrue])[2][2 : end])
-    discFalse = vcat(discFalse, get(savedStruct.discDefinition.nnValues[:discFalse])[2][2 : end])
+    savedStruct = 0
+    @suppress_err savedStruct = load(filePath)["single_stored_object"]
+    push!(foolDisc, get(savedStruct.genDefinition.nnValues[:foolDisc])[2][2 : end])
+    push!(mse, get(savedStruct.genDefinition.nnValues[:mse])[2][2 : end])
+    push!(vfMAE, get(savedStruct.genDefinition.nnValues[:vfMAE])[2][2 : end])
+    push!(discTrue, get(savedStruct.discDefinition.nnValues[:discTrue])[2][2 : end])
+    push!(discFalse, get(savedStruct.discDefinition.nnValues[:discFalse])[2][2 : end])
   end
+  foolDisc = foolDisc |> Iterators.flatten |> collect
+  mse = mse |> Iterators.flatten |> collect
+  vfMAE = vfMAE |> Iterators.flatten |> collect
+  discTrue = discTrue |> Iterators.flatten |> collect
+  discFalse = discFalse |> Iterators.flatten |> collect
   logsLines( # all intermediate terms
-    [foolDisc mse vfMAE discTrue discFalse],
-    ["foolDisc" "mse" "vfMAE" "discTrue" "discFalse"]
+    [foolDisc, mse, vfMAE, discTrue, discFalse],
+    ["foolDisc", "mse", "vfMAE", "discTrue", "discFalse"]
   )
   logsLines( # both final losses
-    [foolDisc + mse + vfMAE discTrue + discFalse],
-    ["generator loss" "discriminator loss"]
+    [foolDisc + mse + vfMAE, discTrue + discFalse],
+    ["generator loss", "discriminator loss"]
   )
   logsLines( # intermediate and final generator values
-    [foolDisc mse vfMAE foolDisc + mse + vfMAE],
-    ["foolDisc" "mse" "vfMAE" "generator loss"]
+    [foolDisc, mse, vfMAE, foolDisc + mse + vfMAE],
+    ["foolDisc", "mse", "vfMAE", "generator loss"]
   )
   logsLines( # intermediate and final discriminator values
-    [discTrue discFalse discTrue + discFalse],
-    ["discTrue" "discFalse" "discriminator loss"]
+    [discTrue, discFalse, discTrue + discFalse],
+    ["discTrue", "discFalse", "discriminator loss"]
   )
   combinePDFs(GANfolderPath * "logs", "logPlots")
 end
@@ -306,8 +312,8 @@ function logsLines(value, name)
   [lines!(ax, val; label = str) for (val, str) in zip(value, name)]
   # legend
   t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
-  Legend(f[1, 2][1, 1])
-  colsize!(f.layout, 2, Fixed(130))
+  Legend(f[1, 2][1, 1], ax)
+  colsize!(f.layout, 2, Fixed(160))
   Makie.save(GANfolderPath * "logs/$(rand(1:9999)).pdf", f) # save pdf
 end
 

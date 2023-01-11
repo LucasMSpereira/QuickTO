@@ -171,3 +171,11 @@ function (m::convNext)(x) return m.chain(x) end
 Flux.@functor convNext
 
 stochasticDepth(x::Float32) = Flux.Dropout(x; dims = 4)
+
+struct ChannelLayerNorm{D, T} diag::D; ϵ::T end
+Flux.@functor ChannelLayerNorm
+function ChannelLayerNorm(sz::Integer, λ = identity; ϵ = 1.0f-6)
+  diag = Flux.Scale(1, 1, sz, λ)
+  return ChannelLayerNorm(diag, ϵ)
+end
+(m::ChannelLayerNorm)(x) = m.diag(Flux.normalise(x; dims = ndims(x) - 1, ϵ = m.ϵ))
