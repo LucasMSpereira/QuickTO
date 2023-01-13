@@ -379,10 +379,10 @@ function isoFeats(force, supp, topo)
 end
 
 # log discriminator batch values
-function logBatchDiscVals(metaData_, discOutReal, discOutFake)
+function logBatchDiscVals(metaData_, discTrueVal::Float32, discFalseVal::Float32)
   newSize = length(metaData_.discDefinition.nnValues[:discTrue]) + 1
-  push!(metaData_.discDefinition.nnValues, :discTrue, newSize, Float32(logitBinCrossEnt(discOutReal, 0.85)))
-  push!(metaData_.discDefinition.nnValues, :discFalse, newSize, Float32(logitBinCrossEnt(discOutFake, 0)))
+  push!(metaData_.discDefinition.nnValues, :discTrue, newSize, discTrueVal)
+  push!(metaData_.discDefinition.nnValues, :discFalse, newSize, discFalseVal)
 end
 
 # log generator batch values
@@ -494,7 +494,7 @@ function randDiffInt(n, val)
 end
 
 # remove first position along 4th dimension in 4D array
-remFirstSample(x::Array{<:Real, 4})::Array{<:Real, 4} = x[:, :, :, 2:end]
+remFirstSample(x) = x[:, :, :, 2:end]
 
 # reshape output of discriminator
 reshapeDiscOut(x) = dropdims(x |> transpose |> Array; dims = 2)

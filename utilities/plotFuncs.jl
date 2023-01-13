@@ -33,8 +33,7 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   combinePDFs(path, finalName)
 end
 
-# create plot with FEA inputs, and generator and real topologies.
-# uses samples from test split
+# create plot with FEA inputs, and generated and real topologies.
 function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; extension = :png)
   # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
   # dataDict_: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
@@ -111,9 +110,12 @@ function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; exte
   end
 end
 
+# call GANtestPlots() for final model report
 function GANtestPlotsReport(_modelName, _metaData, _path)
   GANtestPlots(
-    gpu(getGen(_metaData)), datasetPath * "data/test",
+    # gpu(getGen(_metaData)), datasetPath * "data/test",
+    gpu(getGen(_metaData)),
+    readdir(datasetPath * "data/trainValidate"; join = true)[end],
     15, _path, _modelName; extension = :pdf
   )
 end

@@ -175,7 +175,7 @@ function readPercentage(metaDataName::String)::Float32
 end
 
 # read file from topologyGAN dataset
-function readTopologyGANdataset(path; print = false)
+  function readTopologyGANdataset(path; print = false)
     dictionary = Dict{Symbol, Array{Float32}}()
     h5open(path, "r") do id # open file
       dataFields = HDF5.get_datasets(id) # get references to data

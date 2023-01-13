@@ -172,7 +172,9 @@ function getStressCNNdata(path; multiOut = false)
 end
 
 # group certain data used to train GANs
-function groupGANdata!(genInput, FEAinfo, topology, dataDict; sampleAmount = 0)
+function groupGANdata!(genInput, FEAinfo, topology,
+  dataDict; sampleAmount = 0
+)::Tuple{Array{Float32, 4}, Array{Float32, 4}, Array{Float32, 4}}
   # amount of samples according to percentage of dataset being used
   if sampleAmount == 0
     nSamples = length(dataDict[:compliance])

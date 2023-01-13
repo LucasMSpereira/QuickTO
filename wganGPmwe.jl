@@ -1,5 +1,5 @@
 include(projPath * "QTOutils.jl")
-const batchSize = 64
+const batchSize = 10
 const normalizeDataset = true # choose to normalize data in [-1; 1]
 const startTime = timeNow()
 # const to = TimerOutput()
@@ -10,10 +10,10 @@ LinearAlgebra.norm(::Nothing, p::Real=2) = false
 #     Dense(_ => 1)
 # )
 mdNew = GANmetaData(
-    # Chain(Conv((5, 5), 3 => 1, pad = (0, 3, 0, 3))),
-    U_SE_ResNetGenerator(),
-    # topologyGANdisc(),
-    Chain(BatchNorm(7), flatten) |> gpu,
+    convNextModel(96, [3, 3, 9, 3], 0.5),
+    # U_SE_ResNetGenerator(),
+    topologyGANdisc(; normal = :LN),
+    # Chain(BatchNorm(7), flatten) |> gpu,
     Flux.Optimise.Adam(), Flux.Optimise.Adam(),
     epochTrainConfig(1, 1)
 )
@@ -23,9 +23,11 @@ function gpTerm(disc_, genInput_, FEAinfo_, realTopo, fakeTopo)
     interpTopos = interpolateTopologies(realTopo, fakeTopo)
     discInputInterp = solidify(genInput_, FEAinfo_, interpTopos) |> gpu
     # use disc and get gradient
-    println("11")
-    grads = Flux.gradient(discInputInterp -> disc_(discInputInterp) |> cpu |> reshapeDiscOut, discInputInterp)
-    println("12")
+    println("gp")
+    grads = Flux.gradient(
+        discInputInterp -> disc_(discInputInterp) |> cpu |> reshapeDiscOut |> mean,
+        discInputInterp
+    )
     println("gpNorm: ", norm(grads[1]), "  gpTerm: ", (norm(grads[1]) - 1) ^ 2)
     return (norm(grads[1]) - 1) ^ 2
 end
@@ -57,6 +59,7 @@ function wganGPepoch(metaData, goal, nCritic)
                     return mean(discOutFake) - mean(discOutReal) + 10 * gpTerm(
                         disc, genInput, FEAinfo, realTopology, fakeTopology
                     )
+                    # return mean(discOutFake) - mean(discOutReal)
                 end
                 if goal == :train
                     lossVal, discGrads = withgradient(
@@ -69,9 +72,9 @@ function wganGPepoch(metaData, goal, nCritic)
                         metaData.discDefinition.optInfo.optState, disc, discGrads[1]
                     )
                     println("""
-                    mean(discOutFalse): $(disc(discInputReal) |> cpu |> reshapeDiscOut |> mean)
-                    mean(discOutFalse): $(disc(discInputFake) |> cpu |> reshapeDiscOut |> mean)
-                    lossVal: $lossVal  norm(discGrads): $(norm(discGrads))
+                    mean(discOutReal): $(disc(discInputReal) |> cpu |> reshapeDiscOut |> mean)
+                    mean(discOutFake): $(disc(discInputFake) |> cpu |> reshapeDiscOut |> mean)
+                    lossVal: $lossVal  norm(discGrads): $(norm(discGrads[1]))
                     """)
                 else
                     loss = wganGPloss(disc(discInputReal) |> cpu |> reshapeDiscOut,
@@ -82,21 +85,20 @@ function wganGPepoch(metaData, goal, nCritic)
                 batchCount = 0
                 if goal == :train
                     genLossVal, genGrads = withgradient(
-                        gen -> -solidify(
-                            genInputGPU, FEAinfoGPU, gen(genInputGPU) |> cpu |> padGen
-                        ) |> disc |> cpu |> mean, gen
+                        gen -> -(solidify(
+                            genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+                        ) |> gpu |> disc |> cpu |> mean), gen
                     )
                     Flux.Optimise.update!(
                         metaData.genDefinition.optInfo.optState, gen, genGrads[1]
                     )
-                    @show genLossVal; @show norm(genGrads)
                     println("""
-                    genLossVal: $genLossVal  norm(genGrads): $(norm(genGrads))
+                    genLossVal: $genLossVal  norm(genGrads): )
                     """)
                 else
-                    genLossVal = -solidify(
-                        genInputGPU, FEAinfoGPU, gen(genInputGPU) |> cpu |> padGen
-                    ) |> disc |> cpu |> mean
+                    genLossVal = -(solidify(
+                        genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+                    ) |> gpu |> disc |> cpu |> mean), gen
                 end
                 return nothing
             end

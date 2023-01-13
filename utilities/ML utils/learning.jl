@@ -149,6 +149,7 @@ function fixedEpochGANs(metaData)
   while epoch < metaData.trainConfig.epochs # loop in epochs
     epoch += 1 # count training epochs
     epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
+    switchTraining(metaData, true) # enable model update
     GANepoch!(metaData, :train) # training epoch
     # occasionally run validation epoch
     if epoch % metaData.trainConfig.validFreq == 0
@@ -176,10 +177,13 @@ end
 
 # epoch of GAN usage, be it training, validation or test
 # return avg. losses for epoch
-function GANepoch!(metaData, goal)
+function GANepoch!(metaData, goal)::Tuple{Float32, Float32}
   !in(goal, [:train, :validate, :test]) && error("GANepoch!() called with invalid 'goal'.")
   # initialize variables related to whole epoch
-  genLossHist, discLossHist, batchCount, countGroup = 0.0, 0.0, 0, 0
+  genLossHist::Float32 = 0f0
+  discLossHist::Float32 = 0f0
+  batchCount::Int32 = 0.0
+  countGroup::Int32 = 0
   groupFiles = defineGroupFiles(metaData, goal)
   # loop in groups of files used for current split
   for group in groupFiles
@@ -409,7 +413,6 @@ function trainGANs(;
   println("Testing ", timeNow())
   switchTraining(metaData, false) # disable model updating during test
   @suppress_err metaData(GANepoch!(metaData, :test); context = :test) # test GANs
-  # metaData((0.0, 0.0); context = :test)
   switchTraining(metaData, true) # reenable model updating
   return metaData
 end

@@ -14,23 +14,17 @@ const percentageDataset = 0.18 # fraction of dataset to be used
 @time expMetaData = trainGANs(;
   genOpt_ = Flux.Optimise.Adam(),
   discOpt_ = Flux.Optimise.Adam(),
-  # genName_ = "01-04T16-48-20-0gen.bson",
-  # discName_ = "01-04T16-48-36-0disc.bson",
-  # metaDataName = projPath * "networks/GANplots/12-18.0%-7W7B/01-04T16-50-57metaData.txt",
-  # originalFolder = "C:/Users/kaoid/My Drive/Estudo/Poli/Pesquisa/Programas/QuickTO/QuickTO/networks/GANplots/12-18.0%-7W7B",
-  epochs = 15,
+  genName_ = "01-12T15-51-32-0gen.bson",
+  discName_ = "01-12T15-51-54-0disc.bson",
+  metaDataName = projPath * "networks/GANplots/30-18.0%-hFYb/01-12T15-53-45metaData.txt",
+  originalFolder = projPath * "networks/GANplots/30-18.0%-hFYb",
+  epochs = 30,
   valFreq = 3,
-  architectures = (
-    convNextModel(192, [3, 3, 27, 3], 0.5),
-    topologyGANdisc()
-  )
+  # architectures = (
+  #   convNextModel(192, [3, 3, 27, 3], 0.5),
+  #   topologyGANdisc()
+  # )
 )
 saveGANs(expMetaData, 0; finalSave = true) # save final models
+switchTraining(expMetaData, false) # disable model updating during validation
 GANreport(expMetaData) # create report
-#= convnext sizes
-:tiny => ([3, 3, 9, 3], [96, 192, 384, 768]),
-:small => ([3, 3, 27, 3], [96, 192, 384, 768]),
-:base => ([3, 3, 27, 3], [128, 256, 512, 1024]),
-:large => ([3, 3, 27, 3], [192, 384, 768, 1536]),
-:xlarge => ([3, 3, 27, 3], [256, 512, 1024, 2048]))
-=#

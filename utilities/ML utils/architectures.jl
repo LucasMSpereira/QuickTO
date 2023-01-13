@@ -36,18 +36,18 @@ end
 
 # Discriminator for TopologyGAN
 # https://arxiv.org/abs/2003.04685
-function topologyGANdisc()
+function topologyGANdisc(; normal = :BN)
   m1 = Chain(
     Conv((5, 5), 7 => df_dim; stride = 2, pad = SamePad()),
     leakyrelu, # h0
     Conv((5, 5), df_dim => df_dim * 2; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 2),
+    normal == :BN ? BatchNorm(df_dim * 2) : ChannelLayerNorm(df_dim * 2),
     leakyrelu, # h1
     Conv((5, 5), df_dim * 2 => df_dim * 4; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 4),
+    normal == :BN ? BatchNorm(df_dim * 4) : ChannelLayerNorm(df_dim * 4),
     leakyrelu, # h2
     Conv((5, 5), df_dim * 4 => df_dim * 8; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 8),
+    normal == :BN ? BatchNorm(df_dim * 8) : ChannelLayerNorm(df_dim * 8),
     leakyrelu, # h3
     flatten,
   )
@@ -127,6 +127,11 @@ end
 original code (pytorch): https://github.com/facebookresearch/ConvNeXt
 paper: https://arxiv.org/abs/2201.03545
 Metalhead.jl implementation https://github.com/FluxML/Metalhead.jl/blob/cc486bf00c60874de426dece97956528ce406564/src/convnets/convnext.jl
+:tiny => ([3, 3, 9, 3], [96, 192, 384, 768]),
+:small => ([3, 3, 27, 3], [96, 192, 384, 768]),
+:base => ([3, 3, 27, 3], [128, 256, 512, 1024]),
+:large => ([3, 3, 27, 3], [192, 384, 768, 1536]),
+:xlarge => ([3, 3, 27, 3], [256, 512, 1024, 2048]))
 =#
 function convNextModel(blockChannel::Int, blockRepeat::Array{Int}, maxDropPathChance::AbstractFloat)
   dropPathProb = Float32.(range(0, maxDropPathChance, sum(blockRepeat)))

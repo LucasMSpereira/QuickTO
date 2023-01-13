@@ -74,7 +74,7 @@ end
 GANmetaData(
   generator::Chain, discriminator::Chain,
   genOpt::Flux.Optimise.AbstractOptimiser, discOpt::Flux.Optimise.AbstractOptimiser,
-   myTrainConfig::trainConfig
+  myTrainConfig::trainConfig
 ) = GANmetaData(
   nnInfo(generator, optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)), MVHistory()),
   nnInfo(discriminator, optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)), MVHistory()),
