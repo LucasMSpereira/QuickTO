@@ -13,10 +13,9 @@ end
 # use NNs and batch data to obtain gradients and losses
 function GANgrads(
   metaData_, genInput, FEAinfo, realTopology
-)::Tuple{Tuple{Any}, FLoat32, Tuple{Any}, FLoat32}
+)::Tuple{Tuple{Any}, Float32, Tuple{Any}, Float32}
   logBatch = rand() < 0.1 # choose if this batch will be logged
-  gen = getGen(metaData_)
-  disc = getDisc(metaData_)
+  gen = getGen(metaData_); disc = getDisc(metaData_)
   # initialize for scope purposes
   discInputFake, foolDisc = 0f0, 0f0
   discTrueLog, discFalseLog, vfMAE, mse = 0f0, 0f0, 0f0, 0f0
@@ -29,14 +28,17 @@ function GANgrads(
     discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
     # discriminator's output for FAKE topology
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
-    foolDisc = logitBinCrossEnt(discOutFake, 0.85)
+    foolDisc = logitBinCrossEntNoise(discOutFake, 0.85)
+    # foolDisc = logitBinCrossEnt(discOutFake, 0.85)
     # generator's final loss
     # return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
     return foolDiscMult * foolDisc + mseMult * mse + vfMAEmult * vfMAE
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
-    discTrueLog = logitBinCrossEnt(discOutReal, 0.85)
-    discFalseLog = logitBinCrossEnt(discOutFake, 0.15)
+    # discTrueLog = logitBinCrossEnt(discOutReal, 0.85)
+    discTrueLog = logitBinCrossEntNoise(discOutReal, 0.85)
+    # discFalseLog = logitBinCrossEnt(discOutFake, 0.15)
+    discFalseLog = logitBinCrossEntNoise(discOutFake, 0.15)
     return discTrueLog + discFalseLog
   end
   # discriminator input with REAL topology

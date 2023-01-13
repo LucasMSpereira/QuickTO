@@ -401,6 +401,22 @@ function logitBinCrossEnt(logits, label)
   )
 end
 
+# contextual logit binary cross-entropy.
+# includes noisy label-smoothing
+function logitBinCrossEntNoise(logits, label)
+  if label < 0.5
+    return Flux.Losses.logitbinarycrossentropy(
+      logits,
+      randBetween(0, 0.15; sizeOut = (length(logits)))
+    )
+  else
+    return Flux.Losses.logitbinarycrossentropy(
+      logits,
+      randBetween(0.85, 1.0; sizeOut = (length(logits)))
+    )
+  end
+end
+
 # estimate total number of lines in project so far
 function numLines()
   sum(

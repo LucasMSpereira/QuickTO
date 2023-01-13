@@ -447,8 +447,5 @@ end
 
 # volume fraction of each topology in a batch
 function volFrac(topologyBatch::Array{Float32, 4})::Array{Float32}
-  return reshape(
-    mapslices(mean, topologyBatch; dims = [1, 2, 3]),
-    (:)
-  )
+  return [mean(topologyBatch[:, :, :, g]) for g in axes(topologyBatch, 4)]
 end

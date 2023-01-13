@@ -56,7 +56,7 @@ end
 
 ## GANmetaData APIs
 # save histories of losses
-function (ganMD::GANmetaData)(valLossHist::NTuple{2, Float64}; context = :validate)
+function (ganMD::GANmetaData)(valLossHist::NTuple{2, Float32}; context = :validate)
   if context == :validate
     push!(ganMD.lossesVals[:genValHistory], valLossHist[1])
     push!(ganMD.lossesVals[:discValHistory], valLossHist[2])
