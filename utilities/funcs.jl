@@ -175,7 +175,7 @@ function defineGroupFiles(metaData, goal)
 end
 
 # add fourth dimension to Flux data (width, height, channels, batch)
-dim4 = unsqueeze(; dims = 5)
+dim4 = unsqueeze(; dims = 4)
 
 # discard first channel of 3D array
 discardFirstChannel(x) = x[:, :, 2:end]
@@ -407,12 +407,12 @@ function logitBinCrossEntNoise(logits, label)
   if label < 0.5
     return Flux.Losses.logitbinarycrossentropy(
       logits,
-      randBetween(0, 0.15; sizeOut = (length(logits)))
+      randBetween(0, 0.15; sizeOut = (length(logits))) .|> Float32
     )
   else
     return Flux.Losses.logitbinarycrossentropy(
       logits,
-      randBetween(0.85, 1.0; sizeOut = (length(logits)))
+      randBetween(0.85, 1.0; sizeOut = (length(logits))) .|> Float32
     )
   end
 end
