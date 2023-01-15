@@ -150,12 +150,21 @@ function fixedEpochGANs(metaData)
     epoch += 1 # count training epochs
     epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
     switchTraining(metaData, true) # enable model update
-    GANepoch!(metaData, :train) # training epoch
+    # training epoch
+    if wasserstein # if using wgan
+      wganGPepoch(metaData, :train)
+    else
+      GANepoch!(metaData, :train)
+    end
     # occasionally run validation epoch
     if epoch % metaData.trainConfig.validFreq == 0
       switchTraining(metaData, false) # disable model updating during validation
       # validation epoch returning avg losses for both NNs
-      GANepoch!(metaData, :validate) |> metaData
+      if wasserstein # if using wgan
+        wganGPepoch(metaData, :validate) |> metaData
+      else
+        GANepoch!(metaData, :validate) |> metaData
+      end
       switchTraining(metaData, true) # reenable model updating after validation
       GANprints(epoch, metaData) # print information about validation
       # plot intermediate history of validations
@@ -183,15 +192,13 @@ function GANepoch!(metaData, goal)::Tuple{Float32, Float32}
   genLossHist::Float32 = 0f0
   discLossHist::Float32 = 0f0
   batchCount::Int32 = 0.0
-  countGroup::Int32 = 0
   groupFiles = defineGroupFiles(metaData, goal)
   # loop in groups of files used for current split
-  for group in groupFiles
-    countGroup += 1
+  for (groupIndex, group) in enumerate(groupFiles)
     # get loader with data for current group
     currentLoader = GANdataLoader(
       metaData, goal, group;
-      lastFileBatch = countGroup == length(groupFiles)
+      lastFileBatch = groupIndex == length(groupFiles)
     )
     # each batch of current epoch
     for currentBatch in currentLoader
@@ -200,7 +207,7 @@ function GANepoch!(metaData, goal)::Tuple{Float32, Float32}
         GC.gc(); desktop && CUDA.reclaim()
         # use NNs, and get gradients and losses for current batch
         genGrads, genLossVal, discGrads, discLossVal = GANgrads(
-          metaData, currentBatch...
+          metaData, goal, currentBatch...
         )
         if goal == :train # update NNs parameters in case of training
           Flux.Optimise.update!(metaData.genDefinition.optInfo.optState,
@@ -214,6 +221,80 @@ function GANepoch!(metaData, goal)::Tuple{Float32, Float32}
   end
   # return avg losses for current epoch
   return genLossHist/batchCount, discLossHist/batchCount
+end
+
+# epoch when using wgan
+function wganGPepoch(metaData::GANmetaData, goal::Symbol)::Tuple{Float32, Float32}
+  # initialize variables related to whole epoch
+  genLossHist::Float32 = 0f0; discLossHist::Float32 = 0f0
+  groupFiles = defineGroupFiles(metaData, goal)
+  gen = getGen(metaData); disc = getDisc(metaData)
+  # loop in groups of files used for current split
+  for (groupIndex, group) in enumerate(groupFiles)
+      # get loader with data for current group
+      currentLoader = GANdataLoader(
+          metaData, goal, group;
+          lastFileBatch = groupIndex == length(groupFiles))
+      batchState = Iterators.Stateful(Iterators.cycle(currentLoader))
+      # iterate in batches of data
+      for (genInput, FEAinfo, realTopology) in currentLoader
+        println("begin batch")
+        lossVal = 0f0; genLossVal = 0f0
+        criticIter = 1
+        GC.gc(); desktop && CUDA.reclaim()
+        for (genInput_D, FEAinfo_D, realTopology_D) in batchState
+          println("begin disc iter")
+          # generate fake topologies
+          fakeTopology = gen(genInput_D |> gpu) |> cpu |> padGen
+          # discriminator inputs with real and fake topologies
+          discInputReal = solidify(genInput_D, FEAinfo_D, realTopology_D) |> gpu
+          discInputFake = solidify(genInput_D, FEAinfo_D, fakeTopology) |> gpu
+          function wganGPloss(discOutReal, discOutFake)
+            # return mean(discOutFake) - mean(discOutReal) + 10 * gpTerm(
+            #     disc, genInput_D, FEAinfo_D, realTopology_D, fakeTopology)
+            println("in wganGPloss")
+            return mean(discOutFake) - mean(discOutReal)
+          end
+          if goal == :train
+            println("discGrads")
+            lossVal, discGrads = withgradient(
+              disc -> wganGPloss(
+                disc(discInputReal) |> cpu,
+                disc(discInputFake) |> cpu),
+              disc)
+            println("disc update")
+            Flux.Optimise.update!(
+              metaData.discDefinition.optInfo.optState, disc, discGrads[1])
+          else
+            lossVal = wganGPloss(
+              disc(discInputReal) |> cpu,
+              disc(discInputFake) |> cpu)
+          end
+          CUDA.memory_status()
+          discLossHist += lossVal
+          println("disc iter end")
+          criticIter += 1; criticIter > metaData.nCritic && break
+        end
+        if goal == :train
+          println("gen grad")
+          genLossVal, genGrads = withgradient(
+            gen -> -(solidify(
+              genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+            ) |> gpu |> disc |> cpu |> mean), gen)
+          println("gen update")
+          Flux.Optimise.update!(
+            metaData.genDefinition.optInfo.optState, gen, genGrads[1])
+        else
+            genLossVal = -(solidify(
+                genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+            ) |> gpu |> disc |> cpu |> mean)
+            genLossHist += genLossVal
+        end
+        println("batch end")
+        rand() < 0.1 && logWGANloss(metaData, lossVal, genLossVal)
+      end
+  end
+  return mean(genLossHist), mean(discLossHist)
 end
 
 # Test hyperparameter combinations with grid search

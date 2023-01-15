@@ -12,7 +12,8 @@ end
 
 # use NNs and batch data to obtain gradients and losses
 function GANgrads(
-  metaData_, genInput, FEAinfo, realTopology
+  metaData_::GANmetaData, goal::Symbol, genInput::Array{Float32},
+  FEAinfo::Array{Float32}, realTopology::Array{Float32}
 )::Tuple{Tuple{Any}, Float32, Tuple{Any}, Float32}
   logBatch = rand() < 0.1 # choose if this batch will be logged
   gen = getGen(metaData_); disc = getDisc(metaData_)
@@ -21,9 +22,9 @@ function GANgrads(
   discTrueLog, discFalseLog, vfMAE, mse = 0f0, 0f0, 0f0, 0f0
   foolDiscMult, mseMult, vfMAEmult = 0.5f0, 10f0, 10f0
   function genLoss(genOutput) # generator loss. Defined here for scope purposes
-    mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
+    # mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
     # volume fraction mean absolute error
-    vfMAE = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean
+    # vfMAE = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean
     # discriminator input with FAKE topology
     discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
     # discriminator's output for FAKE topology
@@ -32,7 +33,8 @@ function GANgrads(
     # foolDisc = logitBinCrossEnt(discOutFake, 0.85)
     # generator's final loss
     # return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
-    return foolDiscMult * foolDisc + mseMult * mse + vfMAEmult * vfMAE
+    # return foolDiscMult * foolDisc + mseMult * mse + vfMAEmult * vfMAE
+    return foolDiscMult * foolDisc - sampleVariety(genOutput)
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
     # discTrueLog = logitBinCrossEnt(discOutReal, 0.85)
@@ -44,21 +46,36 @@ function GANgrads(
   # discriminator input with REAL topology
   discInputReal = solidify(genInput, FEAinfo, realTopology)::Array{Float32, 4} |> gpu
   # get generator's loss value and gradient
-  genLossVal, genGrads = withgradient(
-    gen -> genLoss(gen(genInput |> gpu) |> cpu |> padGen), gen
-  )
-  # get discriminator's loss value and gradient
-  discLossVal, discGrads = withgradient(
-    disc -> discLoss(
+  if goal == :train
+    genLossVal, genGrads = withgradient(
+      gen -> genLoss(gen(genInput |> gpu) |> cpu |> padGen), gen
+    )
+  else
+    genLossVal = genLoss(gen(genInput |> gpu) |> cpu |> padGen)
+  end
+  if goal == :train
+    # get discriminator's loss value and gradient
+    discLossVal, discGrads = withgradient(
+      disc -> discLoss(
+          disc(discInputReal) |> cpu |> reshapeDiscOut,
+          disc(discInputFake) |> cpu |> reshapeDiscOut
+      ),
+      disc
+    )
+  else
+    discLossVal = discLoss(
         disc(discInputReal) |> cpu |> reshapeDiscOut,
         disc(discInputFake) |> cpu |> reshapeDiscOut
-    ),
-    disc
-  )
+    )
+  end
   # log histories
   logBatch && logBatchGenVals(metaData_, foolDiscMult * foolDisc, mseMult * mse, vfMAEmult * vfMAE)
   logBatch && logBatchDiscVals(metaData_, discTrueLog, discFalseLog)
-  return genGrads, genLossVal, discGrads, discLossVal
+  if goal == :train
+    return genGrads, genLossVal, discGrads, discLossVal
+  else
+    return (0,), genLossVal, (0,), discLossVal
+  end
 end
 
 # Loss for NN architectures with more than one output

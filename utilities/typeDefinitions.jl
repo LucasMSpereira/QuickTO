@@ -52,6 +52,8 @@ mutable struct GANmetaData
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
   const datasetUsed::Float64 # fraction of dataset used
+  # number of critic iters. between gen iters. when using wasserstein loss
+  nCritic::Int32
 end
 
 ## GANmetaData APIs
@@ -90,7 +92,7 @@ GANmetaData(
   else # if running in colab
     getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
   end,
-  percentageDataset
+  percentageDataset, 5
 )
 
 # Outer constructor to create object in the begining.
@@ -112,7 +114,7 @@ function GANmetaData(
       :discTest => [Float64(testLosses_[2])]
     ),
     readDataSplits(metaDataFilepath),
-    readPercentage(metaDataFilepath)
+    readPercentage(metaDataFilepath), 5
   )
 end
 

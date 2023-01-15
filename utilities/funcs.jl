@@ -332,11 +332,17 @@ function forceToMat(force)
 end
 
 function initializeHistories(_metaData)
-  push!(_metaData.discDefinition.nnValues, :discTrue, 1, 0f0)
-  push!(_metaData.discDefinition.nnValues, :discFalse, 1, 0f0)
-  push!(_metaData.genDefinition.nnValues, :foolDisc, 1, 0f0)
-  push!(_metaData.genDefinition.nnValues, :mse, 1, 0f0)
-  push!(_metaData.genDefinition.nnValues, :vfMAE, 1, 0f0)
+  if wasserstein # using wgan
+    push!(_metaData.discDefinition.nnValues, :wganLoss, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :genLoss, 1, 0f0)
+  else
+    push!(_metaData.discDefinition.nnValues, :discTrue, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :discFalse, 1, 0f0)
+    push!(_metaData.genDefinition.nnValues, :foolDisc, 1, 0f0)
+    push!(_metaData.genDefinition.nnValues, :mse, 1, 0f0)
+    push!(_metaData.genDefinition.nnValues, :vfMAE, 1, 0f0)
+  end
+  return nothing
 end
 
 # for wgan-gp loss, interpolate between fake and real topologies
@@ -386,7 +392,7 @@ function logBatchDiscVals(metaData_, discTrueVal::Float32, discFalseVal::Float32
 end
 
 # log generator batch values
-function logBatchGenVals(metaData_, foolDisc, mse, vfMAE; compRMSE = 0f0)
+function logBatchGenVals(metaData_, foolDisc, mse, vfMAE)
   newSize = length(metaData_.genDefinition.nnValues[:foolDisc]) + 1
   push!(metaData_.genDefinition.nnValues, :foolDisc, newSize, foolDisc)
   push!(metaData_.genDefinition.nnValues, :mse, newSize, mse)
@@ -404,6 +410,8 @@ end
 # contextual logit binary cross-entropy.
 # includes noisy label-smoothing
 function logitBinCrossEntNoise(logits, label)
+  @show randBetween(0.85, 1.0; sizeOut = (length(logits))) .|> Float32 |> mean
+  @show mean(logits)
   if label < 0.5
     return Flux.Losses.logitbinarycrossentropy(
       logits,
@@ -415,6 +423,13 @@ function logitBinCrossEntNoise(logits, label)
       randBetween(0.85, 1.0; sizeOut = (length(logits))) .|> Float32
     )
   end
+end
+
+# log losses from wgan model
+function logWGANloss(metaData_, _lossVal, _genLossVal)
+  newSize = length(metaData_.discDefinition.nnValues[:wganLoss]) + 1
+  push!(metaData_.discDefinition.nnValues, :wganLoss, newSize, _lossVal)
+  push!(metaData_.discDefinition.nnValues, :genLoss, newSize, _genLossVal)
 end
 
 # estimate total number of lines in project so far
@@ -528,6 +543,12 @@ function reshapeForces(predForces)
     end
   end
   return forces
+end
+
+# check for variation of certain pseudo-densities
+# across topologies in a fake batch
+function sampleVariety(genBatchOut::Array{Float32, 4})::Float32
+  return std.((genBatchOut[10, 10, 1, :], genBatchOut[40, 130, 1, :])) |> sum
 end
 
 # print real number in scientific notation
