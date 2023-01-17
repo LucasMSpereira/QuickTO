@@ -410,8 +410,7 @@ end
 # contextual logit binary cross-entropy.
 # includes noisy label-smoothing
 function logitBinCrossEntNoise(logits, label)
-  @show randBetween(0.85, 1.0; sizeOut = (length(logits))) .|> Float32 |> mean
-  @show mean(logits)
+  # @show mean(logits)
   if label < 0.5
     return Flux.Losses.logitbinarycrossentropy(
       logits,
@@ -548,7 +547,8 @@ end
 # check for variation of certain pseudo-densities
 # across topologies in a fake batch
 function sampleVariety(genBatchOut::Array{Float32, 4})::Float32
-  return std.((genBatchOut[10, 10, 1, :], genBatchOut[40, 130, 1, :])) |> sum
+  # @show isnan.(genBatchOut[10, 10, 1, :]) |> any
+  return std(genBatchOut[10, 10, 1, :]) |> sum
 end
 
 # print real number in scientific notation

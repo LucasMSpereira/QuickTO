@@ -7,7 +7,7 @@ const batchSize = 64
 const normalizeDataset = true # choose to normalize data in [-1; 1]
 const startTime = timeNow()
 # const to = TimerOutput()
-const percentageDataset = 0.05 # fraction of dataset to be used
+const percentageDataset = 0.13 # fraction of dataset to be used
 const wasserstein = false
 
 @time expMetaData = trainGANs(;
@@ -17,8 +17,8 @@ const wasserstein = false
   # discName_ = "01-12T15-51-54-0disc.bson",
   # metaDataName = projPath * "networks/GANplots/30-18.0%-hFYb/01-12T15-53-45metaData.txt",
   # originalFolder = projPath * "networks/GANplots/30-18.0%-hFYb",
-  epochs = 1,
-  valFreq = 1,
+  epochs = 2,
+  valFreq = 5,
   architectures = (
     # convNextModel(96, [3, 3, 9, 3], 0.5),
     convNextModel(192, [3, 3, 27, 3], 0.5),

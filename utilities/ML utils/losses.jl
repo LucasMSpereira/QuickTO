@@ -23,23 +23,28 @@ function GANgrads(
   foolDiscMult, mseMult, vfMAEmult = 0.5f0, 10f0, 10f0
   function genLoss(genOutput) # generator loss. Defined here for scope purposes
     # mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
+    l1 = abs.(genOutput .- realTopology) |> mean # topology l1 error
     # volume fraction mean absolute error
     # vfMAE = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean
     # discriminator input with FAKE topology
     discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
     # discriminator's output for FAKE topology
     discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
+    # println("foolDisc")
     foolDisc = logitBinCrossEntNoise(discOutFake, 0.85)
     # foolDisc = logitBinCrossEnt(discOutFake, 0.85)
     # generator's final loss
     # return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
     # return foolDiscMult * foolDisc + mseMult * mse + vfMAEmult * vfMAE
-    return foolDiscMult * foolDisc - sampleVariety(genOutput)
+    # @show sampleVariety(genOutput)
+    return foolDiscMult * foolDisc + 2 * l1
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
     # discTrueLog = logitBinCrossEnt(discOutReal, 0.85)
+    # println("discTrueLog")
     discTrueLog = logitBinCrossEntNoise(discOutReal, 0.85)
     # discFalseLog = logitBinCrossEnt(discOutFake, 0.15)
+    # println("discFalseLog")
     discFalseLog = logitBinCrossEntNoise(discOutFake, 0.15)
     return discTrueLog + discFalseLog
   end
