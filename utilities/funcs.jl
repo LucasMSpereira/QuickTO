@@ -414,12 +414,12 @@ function logitBinCrossEntNoise(logits, label)
   if label < 0.5
     return Flux.Losses.logitbinarycrossentropy(
       logits,
-      randBetween(0, 0.15; sizeOut = (length(logits))) .|> Float32
+      randBetween(0, 0.15; sizeOut = shape(logits)) .|> Float32
     )
   else
     return Flux.Losses.logitbinarycrossentropy(
       logits,
-      randBetween(0.85, 1.0; sizeOut = (length(logits))) .|> Float32
+      randBetween(0.85, 1.0; sizeOut = shape(logits)) .|> Float32
     )
   end
 end

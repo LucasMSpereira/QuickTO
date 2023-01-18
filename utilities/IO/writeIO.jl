@@ -24,7 +24,9 @@ function GANreport(metaData)
   JLDfiles = readdir(GANfolderPath; join = true) |> x -> filter(y -> y[end - 4 : end] == ".jld2", x)
   save_object(GANfolderPath * string(length(JLDfiles) + 1) * ".jld2", metaData)
   plotGANlogs(readdir(GANfolderPath; join = true) |> x -> filter(y -> y[end - 4 : end] == ".jld2", x))
-  mv(GANfolderPath * "logs/logPlots.pdf", GANfolderPath * "logPlots.pdf")
+  mv(GANfolderPath * "logs/logPlots $(GANfolderPath[end - 4 : end - 1]).pdf",
+    GANfolderPath * "logPlots $(GANfolderPath[end - 4 : end - 1]).pdf"
+  )
   return nothing
 end
 

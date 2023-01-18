@@ -303,7 +303,7 @@ function plotGANlogs(JLDpath::Vector{String})
     [discTrue, discFalse, discTrue + discFalse],
     ["discTrue", "discFalse", "discriminator loss"]
   )
-  combinePDFs(GANfolderPath * "logs", "logPlots$(GANfolderPath[end - 4 : end - 1])")
+  combinePDFs(GANfolderPath * "logs", "logPlots $(GANfolderPath[end - 4 : end - 1])")
 end
 
 function logsLines(value, name)
