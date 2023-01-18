@@ -20,10 +20,10 @@ function GANgrads(
   # initialize for scope purposes
   discInputFake, foolDisc = 0f0, 0f0
   discTrueLog, discFalseLog, vfMAE, mse = 0f0, 0f0, 0f0, 0f0
-  foolDiscMult, mseMult, vfMAEmult = 1.6f0, 25f0, 10f0
+  foolDiscMult, mseMult, vfMAEmult = 1f0, 20f0, 10f0
   function genLoss(genOutput) # generator loss. Defined here for scope purposes
     mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
-    l1 = abs.(genOutput .- realTopology) |> mean # topology l1 error
+    # l1 = abs.(genOutput .- realTopology) |> mean # topology l1 error
     # volume fraction mean absolute error
     # vfMAE = abs.(volFrac(genOutput) .- volFrac(realTopology)) |> mean
     # discriminator input with FAKE topology
@@ -36,7 +36,7 @@ function GANgrads(
     # generator's final loss
     # return logitBinCrossEnt(discOutFake, 1) + 10_000 * mse + 1 * absError
     # return foolDiscMult * foolDisc + mseMult * mse + vfMAEmult * vfMAE
-    return foolDiscMult * foolDisc + mseMult * mse + 80 * l1
+    return foolDiscMult * foolDisc + mseMult * mse
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
     # discTrueLog = logitBinCrossEnt(discOutReal, 0.85)

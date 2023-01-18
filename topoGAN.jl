@@ -6,7 +6,6 @@ include(projPath * "QTOutils.jl")
 const batchSize = 64
 const normalizeDataset = true # choose to normalize data in [-1; 1]
 const startTime = timeNow()
-# const to = TimerOutput()
 const percentageDataset = 0.11 # fraction of dataset to be used
 const wasserstein = false
 
