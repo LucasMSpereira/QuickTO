@@ -129,12 +129,12 @@ function writeGANmetaData(metaData; finalTxtPath = " ")
       write(id, "\n\tTEST: " * string(testSize))
     end
     write(id, "\n\tTOTAL: " * string(trainSize + validateSize + testSize))
-    write(id, "\n\nOPTIMISERS:" * "\n\tGENERATOR: " *
-      printOptimizer(metaData.genDefinition.optInfo.opt) * " " *
-      sciNotation(metaData.genDefinition.optInfo.opt.eta, 1) * "\n\tDISCRIMINATOR: " *
-      printOptimizer(metaData.discDefinition.optInfo.opt) * " " *
-      sciNotation(metaData.discDefinition.optInfo.opt.eta, 1) * "\n"
-    )
+    # write(id, "\n\nOPTIMISERS:" * "\n\tGENERATOR: " *
+    #   printOptimizer(metaData.genDefinition.optInfo.opt) * " " *
+    #   sciNotation(metaData.genDefinition.optInfo.opt.eta, 1) * "\n\tDISCRIMINATOR: " *
+    #   printOptimizer(metaData.discDefinition.optInfo.opt) * " " *
+    #   sciNotation(metaData.discDefinition.optInfo.opt.eta, 1) * "\n"
+    # )
     write(id, "\nTRAINING: ")
     if typeof(metaData.trainConfig) == epochTrainConfig
       write(id, "FIXED NUMBER OF EPOCHS - ", string(metaData.trainConfig.epochs))

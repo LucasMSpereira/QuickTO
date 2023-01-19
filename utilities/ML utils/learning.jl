@@ -43,19 +43,19 @@ function earlyStopCheck(trainParams)
   if isa(trainParams, GANmetaData) # in case of GAN training
     # percentage drop in generator validation loss
     genValLossPercentDrop = earlyStopCalc(
-      trainParams.lossesVals[:genValHistory],
-      trainParams.trainConfig.earlyStopQuant
+    trainParams.lossesVals[:genValHistory],
+    trainParams.trainConfig.earlyStopQuant
     )
     # percentage drop in generator validation loss
     discValLossPercentDrop = earlyStopCalc(
-      trainParams.lossesVals[:discValHistory],
-      trainParams.trainConfig.earlyStopQuant
+    trainParams.lossesVals[:discValHistory],
+    trainParams.trainConfig.earlyStopQuant
     )
     # Return percentage drop and boolean that signals if training should stop
     return (
-      genValLossPercentDrop,
-      discValLossPercentDrop,
-      prod([genValLossPercentDrop discValLossPercentDrop] .> -trainParams.trainConfig.earlyStopPercent)
+    genValLossPercentDrop,
+    discValLossPercentDrop,
+    prod([genValLossPercentDrop discValLossPercentDrop] .> -trainParams.trainConfig.earlyStopPercent)
     )
   else
     valLossPercentDrop = earlyStopCalc(trainParam.evaluations, trainParam.earlyStopQuant)
@@ -151,27 +151,19 @@ function fixedEpochGANs(metaData)
     epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
     switchTraining(metaData, true) # enable model update
     # training epoch
-    if wasserstein # if using wgan
-      wganGPepoch(metaData, :train)
-    else
-      GANepoch!(metaData, :train)
-    end
+    GANepoch!(metaData, :train)
     # occasionally run validation epoch
     if epoch % metaData.trainConfig.validFreq == 0
       switchTraining(metaData, false) # disable model updating during validation
       # validation epoch returning avg losses for both NNs
-      if wasserstein # if using wgan
-        wganGPepoch(metaData, :validate) |> metaData
-      else
-        GANepoch!(metaData, :validate) |> metaData
-      end
+      GANepoch!(metaData, :validate) |> metaData
       switchTraining(metaData, true) # reenable model updating after validation
       GANprints(epoch, metaData) # print information about validation
       # plot intermediate history of validations
       if length(metaData.lossesVals[:genValHistory]) > 1 && runningInColab == false
         plotGANValHist(
-          metaData.lossesVals, metaData.trainConfig.validFreq,
-          "intermediate"; midTraining = true
+        metaData.lossesVals, metaData.trainConfig.validFreq,
+        "intermediate"; midTraining = true
         )
       end
     end
@@ -202,21 +194,29 @@ function GANepoch!(metaData, goal)::Tuple{Float32, Float32}
     )
     # each batch of current epoch
     for currentBatch in currentLoader
-        batchCount += 1
-        # avoid GPU memory issues
-        GC.gc(); desktop && CUDA.reclaim()
-        # use NNs, and get gradients and losses for current batch
+      batchCount += 1
+      # avoid GPU memory issues
+      GC.gc(); desktop && CUDA.reclaim()
+      # use NNs, and get gradients and losses for current batch
+      if wasserstein
+        genGrads, genLossVal, discGrads, discLossVal = WGANgrads(
+          metaData, goal, currentBatch...
+        )
+      else
         genGrads, genLossVal, discGrads, discLossVal = GANgrads(
           metaData, goal, currentBatch...
         )
-        if goal == :train # update NNs parameters in case of training
-          Flux.Optimise.update!(metaData.genDefinition.optInfo.optState,
-            getGen(metaData), genGrads[1])
-          Flux.Optimise.update!(metaData.discDefinition.optInfo.optState,
-            getDisc(metaData), discGrads[1])
-        end
-        # acumulate batch losses
-        genLossHist += genLossVal; discLossHist += discLossVal
+      end
+      if goal == :train # update NNs parameters in case of training
+        Flux.Optimise.update!(metaData.genDefinition.optInfo.optState,
+          getGen(metaData), genGrads[1]
+        )
+        Flux.Optimise.update!(metaData.discDefinition.optInfo.optState,
+          getDisc(metaData), discGrads[1]
+        )
+      end
+      # acumulate batch losses
+      genLossHist += genLossVal; discLossHist += discLossVal
     end
   end
   # return avg losses for current epoch
@@ -231,68 +231,75 @@ function wganGPepoch(metaData::GANmetaData, goal::Symbol)::Tuple{Float32, Float3
   gen = getGen(metaData); disc = getDisc(metaData)
   # loop in groups of files used for current split
   for (groupIndex, group) in enumerate(groupFiles)
-      # get loader with data for current group
-      currentLoader = GANdataLoader(
-          metaData, goal, group;
-          lastFileBatch = groupIndex == length(groupFiles))
-      batchState = Iterators.Stateful(Iterators.cycle(currentLoader))
-      # iterate in batches of data
-      for (genInput, FEAinfo, realTopology) in currentLoader
-        println("begin batch")
-        lossVal = 0f0; genLossVal = 0f0
-        criticIter = 1
-        GC.gc(); desktop && CUDA.reclaim()
-        for (genInput_D, FEAinfo_D, realTopology_D) in batchState
-          println("begin disc iter")
-          # generate fake topologies
-          fakeTopology = gen(genInput_D |> gpu) |> cpu |> padGen
-          # discriminator inputs with real and fake topologies
-          discInputReal = solidify(genInput_D, FEAinfo_D, realTopology_D) |> gpu
-          discInputFake = solidify(genInput_D, FEAinfo_D, fakeTopology) |> gpu
-          function wganGPloss(discOutReal, discOutFake)
-            # return mean(discOutFake) - mean(discOutReal) + 10 * gpTerm(
-            #     disc, genInput_D, FEAinfo_D, realTopology_D, fakeTopology)
-            println("in wganGPloss")
-            return mean(discOutFake) - mean(discOutReal)
-          end
-          if goal == :train
-            println("discGrads")
-            lossVal, discGrads = withgradient(
-              disc -> wganGPloss(
-                disc(discInputReal) |> cpu,
-                disc(discInputFake) |> cpu),
-              disc)
-            println("disc update")
-            Flux.Optimise.update!(
-              metaData.discDefinition.optInfo.optState, disc, discGrads[1])
-          else
-            lossVal = wganGPloss(
-              disc(discInputReal) |> cpu,
-              disc(discInputFake) |> cpu)
-          end
-          CUDA.memory_status()
-          discLossHist += lossVal
-          println("disc iter end")
-          criticIter += 1; criticIter > metaData.nCritic && break
+    # get loader with data for current group
+    currentLoader = GANdataLoader(
+      metaData, goal, group;
+      lastFileBatch = groupIndex == length(groupFiles)
+    )
+    batchState = Iterators.Stateful(Iterators.cycle(currentLoader))
+    # iterate in batches of data
+    for (genInput, FEAinfo, _) in currentLoader
+      println("begin batch")
+      lossVal = 0f0; genLossVal = 0f0
+      criticIter = 1
+      for (genInput_D, FEAinfo_D, realTopology_D) in batchState
+        println("  begin disc iter")
+        # generate fake topologies
+        fakeTopology = gen(genInput_D |> gpu) |> cpu |> padGen
+        # discriminator inputs with real and fake topologies
+        discInputReal = solidify(genInput_D, FEAinfo_D, realTopology_D) |> gpu
+        discInputFake = solidify(genInput_D, FEAinfo_D, fakeTopology) |> gpu
+        function wganGPloss(discOutReal, discOutFake)
+          # return mean(discOutFake) - mean(discOutReal) + 10 * gpTerm(
+          # disc, genInput_D, FEAinfo_D, realTopology_D, fakeTopology)
+          println("    in wganGPloss")
+          return mean(discOutFake) - mean(discOutReal)
         end
         if goal == :train
-          println("gen grad")
-          genLossVal, genGrads = withgradient(
-            gen -> -(solidify(
-              genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
-            ) |> gpu |> disc |> cpu |> mean), gen)
-          println("gen update")
-          Flux.Optimise.update!(
-            metaData.genDefinition.optInfo.optState, gen, genGrads[1])
+          println("    discGrads")
+          lossVal, discGrads = withgradient(
+            disc -> wganGPloss(
+              disc(discInputReal) |> cpu,
+              disc(discInputFake) |> cpu),
+              disc
+          )
+          println("    disc update")
+          Flux.Optimise.update!(metaData.discDefinition.optInfo.optState, disc, discGrads[1])
         else
-            genLossVal = -(solidify(
-                genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
-            ) |> gpu |> disc |> cpu |> mean)
-            genLossHist += genLossVal
+          lossVal = wganGPloss(
+            disc(discInputReal) |> cpu,
+            disc(discInputFake) |> cpu
+          )
         end
-        println("batch end")
-        rand() < 0.1 && logWGANloss(metaData, lossVal, genLossVal)
+        GC.gc(); desktop && CUDA.reclaim()
+        discLossHist += lossVal
+        println("  disc iter end")
+        criticIter += 1; criticIter > metaData.nCritic && break
+        println("  last line")
       end
+      if goal == :train
+        println("  gen grad")
+        genLossVal, genGrads = withgradient(
+          gen -> -(solidify(
+            genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+            ) |> gpu |> disc |> cpu |> mean),
+          gen
+        )
+        println("  gen update")
+        Flux.Optimise.update!(
+          metaData.genDefinition.optInfo.optState, gen, genGrads[1]
+        )
+      else
+        genLossVal = -(solidify(
+          genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+          ) |> gpu |> disc |> cpu |> mean
+        )
+        genLossHist += genLossVal
+      end
+      GC.gc(); desktop && CUDA.reclaim()
+      println("batch end")
+      # rand() < 0.1 && logWGANloss(metaData, lossVal, genLossVal)
+    end
   end
   return mean(genLossHist), mean(discLossHist)
 end
@@ -301,7 +308,7 @@ end
 function hyperGrid(
   architecture::Function, kernelSizes::Array{Int}, activFunctions,
   channels::Array{Int}, data, FEparams, lossFun, optimizer; earlyStop = 0.0, multiLossArch = false
-)
+  )
   # Number of combinations
   numCombs = length(kernelSizes)*length(activFunctions)*length(channels)
   println("\nTesting $numCombs combination(s) of hyperparameters.")
@@ -366,134 +373,134 @@ end
 
 #= Determine shape of test targets when generating report
 for stress CNN in hiperGrid() function. Shape changes
-if multi-output models are used =#
-function shapeTargetloadCNN(multiLossArch::Bool, testData)
-  if multiLossArch
-    testTargets = zeros(Float32, (2, 4, size(testData.data.label[1], 2)))
-    for sample in 1:size(testData.data.label[1], 2)
-      [testTargets[:, col, sample] .= testData.data.label[col][:, sample] for col in 1:4]
-    end
-  else
-    testTargets = reshape(testData.data.label.parent,(2, 4, :))
-  end
-  return testTargets
-end
-
-# test different learning rates and generate plot
-function testRates!(rates, trainConfigs, trianLoader, validateLoader, opt, architecture, modelParams, lossFun)
-  # Multiple instances to store histories
-  for (currentRate, parameters) in zip(rates, trainConfigs)
-    trainEpochs!(architecture(modelParams...), trianLoader, validateLoader, opt(currentRate), parameters, lossFun)
-  end
-  plotLearnTries(trainConfigs, rates)
-end
-
-# Get outputs from generator and discriminator
-
-
-#= Train ML model with early stopping.
-In predetermined intervals of epochs, evaluate
-the current model and print validation loss.=#
-function trainEarlyStop!(
-  mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun;
-  modelName = timeNow(), saveModel = true, FEAloss = false
-)
-  epoch = 1
-  while true
-    # In case of learning rate scheduling, apply decay at certain interval of epochs
-    if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
-      opt.eta *= trainParams.decay
-      println("New learning rate: ", sciNotation(opt.eta, 1))
-    end
-    # Batch training and parameter update
-    if FEAloss
-      batchTrainFEAloss!(trainDataLoader, mlModel, opt)
-    else
-      batchTrain!(trainDataLoader, mlModel, opt, lossFun)
-    end
-    # Evaluate model and print info at certain epoch intervals
-    if epoch % trainParams.validFreq == 0
-      epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun; FEAloss = FEAloss)
-      if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
-        valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
-        # @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
-        if stopTraining
-          println("EARLY STOPPING")
-          break
+  if multi-output models are used =#
+    function shapeTargetloadCNN(multiLossArch::Bool, testData)
+      if multiLossArch
+        testTargets = zeros(Float32, (2, 4, size(testData.data.label[1], 2)))
+        for sample in 1:size(testData.data.label[1], 2)
+          [testTargets[:, col, sample] .= testData.data.label[col][:, sample] for col in 1:4]
         end
       else
-        println("No early stop check.")
+        testTargets = reshape(testData.data.label.parent,(2, 4, :))
+      end
+      return testTargets
+    end
+    
+    # test different learning rates and generate plot
+    function testRates!(rates, trainConfigs, trianLoader, validateLoader, opt, architecture, modelParams, lossFun)
+      # Multiple instances to store histories
+      for (currentRate, parameters) in zip(rates, trainConfigs)
+        trainEpochs!(architecture(modelParams...), trianLoader, validateLoader, opt(currentRate), parameters, lossFun)
+      end
+      plotLearnTries(trainConfigs, rates)
+    end
+    
+    # Get outputs from generator and discriminator
+    
+    
+    #= Train ML model with early stopping.
+    In predetermined intervals of epochs, evaluate
+    the current model and print validation loss.=#
+    function trainEarlyStop!(
+      mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun;
+      modelName = timeNow(), saveModel = true, FEAloss = false
+      )
+      epoch = 1
+      while true
+        # In case of learning rate scheduling, apply decay at certain interval of epochs
+        if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
+          opt.eta *= trainParams.decay
+          println("New learning rate: ", sciNotation(opt.eta, 1))
+        end
+        # Batch training and parameter update
+        if FEAloss
+          batchTrainFEAloss!(trainDataLoader, mlModel, opt)
+        else
+          batchTrain!(trainDataLoader, mlModel, opt, lossFun)
+        end
+        # Evaluate model and print info at certain epoch intervals
+        if epoch % trainParams.validFreq == 0
+          epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun; FEAloss = FEAloss)
+          if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
+            valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
+            # @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
+            if stopTraining
+              println("EARLY STOPPING")
+              break
+            end
+          else
+            println("No early stop check.")
+          end
+        end
+        epoch % 300 == 0 && intermediateSave(mlModel) # intermediate save checkpoint
+        epoch += 1
+      end
+      if saveModel
+        cpu_model = cpu(mlModel)
+        BSON.@save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
       end
     end
-    epoch % 300 == 0 && intermediateSave(mlModel) # intermediate save checkpoint
-    epoch += 1
-  end
-  if saveModel
-    cpu_model = cpu(mlModel)
-    BSON.@save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
-  end
-end
-
-#= Train ML model for certain number of epochs.
-In predetermined intervals of epochs, evaluate the current
-model and print validation loss.=#
-function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun; save = false)
-  # Epochs loop
-  for epoch in 1:trainParams.epochs
-    # In case of learning rate scheduling, apply decay at certain interval of epochs
-    if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
-      opt.eta *= trainParams.decay
-      println("New learning rate: ", sciNotation(opt.eta, 1))
-    end
-    # Batch training and parameter update
-    batchTrain!(trainDataLoader, mlModel, opt, lossFun)
-    # Evaluate model and print info at certain epoch intervals
-    epoch % trainParams.validFreq == 0 && epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun)
-  end
-  if save
-    cpu_model = cpu(mlModel)
-    BSON.@save "./networks/models/$(timeNow()).bson" cpu_model
-  end
-end
-
-function trainGANs(;
-  genOpt_, discOpt_, genName_ = " ", discName_ = " ",
-  metaDataName = "", originalFolder = " ", epochs,
-  valFreq, architectures = :none
-)
-  # object with metadata. includes instantiation of NNs,
-  # optimisers, dataloaders, training configurations,
-  # validation histories, and test losses
-  if genName_ == " " # new NNs
-    metaData = GANmetaData(
-      if architectures == :none
-        (U_SE_ResNetGenerator(), topologyGANdisc())
-      else
-        architectures
-      end...,
-      genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
-    )
-    # create folder to store plots and report
-    global GANfolderPath = createGANfolder(metaData)::String
-  else # use input path to load previous models
-    # create folder to store plots and report
-    global GANfolderPath = originalFolder
-    metaData = GANmetaData(
-      loadGANs(genName_, discName_)...,
-      genOpt_, discOpt_, epochTrainConfig(epochs, valFreq),
-      metaDataName
-    )
-  end
-  initializeHistories(metaData)
-  println("Starting training ", timeNow())
-  if typeof(metaData.trainConfig) == earlyStopTrainConfig
-    @suppress_err earlyStopGANs(metaData) # train with early-stopping
-  elseif typeof(metaData.trainConfig) == epochTrainConfig
-    @suppress_err fixedEpochGANs(metaData) # train for fixed number of epochs
-  end
-  println("Testing ", timeNow())
-  switchTraining(metaData, false) # disable model updating during test
-  @suppress_err metaData(GANepoch!(metaData, :test); context = :test) # test GANs
-  switchTraining(metaData, true) # reenable model updating
-  return metaData
-end
+    
+    #= Train ML model for certain number of epochs.
+      In predetermined intervals of epochs, evaluate the current
+      model and print validation loss.=#
+      function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun; save = false)
+        # Epochs loop
+        for epoch in 1:trainParams.epochs
+          # In case of learning rate scheduling, apply decay at certain interval of epochs
+          if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
+            opt.eta *= trainParams.decay
+            println("New learning rate: ", sciNotation(opt.eta, 1))
+          end
+          # Batch training and parameter update
+          batchTrain!(trainDataLoader, mlModel, opt, lossFun)
+          # Evaluate model and print info at certain epoch intervals
+          epoch % trainParams.validFreq == 0 && epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun)
+        end
+        if save
+          cpu_model = cpu(mlModel)
+          BSON.@save "./networks/models/$(timeNow()).bson" cpu_model
+        end
+      end
+      
+      function trainGANs(;
+        genOpt_, discOpt_, genName_ = " ", discName_ = " ",
+        metaDataName = "", originalFolder = " ", epochs,
+        valFreq, architectures = :none
+        )
+        # object with metadata. includes instantiation of NNs,
+        # optimisers, dataloaders, training configurations,
+        # validation histories, and test losses
+        if genName_ == " " # new NNs
+          metaData = GANmetaData(
+          if architectures == :none
+            (U_SE_ResNetGenerator(), topologyGANdisc())
+          else
+            architectures
+          end...,
+          genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
+          )
+          # create folder to store plots and report
+          global GANfolderPath = createGANfolder(metaData)::String
+        else # use input path to load previous models
+          # create folder to store plots and report
+          global GANfolderPath = originalFolder
+          metaData = GANmetaData(
+          loadGANs(genName_, discName_)...,
+          genOpt_, discOpt_, epochTrainConfig(epochs, valFreq),
+          metaDataName
+          )
+        end
+        initializeHistories(metaData)
+        println("Starting training ", timeNow())
+        if typeof(metaData.trainConfig) == earlyStopTrainConfig
+          @suppress_err earlyStopGANs(metaData) # train with early-stopping
+        elseif typeof(metaData.trainConfig) == epochTrainConfig
+          @suppress_err fixedEpochGANs(metaData) # train for fixed number of epochs
+        end
+        println("Testing ", timeNow())
+        switchTraining(metaData, false) # disable model updating during test
+        @suppress_err metaData(GANepoch!(metaData, :test); context = :test) # test GANs
+        switchTraining(metaData, true) # reenable model updating
+        return metaData
+      end

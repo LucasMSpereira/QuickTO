@@ -4,4 +4,4 @@ experiments.jl
 convnext.jl
 mwe.jl
 wganGPmwe.jl
-gpTermMWEenv
+MWEs

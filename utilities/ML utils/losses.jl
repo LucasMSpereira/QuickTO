@@ -15,12 +15,12 @@ function GANgrads(
   metaData_::GANmetaData, goal::Symbol, genInput::Array{Float32},
   FEAinfo::Array{Float32}, realTopology::Array{Float32}
 )::Tuple{Tuple{Any}, Float32, Tuple{Any}, Float32}
-  logBatch = rand() < 0.1 # choose if this batch will be logged
+  logBatch = rand() < 0.2 # choose if this batch will be logged
   gen = getGen(metaData_); disc = getDisc(metaData_)
   # initialize for scope purposes
   discInputFake, foolDisc = 0f0, 0f0
   discTrueLog, discFalseLog, vfMAE, mse = 0f0, 0f0, 0f0, 0f0
-  foolDiscMult, mseMult, vfMAEmult = 1f0, 20f0, 10f0
+  foolDiscMult, mseMult, vfMAEmult = 1.6f0, 10f0, 10f0
   function genLoss(genOutput) # generator loss. Defined here for scope purposes
     mse = (genOutput .- realTopology) .^ 2 |> mean # topology MSE
     # l1 = abs.(genOutput .- realTopology) |> mean # topology l1 error
@@ -29,8 +29,7 @@ function GANgrads(
     # discriminator input with FAKE topology
     discInputFake = solidify(genInput, FEAinfo, genOutput) |> gpu
     # discriminator's output for FAKE topology
-    discOutFake = discInputFake |> disc |> cpu |> reshapeDiscOut
-    # println("foolDisc")
+    discOutFake = discInputFake |> disc |> cpu
     foolDisc = logitBinCrossEntNoise(discOutFake, 0.85)
     # foolDisc = logitBinCrossEnt(discOutFake, 0.85)
     # generator's final loss
@@ -39,19 +38,14 @@ function GANgrads(
     return foolDiscMult * foolDisc + mseMult * mse
   end
   function discLoss(discOutReal, discOutFake) # discriminator loss
-    # discTrueLog = logitBinCrossEnt(discOutReal, 0.85)
-    # println("discTrueLog")
     discTrueLog = logitBinCrossEntNoise(discOutReal, 0.85)
-    # discFalseLog = logitBinCrossEnt(discOutFake, 0.15)
-    # println("discFalseLog")
     discFalseLog = logitBinCrossEntNoise(discOutFake, 0.15)
-    return discTrueLog + discFalseLog
+    return 0.1 * (discTrueLog + discFalseLog)
   end
   # discriminator input with REAL topology
   discInputReal = solidify(genInput, FEAinfo, realTopology)::Array{Float32, 4} |> gpu
-  # get generator's loss value and gradient
   if goal == :train
-    genLossVal, genGrads = withgradient(
+    genLossVal, genGrads = withgradient( # get generator's loss value and gradient
       gen -> genLoss(gen(genInput |> gpu) |> cpu |> padGen), gen
     )
   else
@@ -61,20 +55,65 @@ function GANgrads(
     # get discriminator's loss value and gradient
     discLossVal, discGrads = withgradient(
       disc -> discLoss(
-          disc(discInputReal) |> cpu |> reshapeDiscOut,
-          disc(discInputFake) |> cpu |> reshapeDiscOut
+          disc(discInputReal) |> cpu,
+          disc(discInputFake) |> cpu
       ),
       disc
     )
   else
     discLossVal = discLoss(
-        disc(discInputReal) |> cpu |> reshapeDiscOut,
-        disc(discInputFake) |> cpu |> reshapeDiscOut
+        disc(discInputReal) |> cpu,
+        disc(discInputFake) |> cpu
     )
   end
   # log histories
   logBatch && logBatchGenVals(metaData_, foolDiscMult * foolDisc, mseMult * mse, vfMAEmult * vfMAE)
   logBatch && logBatchDiscVals(metaData_, discTrueLog, discFalseLog)
+  if goal == :train
+    return genGrads, genLossVal, discGrads, discLossVal
+  else
+    return (0,), genLossVal, (0,), discLossVal
+  end
+end
+
+function WGANgrads(
+  metaData_::GANmetaData, goal::Symbol, genInput::Array{Float32},
+  FEAinfo::Array{Float32}, realTopology::Array{Float32}
+)::Tuple{Tuple{Any}, Float32, Tuple{Any}, Float32}
+  logBatch = rand() < 0.2 # choose if this batch will be logged
+  gen = getGen(metaData_); disc = getDisc(metaData_)
+  genLossVal = 0f0; discLossVal = 0f0
+  fakeTopology = zeros(Float32, (51, 141, 1, size(genInput, 4)))
+  function genLoss(gen)
+    fakeTopology = gen(genInput |> gpu) |> cpu |> padGen
+    return -(solidify(genInput, FEAinfo, fakeTopology) |> gpu |> disc |> cpu |> mean)
+  end
+  function wganGPloss(discOutReal, discOutFake)
+    return mean(discOutFake) - mean(discOutReal)
+  end
+  if goal == :train
+    genLossVal, genGrads = withgradient(gen -> genLoss(gen), gen)
+    # discriminator inputs with real and fake topologies
+    discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
+    discInputFake = solidify(genInput, FEAinfo, fakeTopology) |> gpu
+    discLossVal, discGrads = withgradient(
+      disc -> wganGPloss(
+        disc(discInputReal) |> cpu, disc(discInputFake) |> cpu),
+        disc
+    )
+  else
+    discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
+    discInputFake = solidify(
+      genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+    ) |> gpu
+    discLossVal = wganGPloss(
+      disc(discInputReal) |> cpu, disc(discInputFake) |> cpu
+    )
+    genLossVal = -(solidify(
+      genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+    ) |> gpu |> disc |> cpu |> mean)
+  end
+  logBatch && logWGANloss(metaData_, genLossVal, discLossVal)
   if goal == :train
     return genGrads, genLossVal, discGrads, discLossVal
   else

@@ -272,37 +272,52 @@ end
 function plotGANlogs(JLDpath::Vector{String})
   mkpath(GANfolderPath * "logs") # folder for PDFs with plots
   CairoMakie.activate!()
-  foolDisc, mse, vfMAE, discTrue, discFalse = Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[]
-  for filePath in JLDpath
-    savedStruct = 0
-    @suppress_err savedStruct = load(filePath)["single_stored_object"]
-    push!(foolDisc, get(savedStruct.genDefinition.nnValues[:foolDisc])[2][2 : end])
-    push!(mse, get(savedStruct.genDefinition.nnValues[:mse])[2][2 : end])
-    push!(vfMAE, get(savedStruct.genDefinition.nnValues[:vfMAE])[2][2 : end])
-    push!(discTrue, get(savedStruct.discDefinition.nnValues[:discTrue])[2][2 : end])
-    push!(discFalse, get(savedStruct.discDefinition.nnValues[:discFalse])[2][2 : end])
+  if haskey(load(JLDpath[1])["single_stored_object"].discDefinition.nnValues, :discTrue)
+    foolDisc, mse, vfMAE, discTrue, discFalse = Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[]
+    for filePath in JLDpath
+      savedStruct = 0
+      @suppress_err savedStruct = load(filePath)["single_stored_object"]
+      push!(foolDisc, get(savedStruct.genDefinition.nnValues[:foolDisc])[2][2 : end])
+      push!(mse, get(savedStruct.genDefinition.nnValues[:mse])[2][2 : end])
+      push!(vfMAE, get(savedStruct.genDefinition.nnValues[:vfMAE])[2][2 : end])
+      push!(discTrue, get(savedStruct.discDefinition.nnValues[:discTrue])[2][2 : end])
+      push!(discFalse, get(savedStruct.discDefinition.nnValues[:discFalse])[2][2 : end])
+    end
+    foolDisc = foolDisc |> Iterators.flatten |> collect
+    mse = mse |> Iterators.flatten |> collect
+    vfMAE = vfMAE |> Iterators.flatten |> collect
+    discTrue = discTrue |> Iterators.flatten |> collect
+    discFalse = discFalse |> Iterators.flatten |> collect
+    logsLines( # all intermediate terms
+      [foolDisc, mse, vfMAE, discTrue, discFalse],
+      ["foolDisc", "mse", "vfMAE", "discTrue", "discFalse"]
+    )
+    logsLines( # both final losses
+      [foolDisc + mse + vfMAE, discTrue + discFalse],
+      ["generator loss", "discriminator loss"]
+    )
+    logsLines( # intermediate and final generator values
+      [foolDisc, mse, vfMAE, foolDisc + mse + vfMAE],
+      ["foolDisc", "mse", "vfMAE", "generator loss"]
+    )
+    logsLines( # intermediate and final discriminator values
+      [discTrue, discFalse, discTrue + discFalse],
+      ["discTrue", "discFalse", "discriminator loss"]
+    )
+  else
+    genLoss, WGANloss = Vector{Float32}[], Vector{Float32}[]
+    for filePath in JLDpath
+      savedStruct = 0
+      @suppress_err savedStruct = load(filePath)["single_stored_object"]
+      push!(WGANloss, get(savedStruct.discDefinition.nnValues[:wganLoss])[2][2 : end])
+      push!(genLoss, get(savedStruct.discDefinition.nnValues[:genLoss])[2][2 : end])
+    end
+    genLoss = genLoss |> Iterators.flatten |> collect
+    WGANloss = WGANloss |> Iterators.flatten |> collect
+    logsLines([genLoss, WGANloss], ["genLoss", "WGANloss"])
+    logsLines([genLoss], ["genLoss"])
+    logsLines([WGANloss], ["WGANloss"])
   end
-  foolDisc = foolDisc |> Iterators.flatten |> collect
-  mse = mse |> Iterators.flatten |> collect
-  vfMAE = vfMAE |> Iterators.flatten |> collect
-  discTrue = discTrue |> Iterators.flatten |> collect
-  discFalse = discFalse |> Iterators.flatten |> collect
-  logsLines( # all intermediate terms
-    [foolDisc, mse, vfMAE, discTrue, discFalse],
-    ["foolDisc", "mse", "vfMAE", "discTrue", "discFalse"]
-  )
-  logsLines( # both final losses
-    [foolDisc + mse + vfMAE, discTrue + discFalse],
-    ["generator loss", "discriminator loss"]
-  )
-  logsLines( # intermediate and final generator values
-    [foolDisc, mse, vfMAE, foolDisc + mse + vfMAE],
-    ["foolDisc", "mse", "vfMAE", "generator loss"]
-  )
-  logsLines( # intermediate and final discriminator values
-    [discTrue, discFalse, discTrue + discFalse],
-    ["discTrue", "discFalse", "discriminator loss"]
-  )
   combinePDFs(GANfolderPath * "logs", "logPlots $(GANfolderPath[end - 4 : end - 1])")
 end
 

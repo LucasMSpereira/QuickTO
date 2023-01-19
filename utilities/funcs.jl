@@ -409,7 +409,7 @@ end
 
 # contextual logit binary cross-entropy.
 # includes noisy label-smoothing
-function logitBinCrossEntNoise(logits, label)
+function logitBinCrossEntNoise(logits::Array{Float32, 2}, label::AbstractFloat)::Float32
   # @show mean(logits)
   if label < 0.5
     return Flux.Losses.logitbinarycrossentropy(
@@ -425,10 +425,10 @@ function logitBinCrossEntNoise(logits, label)
 end
 
 # log losses from wgan model
-function logWGANloss(metaData_, _lossVal, _genLossVal)
+function logWGANloss(metaData_, _genLossVal, _lossVal)
   newSize = length(metaData_.discDefinition.nnValues[:wganLoss]) + 1
-  push!(metaData_.discDefinition.nnValues, :wganLoss, newSize, _lossVal)
   push!(metaData_.discDefinition.nnValues, :genLoss, newSize, _genLossVal)
+  push!(metaData_.discDefinition.nnValues, :wganLoss, newSize, _lossVal)
 end
 
 # estimate total number of lines in project so far
