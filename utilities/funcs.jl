@@ -548,7 +548,9 @@ end
 # across topologies in a fake batch
 function sampleVariety(genBatchOut::Array{Float32, 4})::Float32
   # @show isnan.(genBatchOut[10, 10, 1, :]) |> any
-  return std(genBatchOut[10, 10, 1, :]) |> sum
+  # return std(genBatchOut[10, 10, 1, :]) |> sum
+  means = mean(genBatchOut; dims = [1, 2, 3])
+  return maximum(means) - minimum(means)
 end
 
 # print real number in scientific notation

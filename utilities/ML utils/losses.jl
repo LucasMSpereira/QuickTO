@@ -86,7 +86,9 @@ function WGANgrads(
   fakeTopology = zeros(Float32, (51, 141, 1, size(genInput, 4)))
   function genLoss(gen)
     fakeTopology = gen(genInput |> gpu) |> cpu |> padGen
-    return -(solidify(genInput, FEAinfo, fakeTopology) |> gpu |> disc |> cpu |> mean)
+    return -(solidify(genInput, FEAinfo, fakeTopology) |> gpu |> disc |> cpu |> mean) -
+    4000f0 * sampleVariety(fakeTopology) +
+    2000f0 * ((fakeTopology .- realTopology) .^ 2 |> mean)
   end
   function wganGPloss(discOutReal, discOutFake)
     return mean(discOutFake) - mean(discOutReal)
@@ -102,16 +104,17 @@ function WGANgrads(
         disc
     )
   else
+    fakeTopology = gen(genInput |> gpu) |> cpu |> padGen
     discInputReal = solidify(genInput, FEAinfo, realTopology) |> gpu
     discInputFake = solidify(
-      genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
+      genInput, FEAinfo, fakeTopology
     ) |> gpu
     discLossVal = wganGPloss(
       disc(discInputReal) |> cpu, disc(discInputFake) |> cpu
     )
-    genLossVal = -(solidify(
-      genInput, FEAinfo, gen(genInput |> gpu) |> cpu |> padGen
-    ) |> gpu |> disc |> cpu |> mean)
+    genLossVal = -(discInputFake |> disc |> cpu |> mean) -
+    4000f0 * sampleVariety(fakeTopology) +
+    4000f0 * ((fakeTopology .- realTopology) .^ 2 |> mean)
   end
   logBatch && logWGANloss(metaData_, genLossVal, discLossVal)
   if goal == :train
