@@ -46,6 +46,10 @@ function GANdata(metaData::GANmetaData, group, goal::Symbol, _lastFileBatch::Boo
     genInput = mapslices(normalizeVals, genInput; dims = [1 2])
     FEAinfo = mapslices(normalizeVals, FEAinfo; dims = [1 2])
     topology = mapslices(normalizeVals, topology; dims = [1 2])
+    @show statsum(genInput)
+    @show statsum(FEAinfo)
+    @show statsum(topology)
+    error()
   end
   return DataLoader( # return data loader to iterate in batches
     (

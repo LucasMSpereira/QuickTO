@@ -164,13 +164,12 @@ function cornerPos(topo)
 end
 
 # define 'groupFiles' variable in GANepoch!(). Used to get indices
-# to acces files for training/validation
+# to access files for training/validation
 function defineGroupFiles(metaData, goal)
   if goal != :test # if training or validating
-    return DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 13)
+    return DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 20)
   else
-    # if testing, variable 'groupFiles' has no effect.
-    return [datasetPath * "/data/test"] # Return placeholder
+    return [datasetPath * "/data/test"]
   end
 end
 
@@ -489,6 +488,10 @@ function pathEleList(aStar)
   return list
 end
 
+pen_l1(x::AbstractArray) = sum(abs, x)
+
+pen_l2(x::AbstractArray) = sum(abs2, x)
+
 # generate string representing optimizer
 function printOptimizer(optimizer)
   optString = string(typeof(optimizer))
@@ -547,8 +550,6 @@ end
 # check for variation of certain pseudo-densities
 # across topologies in a fake batch
 function sampleVariety(genBatchOut::Array{Float32, 4})::Float32
-  # @show isnan.(genBatchOut[10, 10, 1, :]) |> any
-  # return std(genBatchOut[10, 10, 1, :]) |> sum
   means = mean(genBatchOut; dims = [1, 2, 3])
   return maximum(means) - minimum(means)
 end

@@ -61,19 +61,20 @@ end
 # PatchGAN discriminator
 # https://arxiv.org/abs/1611.07004
 # https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
-function patchGANdisc(; normal = :BN)
+function patchGANdisc(; normal = :BN, tiny = false)
+  beginChannel = tiny == true ? 32 : 64
   return Chain(
-    Conv((4, 4), 7 => 64, leakyrelu; stride = 2, pad = 4),
-    Conv((4, 4), 64 => 128; stride = 2, pad = 4),
-    normal == :BN ? BatchNorm(128) : ChannelLayerNorm(128),
+    Conv((4, 4), 7 => beginChannel, leakyrelu; stride = 2, pad = 4),
+    Conv((4, 4), beginChannel => beginChannel * 2; stride = 2, pad = 4),
+    normal == :BN ? BatchNorm(beginChannel * 2) : ChannelLayerNorm(beginChannel * 2),
     leakyrelu,
-    Conv((4, 4), 128 => 256; stride = 2, pad = 5),
-    normal == :BN ? BatchNorm(256) : ChannelLayerNorm(256),
+    Conv((4, 4), beginChannel * 2 => beginChannel * 4; stride = 2, pad = 5),
+    normal == :BN ? BatchNorm(beginChannel * 4) : ChannelLayerNorm(beginChannel * 4),
     leakyrelu,
-    Conv((4, 4), 256 => 512; pad = 4),
-    normal == :BN ? BatchNorm(512) : ChannelLayerNorm(512),
+    Conv((4, 4), beginChannel * 4 => beginChannel * 8; pad = 4),
+    normal == :BN ? BatchNorm(beginChannel * 8) : ChannelLayerNorm(beginChannel * 8),
     leakyrelu,
-    Conv((4, 4), 512 => 1; pad = SamePad()),
+    Conv((4, 4), beginChannel * 8 => 1; pad = SamePad()),
     flatten
   ) |> gpu
 end
