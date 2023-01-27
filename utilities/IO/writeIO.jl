@@ -22,6 +22,8 @@ function GANreport(metaData)
   combinePDFs(GANfolderPath[1 : end - 1], modelName * " report"; leavePDFout = "report")
   writeGANmetaData(metaData; finalTxtPath = GANfolderPath)
   JLDfiles = readdir(GANfolderPath; join = true) |> x -> filter(y -> y[end - 4 : end] == ".jld2", x)
+  metaData.genDefinition.neuralNetwork = cpu(metaData.genDefinition.neuralNetwork)
+  metaData.discDefinition.neuralNetwork = cpu(metaData.discDefinition.neuralNetwork)
   save_object(GANfolderPath * string(length(JLDfiles) + 1) * ".jld2", metaData)
   plotGANlogs(readdir(GANfolderPath; join = true) |> x -> filter(y -> y[end - 4 : end] == ".jld2", x))
   mv(GANfolderPath * "logs/logPlots $(GANfolderPath[end - 4 : end - 1]).pdf",

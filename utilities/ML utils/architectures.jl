@@ -36,19 +36,24 @@ end
 
 # Discriminator for TopologyGAN
 # https://arxiv.org/abs/2003.04685
-function topologyGANdisc(; normal = :BN)
+function topologyGANdisc(; normal = :BN, drop = false)
   m1 = Chain(
+    BatchNorm(7),
     Conv((5, 5), 7 => df_dim; stride = 2, pad = SamePad()),
     leakyrelu, # h0
+    drop ? Dropout(0.5) : identity,
     Conv((5, 5), df_dim => df_dim * 2; stride = 2, pad = SamePad()),
     normal == :BN ? BatchNorm(df_dim * 2) : ChannelLayerNorm(df_dim * 2),
     leakyrelu, # h1
+    drop ? Dropout(0.5) : identity,
     Conv((5, 5), df_dim * 2 => df_dim * 4; stride = 2, pad = SamePad()),
     normal == :BN ? BatchNorm(df_dim * 4) : ChannelLayerNorm(df_dim * 4),
     leakyrelu, # h2
+    drop ? Dropout(0.5) : identity,
     Conv((5, 5), df_dim * 4 => df_dim * 8; stride = 2, pad = SamePad()),
     normal == :BN ? BatchNorm(df_dim * 8) : ChannelLayerNorm(df_dim * 8),
     leakyrelu, # h3
+    drop ? Dropout(0.5) : identity,
     flatten,
   )
   m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
@@ -64,6 +69,7 @@ end
 function patchGANdisc(; normal = :BN, tiny = false)
   beginChannel = tiny == true ? 32 : 64
   return Chain(
+    BatchNorm(7),
     Conv((4, 4), 7 => beginChannel, leakyrelu; stride = 2, pad = 4),
     Conv((4, 4), beginChannel => beginChannel * 2; stride = 2, pad = 4),
     normal == :BN ? BatchNorm(beginChannel * 2) : ChannelLayerNorm(beginChannel * 2),
@@ -134,6 +140,7 @@ function U_SE_ResNetGenerator(; sizeChain = 32)
     BatchNorm(gf_dim), ### d3
   )
   return Chain(
+    BatchNorm(3),
     Conv((5, 5), 3 => gf_dim; stride = 2, pad = (8, 7)), ### e1
     SkipConnection(d3e1, (mx, x) -> cat(mx, x, dims = 3)), # concat d3 e1, ### d3
     relu,
@@ -164,14 +171,13 @@ function convNextModel(blockChannel::Int, blockRepeat::Array{Int}, maxDropPathCh
       step,
       if block == 0
         Chain(
+          BatchNorm(3),
           Conv((4, 4), 3 => channelSequence[index]; stride = 4),
-          # x -> Flux.normalise(x; dims = ndims(x) - 1),
           ChannelLayerNorm(channelSequence[index]),
         )
       else
         Chain(
           ChannelLayerNorm(channelSequence[index - 1]),
-          # x -> Flux.normalise(x; dims = ndims(x) - 1),
           Conv((2, 2), channelSequence[index - 1] => channelSequence[index]; stride = 2)
         )
       end

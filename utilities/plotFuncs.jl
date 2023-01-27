@@ -304,19 +304,28 @@ function plotGANlogs(JLDpath::Vector{String})
       [discTrue, discFalse, discTrue + discFalse],
       ["discTrue", "discFalse", "discriminator loss"]
     )
-  else
-    genLoss, WGANloss = Vector{Float32}[], Vector{Float32}[]
+  else # wgan was used
+    criticOutFake, criticOutReal, genDoutFake, mse = Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[]
     for filePath in JLDpath
       savedStruct = 0
       @suppress_err savedStruct = load(filePath)["single_stored_object"]
-      push!(WGANloss, get(savedStruct.discDefinition.nnValues[:wganLoss])[2][2 : end])
-      push!(genLoss, get(savedStruct.discDefinition.nnValues[:genLoss])[2][2 : end])
+      push!(criticOutFake, get(savedStruct.discDefinition.nnValues[:criticOutFake])[2][2 : end])
+      push!(criticOutReal, get(savedStruct.discDefinition.nnValues[:criticOutReal])[2][2 : end])
+      push!(genDoutFake, get(savedStruct.discDefinition.nnValues[:genDoutFake])[2][2 : end])
+      push!(mse, get(savedStruct.discDefinition.nnValues[:mse])[2][2 : end])
     end
-    genLoss = genLoss |> Iterators.flatten |> collect
-    WGANloss = WGANloss |> Iterators.flatten |> collect
-    logsLines([genLoss, WGANloss], ["genLoss", "WGANloss"])
-    logsLines([genLoss], ["genLoss"])
-    logsLines([WGANloss], ["WGANloss"])
+    criticOutFake = criticOutFake |> Iterators.flatten |> collect
+    criticOutReal = criticOutReal |> Iterators.flatten |> collect
+    genDoutFake = genDoutFake |> Iterators.flatten |> collect
+    mse = mse |> Iterators.flatten |> collect
+    logsLines([criticOutFake, criticOutReal, mse, genDoutFake],
+      ["criticOutFake", "criticOutReal", "mse", "genDoutFake"]
+    )
+    logsLines([criticOutFake - criticOutReal, genDoutFake + mse], ["critic loss", "generator loss"])
+    logsLines([genDoutFake, mse, genDoutFake + mse], ["genDoutFake", "mse", "generator loss"])
+    logsLines([criticOutFake, criticOutReal, criticOutFake - criticOutReal],
+      ["criticOutFake", "criticOutReal", "critic loss"]
+    )
   end
   combinePDFs(GANfolderPath * "logs", "logPlots $(GANfolderPath[end - 4 : end - 1])")
 end

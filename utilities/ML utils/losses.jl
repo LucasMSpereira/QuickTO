@@ -80,26 +80,22 @@ function WGANgrads(
   metaData_::GANmetaData, goal::Symbol, genInput::Array{Float32},
   FEAinfo::Array{Float32}, realTopology::Array{Float32}
 )::Tuple{Tuple{Any}, Float32, Tuple{Any}, Float32}
-  logBatch = rand() < 0.3 # choose if this batch will be logged
+  logBatch = rand() < 0.5 # choose if this batch will be logged
   gen = getGen(metaData_); disc = getDisc(metaData_)
   genLossVal, discLossVal, genDoutFake = 0f0, 0f0, 0f0
-  variety, mse, vfMAE, discTrue, L2 = 0f0, 0f0, 0f0, 0f0, 0f0
-  genDoutFakeMult, varietyMult = 1f0, 2000f0
-  mseMult, vfMAEMult, L2mult = 2000f0, 16000f0, 0.5f0
+  mse, discReal, discFake = 0f0, 0f0, 0f0
+  genDoutFakeMult, mseMult = 2f0, 4000f0
   fakeTopology = zeros(Float32, (51, 141, 1, size(genInput, 4)))
   function genLoss(gen)
     fakeTopology = gen(genInput |> gpu) |> cpu |> padGen
     genDoutFake = solidify(genInput, FEAinfo, fakeTopology) |> gpu |> disc |> cpu |> mean
-    variety = sampleVariety(fakeTopology)
-    vfMAE = abs.(volFrac(fakeTopology) .- volFrac(realTopology)) |> mean
+    genDoutFake = sign(genDoutFake) * sqrt(abs(genDoutFake))
     mse = (fakeTopology .- realTopology) .^ 2 |> mean
-    return -genDoutFakeMult * genDoutFake - varietyMult * variety +
-    mseMult * mse + vfMAEMult * vfMAE# + Float32(sum(pen_l1, Flux.params(gen)))
+    return -genDoutFakeMult * genDoutFake + mseMult * mse
   end
   function wganGPloss(discOutReal, discOutFake)
-    L2 = sum(pen_l2, Flux.params(disc)) |> Float32
-    discTrue = mean(discOutReal)
-    return mean(discOutFake) - discTrue + L2mult * L2
+    discReal = mean(discOutReal); discFake = mean(discOutFake)
+    return discFake - discReal
   end
   if goal == :train
     genLossVal, genGrads = withgradient(gen -> genLoss(gen), gen)
@@ -118,20 +114,17 @@ function WGANgrads(
     discLossVal = wganGPloss(
       disc(discInputReal) |> cpu, disc(discInputFake) |> cpu
     )
-    genDoutFake = discInputFake |> disc |> cpu |> mean
-    variety = sampleVariety(fakeTopology)
-    mse = (fakeTopology .- realTopology) .^ 2 |> mean
-    vfMAE = abs.(volFrac(fakeTopology) .- volFrac(realTopology)) |> mean
-    genLossVal = -genDoutFakeMult * genDoutFake - varietyMult * variety +
-    mseMult * mse + vfMAEMult * vfMAE# + Float32(sum(pen_l1, Flux.params(gen)))
+    genLossVal = genLoss(gen)
   end
   if logBatch
-    println("genDoutFake: ", -genDoutFakeMult * genDoutFake,
-      "   variety: ", - varietyMult * variety,
-      "   mse: ", mseMult * mse, "   vfMAE: ", vfMAEMult * vfMAE,
-      "   discTrue: ", discTrue, "   L2: ", L2mult * L2
+    rand() < 0.5 && println("genDoutFake: ", -genDoutFakeMult * genDoutFake,
+      "   mse: ", mseMult * mse, "   discReal: ", discReal,
+      "   discFake: ", discFake
     )
-    logWGANloss(metaData_, genLossVal, discLossVal)
+    logWGANloss(
+      metaData_, discFake, discReal,
+      -genDoutFakeMult * genDoutFake, mseMult * mse
+    )
   end
   if goal == :train
     return genGrads, genLossVal, discGrads, discLossVal

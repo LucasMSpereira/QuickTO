@@ -332,8 +332,10 @@ end
 
 function initializeHistories(_metaData)
   if wasserstein # using wgan
-    push!(_metaData.discDefinition.nnValues, :wganLoss, 1, 0f0)
-    push!(_metaData.discDefinition.nnValues, :genLoss, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :criticOutFake, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :criticOutReal, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :genDoutFake, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :mse, 1, 0f0)
   else
     push!(_metaData.discDefinition.nnValues, :discTrue, 1, 0f0)
     push!(_metaData.discDefinition.nnValues, :discFalse, 1, 0f0)
@@ -424,10 +426,15 @@ function logitBinCrossEntNoise(logits::Array{Float32, 2}, label::AbstractFloat):
 end
 
 # log losses from wgan model
-function logWGANloss(metaData_, _genLossVal, _lossVal)
-  newSize = length(metaData_.discDefinition.nnValues[:wganLoss]) + 1
-  push!(metaData_.discDefinition.nnValues, :genLoss, newSize, _genLossVal)
-  push!(metaData_.discDefinition.nnValues, :wganLoss, newSize, _lossVal)
+function logWGANloss(
+  metaData_, cOutFake::Float32, cOutReal::Float32,
+  generatorDoutFake::Float32, MSEerror::Float32
+)
+  newSize = length(metaData_.discDefinition.nnValues[:criticOutFake]) + 1
+  push!(metaData_.discDefinition.nnValues, :criticOutFake, newSize, cOutFake)
+  push!(metaData_.discDefinition.nnValues, :criticOutReal, newSize, cOutReal)
+  push!(metaData_.discDefinition.nnValues, :genDoutFake, newSize, generatorDoutFake)
+  push!(metaData_.discDefinition.nnValues, :mse, newSize, MSEerror)
 end
 
 # estimate total number of lines in project so far
