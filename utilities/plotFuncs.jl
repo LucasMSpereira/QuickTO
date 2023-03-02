@@ -318,22 +318,21 @@ function plotGANlogs(JLDpath::Vector{String})
     criticOutReal = criticOutReal |> Iterators.flatten |> collect
     genDoutFake = genDoutFake |> Iterators.flatten |> collect
     mse = mse |> Iterators.flatten |> collect
-    logsLines([criticOutFake, criticOutReal, mse, genDoutFake],
-      ["criticOutFake", "criticOutReal", "mse", "genDoutFake"]
-    )
-    logsLines([criticOutFake - criticOutReal, genDoutFake + mse], ["critic loss", "generator loss"])
-    logsLines([genDoutFake, mse, genDoutFake + mse], ["genDoutFake", "mse", "generator loss"])
-    logsLines([criticOutFake, criticOutReal, criticOutFake - criticOutReal],
-      ["criticOutFake", "criticOutReal", "critic loss"]
-    )
+    logsLines([criticOutFake - criticOutReal], ["critic loss"])
+    logsLines([genDoutFake + mse], ["generator loss"])
+    logsLines([mse], ["mse"])
+    logsLines([genDoutFake], ["genDoutFake"])
+    logsLines([criticOutFake],["discFake"])
+    logsLines([criticOutReal], ["discReal"])
   end
   combinePDFs(GANfolderPath * "logs", "logPlots $(GANfolderPath[end - 4 : end - 1])")
 end
 
 function logsLines(value, name)
   f = Figure(resolution = (1500, 800)); # create makie figure
-  ax = Axis(f[1:3, 1], # axis to draw on
-    xlabel = "Batches", title = "Logged values")
+  ax = Axis(f[1:3, 1], xlabel = "Batches", # axis to draw on
+    title = "Logged values",
+  )
   # line plots of logs
   [lines!(ax, val; label = str) for (val, str) in zip(value, name)]
   # legend

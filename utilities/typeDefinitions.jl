@@ -28,7 +28,7 @@ end
 
 earlyStopTrainConfig(
   validFreq; decay = 0.0, schedule = 0, evaluations = Float64[],
-  earlyStopQuant = 3, earlyStopPercent = 6
+  earlyStopQuant = 3, earlyStopPercent = 1
 ) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations,
   earlyStopQuant, earlyStopPercent
 )
@@ -181,3 +181,7 @@ function ChannelLayerNorm(sz::Integer, λ = identity; ϵ = 1.0f-6)
   return ChannelLayerNorm(diag, ϵ)
 end
 (m::ChannelLayerNorm)(x) = m.diag(Flux.normalise(x; dims = ndims(x) - 1, ϵ = m.ϵ))
+
+struct addNoise end
+Flux.@functor addNoise
+# (m::addNoise)(x::AbstractArray) = 

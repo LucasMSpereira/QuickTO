@@ -34,7 +34,8 @@ end
 
 # calculate earlystop
 function earlyStopCalc(validationHistory, earlyStopQuant)
-  (validationHistory[end] - validationHistory[end - earlyStopQuant]) / validationHistory[end - earlyStopQuant] * 100
+  (validationHistory[end] - validationHistory[end - earlyStopQuant]) /
+  validationHistory[end - earlyStopQuant] * 100
 end
 
 # Check for early stop: if validation loss didn't
@@ -43,19 +44,13 @@ function earlyStopCheck(trainParams)
   if isa(trainParams, GANmetaData) # in case of GAN training
     # percentage drop in generator validation loss
     genValLossPercentDrop = earlyStopCalc(
-    trainParams.lossesVals[:genValHistory],
-    trainParams.trainConfig.earlyStopQuant
-    )
-    # percentage drop in generator validation loss
-    discValLossPercentDrop = earlyStopCalc(
-    trainParams.lossesVals[:discValHistory],
-    trainParams.trainConfig.earlyStopQuant
+      trainParams.lossesVals[:genValHistory],
+      trainParams.trainConfig.earlyStopQuant
     )
     # Return percentage drop and boolean that signals if training should stop
     return (
-    genValLossPercentDrop,
-    discValLossPercentDrop,
-    prod([genValLossPercentDrop discValLossPercentDrop] .> -trainParams.trainConfig.earlyStopPercent)
+      genValLossPercentDrop,
+      genValLossPercentDrop > -trainParams.trainConfig.earlyStopPercent
     )
   else
     valLossPercentDrop = earlyStopCalc(trainParam.evaluations, trainParam.earlyStopQuant)
@@ -68,37 +63,58 @@ end
 function earlyStopGANs(metaData)
   epoch = 0
   checkpointTime = now()
+  pastTrainLosses = (0f0, 0f0)
   while true # loop in epochs
     epoch += 1 # count training epochs
-    epoch == 1 && println("Epoch       Generator loss    Discriminator loss")
-    # trains for one epoch
-    GANepoch!(metaData, :train)
-    # occasionally run validation epoch and check for early-stopping
+    epoch == 1 && println("Epoch    Generator loss    Critic loss")
+    switchTraining(metaData, true) # guarantee model update
+    # training epoch
+    pastTrainLosses = GANepoch!(metaData, :train)
+    # occasionally run validation epoch
     if epoch % metaData.trainConfig.validFreq == 0
       switchTraining(metaData, false) # disable model updating during validation
       # validation epoch returning avg losses for both NNs
       GANepoch!(metaData, :validate) |> metaData
-      # print information about validation
       switchTraining(metaData, true) # reenable model updating after validation
-      # after enough validations, start performing early-stop check
-      if length(metaData.lossesVals[:genValHistory]) > metaData.trainConfig.earlyStopQuant
-        # percentage drops in losses and boolean indicating to stop training
-        genValLossPercentDrop, discValLossPercentDrop, earlyStopping = earlyStopCheck(metaData)
-        # print validation and early-stop information
-        GANprints(epoch, metaData; earlyStopVals = (genValLossPercentDrop, discValLossPercentDrop))
-        if earlyStopping
-          println("EARLY-STOPPING")
-          saveGANs(metaData, epoch; finalSave = true)
-          break
+      # Early stop
+      if length(metaData.lossesVals[:discValHistory]) > metaData.trainConfig.earlyStopQuant
+        # Check for early stop criterion
+        genValLossPercentDrop, stopTraining = earlyStopCheck(metaData)
+        epoch == metaData.trainConfig.earlyStopQuant + 1 && println(
+          "Time               Gen. val/train   Critic val/train   Early stop"
+        )
+        println(
+          rpad(timeNow(), 19),
+          rpad("$(round(Int,
+            (metaData.lossesVals[:genValHistory][end] / pastTrainLosses[1]) * 100
+          ))%", 17),
+          rpad("$(round(Int,
+            (metaData.lossesVals[:discValHistory][end] / pastTrainLosses[2]) * 100
+          ))%", 19),
+          "$(round(genValLossPercentDrop; digits = 1))%/",
+          -metaData.trainConfig.earlyStopPercent, "%"
+        )
+        if stopTraining
+          println("EARLY STOPPING ", timeNow()); break
         end
-      else # not checking for early-stop yet
-        GANprints(epoch, metaData) # print just validation information
+      else
+        println(rpad(epoch, 9),
+          rpad(sciNotation(metaData.lossesVals[:genValHistory][end], 3), 18),
+          sciNotation(metaData.lossesVals[:discValHistory][end], 3)
+        )
+      end
+      # plot intermediate history of validations
+      if length(metaData.lossesVals[:genValHistory]) > 1 && runningInColab == false
+        plotGANValHist(metaData.lossesVals, metaData.trainConfig.validFreq,
+          "intermediate"; midTraining = true
+        )
       end
     end
     # save checkpoints of the models if certain amount of time passed
-    if floor(now() - checkpointTime, Dates.Hour) >= Dates.Hour(3)
-      checkpointTime = now()
-      saveGANs(metaData, epoch)
+    if floor(now() - checkpointTime, Dates.Hour) >= Dates.Hour(3) && epoch != metaData.trainConfig.epochs
+      checkpointTime = now() # update checkpoint time reference
+      saveGANs(metaData, epoch) # save models and txt file with metadata
+      writeGANmetaData(metaData)
     end
   end
 end
@@ -156,6 +172,7 @@ function fixedEpochGANs(metaData)
     if epoch % metaData.trainConfig.validFreq == 0
       switchTraining(metaData, false) # disable model updating during validation
       # validation epoch returning avg losses for both NNs
+      println("validation")
       GANepoch!(metaData, :validate) |> metaData
       switchTraining(metaData, true) # reenable model updating after validation
       GANprints(epoch, metaData) # print information about validation
@@ -465,20 +482,20 @@ for stress CNN in hiperGrid() function. Shape changes
       
       function trainGANs(;
         genOpt_, discOpt_, genName_ = " ", discName_ = " ",
-        metaDataName = "", originalFolder = " ", epochs,
-        valFreq, architectures = :none
+        metaDataName = "", originalFolder = " ",
+        architectures = :none, trainConfig
         )
         # object with metadata. includes instantiation of NNs,
         # optimisers, dataloaders, training configurations,
         # validation histories, and test losses
         if genName_ == " " # new NNs
           metaData = GANmetaData(
-          if architectures == :none
-            (U_SE_ResNetGenerator(), topologyGANdisc())
-          else
-            architectures
-          end...,
-          genOpt_, discOpt_, epochTrainConfig(epochs, valFreq)
+            if architectures == :none
+              (U_SE_ResNetGenerator(), topologyGANdisc())
+            else
+              architectures
+            end...,
+            genOpt_, discOpt_, trainConfig
           )
           # create folder to store plots and report
           global GANfolderPath = createGANfolder(metaData)::String
@@ -486,9 +503,9 @@ for stress CNN in hiperGrid() function. Shape changes
           # create folder to store plots and report
           global GANfolderPath = originalFolder
           metaData = GANmetaData(
-          loadGANs(genName_, discName_)...,
-          genOpt_, discOpt_, epochTrainConfig(epochs, valFreq),
-          metaDataName
+            loadGANs(genName_, discName_)...,
+            genOpt_, discOpt_, trainConfig,
+            metaDataName
           )
         end
         initializeHistories(metaData)

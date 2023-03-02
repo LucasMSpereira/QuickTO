@@ -80,21 +80,22 @@ function WGANgrads(
   metaData_::GANmetaData, goal::Symbol, genInput::Array{Float32},
   FEAinfo::Array{Float32}, realTopology::Array{Float32}
 )::Tuple{Tuple{Any}, Float32, Tuple{Any}, Float32}
-  logBatch = rand() < 0.5 # choose if this batch will be logged
+  logBatch = rand() < 0.4 # choose if this batch will be logged
   gen = getGen(metaData_); disc = getDisc(metaData_)
   genLossVal, discLossVal, genDoutFake = 0f0, 0f0, 0f0
   mse, discReal, discFake = 0f0, 0f0, 0f0
-  genDoutFakeMult, mseMult = 2f0, 4000f0
+  genDoutFakeMult, mseMult = 40f0, 4000f0
   fakeTopology = zeros(Float32, (51, 141, 1, size(genInput, 4)))
   function genLoss(gen)
     fakeTopology = gen(genInput |> gpu) |> cpu |> padGen
-    genDoutFake = solidify(genInput, FEAinfo, fakeTopology) |> gpu |> disc |> cpu |> mean
-    genDoutFake = sign(genDoutFake) * sqrt(abs(genDoutFake))
+    genDoutFake = solidify(
+      genInput, FEAinfo, fakeTopology
+    ) |> gpu |> disc |> cpu |> mean |> smoothSqrt
     mse = (fakeTopology .- realTopology) .^ 2 |> mean
     return -genDoutFakeMult * genDoutFake + mseMult * mse
   end
   function wganGPloss(discOutReal, discOutFake)
-    discReal = mean(discOutReal); discFake = mean(discOutFake)
+    discReal = smoothSqrt(mean(discOutReal)); discFake = smoothSqrt(mean(discOutFake))
     return discFake - discReal
   end
   if goal == :train
@@ -117,7 +118,7 @@ function WGANgrads(
     genLossVal = genLoss(gen)
   end
   if logBatch
-    rand() < 0.5 && println("genDoutFake: ", -genDoutFakeMult * genDoutFake,
+    rand() < 0.2 && println("genDoutFake: ", -genDoutFakeMult * genDoutFake,
       "   mse: ", mseMult * mse, "   discReal: ", discReal,
       "   discFake: ", discFake
     )

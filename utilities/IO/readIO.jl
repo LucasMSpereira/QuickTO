@@ -121,9 +121,14 @@ end
 
 # load previous GAN models
 function loadGANs(genName, discName)
+  gen = convNextModel(192, [3, 3, 27, 3], 0.5)
+  disc = topologyGANdisc(; drop = 0.3)
   BSON.@load datasetPath * "data/checkpoints/" * genName cpuGenerator
   BSON.@load datasetPath * "data/checkpoints/" * discName cpuDiscriminator
-  return (cpuGenerator, cpuDiscriminator) .|> gpu
+  return (
+    Flux.loadmodel!(gen, cpuGenerator),
+    Flux.loadmodel!(disc, cpuDiscriminator),
+  )
 end
 
 # load saved generator

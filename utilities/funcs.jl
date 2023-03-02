@@ -608,6 +608,9 @@ end
 # concatenate multiple 2D or 3D arrays in the 3rd dimension
 solidify(x...) = cat(x...; dims = 3)
 
+# slow down loss modulus increase
+smoothSqrt(x::Float32)::Float32 = sign(x) * sqrt(abs(x))
+
 # statistical summary of a numerical array
 function statsum(arr)
   println(size(arr))

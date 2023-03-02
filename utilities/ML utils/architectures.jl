@@ -36,24 +36,24 @@ end
 
 # Discriminator for TopologyGAN
 # https://arxiv.org/abs/2003.04685
-function topologyGANdisc(; normal = :BN, drop = false)
+function topologyGANdisc(; normal = :BN, drop = 0.0)
   m1 = Chain(
     BatchNorm(7),
     Conv((5, 5), 7 => df_dim; stride = 2, pad = SamePad()),
     leakyrelu, # h0
-    drop ? Dropout(0.5) : identity,
+    drop > 0.0 ? Dropout(drop) : identity,
     Conv((5, 5), df_dim => df_dim * 2; stride = 2, pad = SamePad()),
     normal == :BN ? BatchNorm(df_dim * 2) : ChannelLayerNorm(df_dim * 2),
     leakyrelu, # h1
-    drop ? Dropout(0.5) : identity,
+    drop > 0.0 ? Dropout(drop) : identity,
     Conv((5, 5), df_dim * 2 => df_dim * 4; stride = 2, pad = SamePad()),
     normal == :BN ? BatchNorm(df_dim * 4) : ChannelLayerNorm(df_dim * 4),
     leakyrelu, # h2
-    drop ? Dropout(0.5) : identity,
+    drop > 0.0 ? Dropout(drop) : identity,
     Conv((5, 5), df_dim * 4 => df_dim * 8; stride = 2, pad = SamePad()),
     normal == :BN ? BatchNorm(df_dim * 8) : ChannelLayerNorm(df_dim * 8),
     leakyrelu, # h3
-    drop ? Dropout(0.5) : identity,
+    drop > 0.0 ? Dropout(drop) : identity,
     flatten,
   )
   m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
