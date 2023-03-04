@@ -652,21 +652,22 @@ end
 # using trained models, create plot including
 # generator input, and generated and real topologies
 function trainedSamples(
-  imageAmount::Int, samplesPerImage::Int, gen::Chain;
-  goal = :save, split = :train
+  imageAmount::Int, samplesPerImage::Int, gen::Chain, NNtype::String;
+  goal = :save, split = :training
 )
-  # dataset
-    # first file - used in training
-    # last file - validation, but still varied
-    # test - unseen type of support
   sampleAmount = imageAmount * samplesPerImage
-  if split == :training
+  if split == :training # file used in training
     sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[1]
-  elseif split == :validation
+    print(sampleSource)
+  elseif split == :validation # file used in validation, but still varied
     sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end]
-  elseif split == :test
+    print(sampleSource)
+  elseif split == :test # file with unseen type of support
     sampleSource = datasetPath * "data/test"
+  else
+    error("Wrong 'split' kwarg in 'trainedSamples()'.")
   end
+  randID = 0
   # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
   # smallDataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
   denseDataDict, MLdataDict = denseInfoFromGANdataset(sampleSource, sampleAmount)
@@ -683,27 +684,28 @@ function trainedSamples(
   imgWidth = 1300
   fig = Figure(resolution = (imgWidth, 700)) # makie figure
   colSize = round(Int, (0.9 * imgWidth) / 4); rowHeight = round(Int, colSize * (50/140))
-  Label(fig[1, 1], "FEM inputs"; lineheight = 0.9)
+  Label(fig[1, 1], "FEM inputs"; lineheight = 0.6)
   Label(fig[1, 2], "von Mises")
   Label(fig[1, 3], "Fake topology"); Label(fig[1, 4], "Real topology")
+  [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:4]
   for (batchIndex, gIn) in enumerate(dataBatch)
     fakeTopology = gen(gIn |> gpu) |> cpu |> padGen # use generator
     for sample in 1:samplesPerImage # each sample in current image
       sampleID = samplesPerImage * (batchIndex - 1) + sample
-      [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:4]
       ## FEA intputs (supports and loads)
       FEAaxis = Axis(fig[sample + 1, 1]; height = rowHeight)
       hidespines!(FEAaxis); hidedecorations!(FEAaxis)
       limits!(FEAaxis, 1, FEAparams.meshSize[1], 1, FEAparams.meshSize[2])
       FEAaxis.yreversed = true
       heatmap!(FEAaxis, # plot supports
-        suppToBinary(denseDataDict[:denseSupport][:, :, sampleID])[2]' |> Array
+        suppToBinary(denseDataDict[:denseSupport][:, :, sampleID])[2]' |> Array,
+        colormap = :bluesreds
       )
       plotForce( # plot forces
         FEAparams, denseDataDict[:force][:, :, sampleID],
         fig, (2, 3), (2, 4); topologyGANtest = true,
         newAxis = FEAaxis, paintArrow = :orange,
-        arrowWidth = 3, arrowHead = 20, includeText = false
+        arrowWidth = 2, arrowHead = 15, includeText = false
       )
       ## VM
       vmAxis = Axis(fig[sample + 1, 2]; height = rowHeight)
@@ -723,7 +725,13 @@ function trainedSamples(
     end
     if goal == :save # save image file as pdf
       CairoMakie.activate!()
-      Makie.save(projPath * "networks/resultPlots/$batchIndex.pdf", fig)
+      if batchIndex == 1
+        randID = rand(1:9999)
+        mkdir(
+          "./networks/resultPlots/$randID $split $NNtype"
+        )
+      end
+      Makie.save(projPath * "networks/resultPlots/$randID $split $NNtype/$batchIndex.pdf", fig)
     elseif goal == :display
       GLMakie.activate!()
       display(fig)
