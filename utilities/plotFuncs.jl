@@ -73,12 +73,10 @@ function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; exte
     )
     Colorbar(fig[4, 2], trueTopoHeatmap)
     trueTopoAxis.yreversed = true; trueTopoAxis.height = rowHeight
-    genInput = dim4(
-      solidify( # concatenate input channels
-        dataDict_[:vf][:, :, sample],
-        dataDict_[:vm][:, :, sample],
-        dataDict_[:energy][:, :, sample]
-      )
+    genInput = solidify( # concatenate input channels
+      dataDict_[:vf][:, :, :, sample],
+      dataDict_[:vm][:, :, :, sample],
+      dataDict_[:energy][:, :, :, sample]
     )
     # optional data normalization in [-1; 1]
     normalizeDataset && (genInput = mapslices(normalizeVals, genInput; dims = [1 2]))
@@ -130,6 +128,20 @@ function loadCNNtestPlots(
     plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
   end
   combinePDFs(path, finalName)
+end
+
+function logsLines(value, name)
+  f = Figure(resolution = (1500, 800)); # create makie figure
+  ax = Axis(f[1:3, 1], xlabel = "Batches", # axis to draw on
+    title = "Logged values",
+  )
+  # line plots of logs
+  [lines!(ax, val; label = str) for (val, str) in zip(value, name)]
+  # legend
+  t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
+  Legend(f[1, 2][1, 1], ax)
+  colsize!(f.layout, 2, Fixed(160))
+  Makie.save(GANfolderPath * "logs/$(rand(1:9999)).pdf", f) # save pdf
 end
 
 # Generate pdf with list of hyperparameters used to train model.
@@ -211,7 +223,8 @@ function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
   newAxis = "true", paintArrow = :black, paintText = :black,
   alignText = (:left, :center), axisHeight = 0,
-  topologyGANtest = false, arrowWidth = 1.5, arrowHead = 1.5
+  topologyGANtest = false, arrowWidth = 1.5,
+  arrowHead = 1.5, includeText = True
 )
   if typeof(forces) <: Tuple
     forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
@@ -253,18 +266,20 @@ function plotForce(
     linecolor = paintArrow, arrowcolor = paintArrow,
     linewidth = arrowWidth, arrowsize = arrowHead
   )
-  text!(#axis,
-    loadXcoord, loadYcoord,
-    text = ["1", "2"], color = :white
-  )
-  # text with values of force components
-  f1 = "Forces (N):\n1: $(round(Int, forceMat[1, 3])); $(round(Int, forceMat[1, 4]))\n"
-  f2 = "2: $(round(Int, forceMat[2, 3])); $(round(Int, forceMat[2, 4]))"
-  t = Axis(fig[textPos[1], textPos[2]]); hidespines!(t); hidedecorations!(t)
-  text!(t,
-      f1*f2; color = paintText,
-      align = alignText, offset = (-60, 0)
-  )
+  if includeText
+    text!(
+      loadXcoord, loadYcoord,
+      text = ["1", "2"], color = :white
+    )
+    # text with values of force components
+    f1 = "Forces (N):\n1: $(round(Int, forceMat[1, 3])); $(round(Int, forceMat[1, 4]))\n"
+    f2 = "2: $(round(Int, forceMat[2, 3])); $(round(Int, forceMat[2, 4]))"
+    t = Axis(fig[textPos[1], textPos[2]]); hidespines!(t); hidedecorations!(t)
+    text!(t,
+        f1*f2; color = paintText,
+        align = alignText, offset = (-60, 0)
+    )
+  end
   return axis
 end
 
@@ -326,20 +341,6 @@ function plotGANlogs(JLDpath::Vector{String})
     logsLines([criticOutReal], ["discReal"])
   end
   combinePDFs(GANfolderPath * "logs", "logPlots $(GANfolderPath[end - 4 : end - 1])")
-end
-
-function logsLines(value, name)
-  f = Figure(resolution = (1500, 800)); # create makie figure
-  ax = Axis(f[1:3, 1], xlabel = "Batches", # axis to draw on
-    title = "Logged values",
-  )
-  # line plots of logs
-  [lines!(ax, val; label = str) for (val, str) in zip(value, name)]
-  # legend
-  t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
-  Legend(f[1, 2][1, 1], ax)
-  colsize!(f.layout, 2, Fixed(160))
-  Makie.save(GANfolderPath * "logs/$(rand(1:9999)).pdf", f) # save pdf
 end
 
 # create line plots of GAN validation histories.
@@ -646,4 +647,87 @@ function textConfig(l)
   l.axis.attributes.tellwidth = false
   l.axis.attributes.halign = :center
   l.axis.attributes.width = 300
+end
+
+# using trained models, create plot including
+# generator input, and generated and real topologies
+function trainedSamples(
+  imageAmount::Int, samplesPerImage::Int, gen::Chain;
+  goal = :save, split = :train
+)
+  # dataset
+    # first file - used in training
+    # last file - validation, but still varied
+    # test - unseen type of support
+  sampleAmount = imageAmount * samplesPerImage
+  if split == :training
+    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[1]
+  elseif split == :validation
+    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end]
+  elseif split == :test
+    sampleSource = datasetPath * "data/test"
+  end
+  # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
+  # smallDataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
+  denseDataDict, MLdataDict = denseInfoFromGANdataset(sampleSource, sampleAmount)
+  # tensor initializers
+  genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
+  topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
+  genInput, FEAinfo, topology = groupGANdata!(
+    genInput, FEAinfo, topology, MLdataDict; sampleAmount = 0
+  )
+  # discard first position of arrays (initialization)
+  genInput, _, _ = remFirstSample.((genInput, FEAinfo, topology))
+  dataBatch = DataLoader(genInput; batchsize = samplesPerImage, parallel = true)
+  # each image
+  imgWidth = 1300
+  fig = Figure(resolution = (imgWidth, 700)) # makie figure
+  colSize = round(Int, (0.9 * imgWidth) / 4); rowHeight = round(Int, colSize * (50/140))
+  Label(fig[1, 1], "FEM inputs"; lineheight = 0.9)
+  Label(fig[1, 2], "von Mises")
+  Label(fig[1, 3], "Fake topology"); Label(fig[1, 4], "Real topology")
+  for (batchIndex, gIn) in enumerate(dataBatch)
+    fakeTopology = gen(gIn |> gpu) |> cpu |> padGen # use generator
+    for sample in 1:samplesPerImage # each sample in current image
+      sampleID = samplesPerImage * (batchIndex - 1) + sample
+      [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:4]
+      ## FEA intputs (supports and loads)
+      FEAaxis = Axis(fig[sample + 1, 1]; height = rowHeight)
+      hidespines!(FEAaxis); hidedecorations!(FEAaxis)
+      limits!(FEAaxis, 1, FEAparams.meshSize[1], 1, FEAparams.meshSize[2])
+      FEAaxis.yreversed = true
+      heatmap!(FEAaxis, # plot supports
+        suppToBinary(denseDataDict[:denseSupport][:, :, sampleID])[2]' |> Array
+      )
+      plotForce( # plot forces
+        FEAparams, denseDataDict[:force][:, :, sampleID],
+        fig, (2, 3), (2, 4); topologyGANtest = true,
+        newAxis = FEAaxis, paintArrow = :orange,
+        arrowWidth = 3, arrowHead = 20, includeText = false
+      )
+      ## VM
+      vmAxis = Axis(fig[sample + 1, 2]; height = rowHeight)
+      vmAxis.yreversed = true; hidespines!(vmAxis); hidedecorations!(vmAxis)
+      heatmap!(vmAxis, denseDataDict[:vm][sampleID]' |> Array)
+      ## fakeTopology
+      fakeTopoAxis = Axis(fig[sample + 1, 3]; height = rowHeight)
+      heatmap!(fakeTopoAxis, fakeTopology[:, :, 1, sample]' |> Array)
+      hidespines!(fakeTopoAxis); hidedecorations!(fakeTopoAxis)
+      ## true topology
+      trueTopoAxis = Axis(fig[sample + 1, 4]; height = rowHeight)
+      heatmap!(trueTopoAxis,
+        denseDataDict[:topologies][:, :, sampleID]' |> Array
+      )
+      hidespines!(trueTopoAxis); hidedecorations!(trueTopoAxis)
+      trueTopoAxis.yreversed = true
+    end
+    if goal == :save # save image file as pdf
+      CairoMakie.activate!()
+      Makie.save(projPath * "networks/resultPlots/$batchIndex.pdf", fig)
+    elseif goal == :display
+      GLMakie.activate!()
+      display(fig)
+      return Nothing
+    end
+  end
 end
