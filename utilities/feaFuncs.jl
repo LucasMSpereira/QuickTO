@@ -446,6 +446,6 @@ function topologyCompliance(
 end
 
 # volume fraction of each topology in a batch
-function volFrac(topologyBatch::Array{Float32, 4})
-  [mean(topologyBatch[:, :, :, sample]) for sample in axes(topologyBatch, 4)]
+function volFrac(topologyBatch::Array{Float32, 4})::Array{Float32}
+  return [mean(topologyBatch[:, :, :, g]) for g in axes(topologyBatch, 4)]
 end

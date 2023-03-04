@@ -1,28 +1,6 @@
 # Builders for different NN architectures
 
-# Discriminator for TopologyGAN
-# https://arxiv.org/abs/2003.04685
-function topologyGANdisc()
-  m1 = Chain(
-    Conv((5, 5), 7 => df_dim; stride = 2, pad = SamePad()),
-    leakyrelu, # h0
-    Conv((5, 5), df_dim => df_dim * 2; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 2),
-    leakyrelu, # h1
-    Conv((5, 5), df_dim * 2 => df_dim * 4; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 4),
-    leakyrelu, # h2
-    Conv((5, 5), df_dim * 4 => df_dim * 8; stride = 2, pad = SamePad()),
-    BatchNorm(df_dim * 8),
-    leakyrelu, # h3
-    flatten,
-  )
-  m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
-  m2 = Chain(
-    Dense(m1size => 1) # h4 (don't need sigmoid)
-  )
-  return Chain(m1, m2) |> gpu
-end
+
 
 # loadCNN structure 14. Predict positions and components of loads from displacement field
 function multiOutputs(kernel, activ, ch)
@@ -54,6 +32,57 @@ function multiOutputs(kernel, activ, ch)
     Chain(Dense(m1size => m1size ÷ 10), Dense(m1size ÷ 10 => 2, activ)),
   )
   return Chain(module1, module2) |> gpu
+end
+
+# Discriminator for TopologyGAN
+# https://arxiv.org/abs/2003.04685
+function topologyGANdisc(; normal = :BN, drop = 0.0)
+  m1 = Chain(
+    BatchNorm(7),
+    Conv((5, 5), 7 => df_dim; stride = 2, pad = SamePad()),
+    leakyrelu, # h0
+    drop > 0.0 ? Dropout(drop) : identity,
+    Conv((5, 5), df_dim => df_dim * 2; stride = 2, pad = SamePad()),
+    normal == :BN ? BatchNorm(df_dim * 2) : ChannelLayerNorm(df_dim * 2),
+    leakyrelu, # h1
+    drop > 0.0 ? Dropout(drop) : identity,
+    Conv((5, 5), df_dim * 2 => df_dim * 4; stride = 2, pad = SamePad()),
+    normal == :BN ? BatchNorm(df_dim * 4) : ChannelLayerNorm(df_dim * 4),
+    leakyrelu, # h2
+    drop > 0.0 ? Dropout(drop) : identity,
+    Conv((5, 5), df_dim * 4 => df_dim * 8; stride = 2, pad = SamePad()),
+    normal == :BN ? BatchNorm(df_dim * 8) : ChannelLayerNorm(df_dim * 8),
+    leakyrelu, # h3
+    drop > 0.0 ? Dropout(drop) : identity,
+    flatten,
+  )
+  m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
+  m2 = Chain(
+    Dense(m1size => 1) # h4 (don't need sigmoid)
+  )
+  return Chain(m1, m2) |> gpu
+end
+
+# PatchGAN discriminator
+# https://arxiv.org/abs/1611.07004
+# https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
+function patchGANdisc(; normal = :BN, tiny = false)
+  beginChannel = tiny == true ? 32 : 64
+  return Chain(
+    BatchNorm(7),
+    Conv((4, 4), 7 => beginChannel, leakyrelu; stride = 2, pad = 4),
+    Conv((4, 4), beginChannel => beginChannel * 2; stride = 2, pad = 4),
+    normal == :BN ? BatchNorm(beginChannel * 2) : ChannelLayerNorm(beginChannel * 2),
+    leakyrelu,
+    Conv((4, 4), beginChannel * 2 => beginChannel * 4; stride = 2, pad = 5),
+    normal == :BN ? BatchNorm(beginChannel * 4) : ChannelLayerNorm(beginChannel * 4),
+    leakyrelu,
+    Conv((4, 4), beginChannel * 4 => beginChannel * 8; pad = 4),
+    normal == :BN ? BatchNorm(beginChannel * 8) : ChannelLayerNorm(beginChannel * 8),
+    leakyrelu,
+    Conv((4, 4), beginChannel * 8 => 1; pad = SamePad()),
+    flatten
+  ) |> gpu
 end
 
 # Return Flux Chain of SE-ResNet blocks of desired size.
@@ -111,6 +140,7 @@ function U_SE_ResNetGenerator(; sizeChain = 32)
     BatchNorm(gf_dim), ### d3
   )
   return Chain(
+    BatchNorm(3),
     Conv((5, 5), 3 => gf_dim; stride = 2, pad = (8, 7)), ### e1
     SkipConnection(d3e1, (mx, x) -> cat(mx, x, dims = 3)), # concat d3 e1, ### d3
     relu,
@@ -119,4 +149,62 @@ function U_SE_ResNetGenerator(; sizeChain = 32)
     Conv((8, 8), 1 => 1),
     sigmoid,
   ) |> gpu
+end
+
+#= ConvNeXt-inspired generator
+original code (pytorch): https://github.com/facebookresearch/ConvNeXt
+paper: https://arxiv.org/abs/2201.03545
+Metalhead.jl implementation https://github.com/FluxML/Metalhead.jl/blob/cc486bf00c60874de426dece97956528ce406564/src/convnets/convnext.jl
+:tiny => ([3, 3, 9, 3], [96, 192, 384, 768]),
+:small => ([3, 3, 27, 3], [96, 192, 384, 768]),
+:base => ([3, 3, 27, 3], [128, 256, 512, 1024]),
+:large => ([3, 3, 27, 3], [192, 384, 768, 1536]),
+:xlarge => ([3, 3, 27, 3], [256, 512, 1024, 2048]))
+=#
+function convNextModel(blockChannel::Int, blockRepeat::Array{Int}, maxDropPathChance::AbstractFloat)
+  dropPathProb = Float32.(range(0, maxDropPathChance, sum(blockRepeat)))
+  block = 0
+  step = Chain[]
+  channelSequence = [blockChannel * 2 ^ (stageIndex - 1) for stageIndex in axes(blockRepeat, 1)]
+  for (index, rep) in enumerate(blockRepeat)
+    push!( # current stage's downsample
+      step,
+      if block == 0
+        Chain(
+          BatchNorm(3),
+          Conv((4, 4), 3 => channelSequence[index]; stride = 4),
+          ChannelLayerNorm(channelSequence[index]),
+        )
+      else
+        Chain(
+          ChannelLayerNorm(channelSequence[index - 1]),
+          Conv((2, 2), channelSequence[index - 1] => channelSequence[index]; stride = 2)
+        )
+      end
+    )
+    for _ in 1:rep # current stage's ConvNeXt block stack
+      block += 1
+      push!(step, Chain(
+        SkipConnection(
+          Chain(DepthwiseConv((7, 7), channelSequence[index] => channelSequence[index]; pad = 3),
+            x -> permutedims(x, (3, 1, 2, 4)),
+            LayerNorm(channelSequence[index]; ϵ = 1.0f-6),
+            Dense(channelSequence[index], 4 * channelSequence[index], relu),
+            Dense(4 * channelSequence[index], channelSequence[index]),
+            Flux.Scale(fill(Float32(1.0f-6), channelSequence[index]), false),
+            x -> permutedims(x, (2, 3, 1, 4)),
+            dropPathProb[block] > 0 ? stochasticDepth(dropPathProb[block]) : identity),
+        +)
+      ))
+    end
+  end
+  resizeBlock = Chain(
+    ConvTranspose((9, 9), channelSequence[end] => channelSequence[end] ÷ 8, stride = 6),
+    ConvTranspose((9, 9), channelSequence[end] ÷ 8 => 1, stride = 6),
+    Conv((9, 9), 1 => 1; pad = (3, 0)),
+    Conv((9, 9), 1 => 1; pad = (3, 0)),
+    Conv((10, 10), 1 => 1; pad = (3, 0)),
+    sigmoid
+  )
+  return Chain(step..., resizeBlock) |> gpu
 end

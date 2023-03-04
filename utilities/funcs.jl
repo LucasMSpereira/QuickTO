@@ -117,10 +117,12 @@ end
 
 function contextQuantity(goal::Symbol, files::Vector{String}, percent)::Int
   if goal == :train
+    length(files) == 1 && return round(Int,datasetNonTestSize * 0.7 * percent)
     return abs(round(Int,
       datasetNonTestSize * 0.7 * percent - numSample(files[1 : max(1, end - 1)])
     ))
   elseif goal == :validate
+    length(files) == 1 && return round(Int,datasetNonTestSize * 0.3 * percent)
     return abs(round(Int,
       datasetNonTestSize * 0.3 * percent - numSample(files[1 : max(1, end - 1)])
     ))
@@ -162,18 +164,17 @@ function cornerPos(topo)
 end
 
 # define 'groupFiles' variable in GANepoch!(). Used to get indices
-# to acces files for training/validation
+# to access files for training/validation
 function defineGroupFiles(metaData, goal)
   if goal != :test # if training or validating
-    return DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 13)
+    return DataLoader(1:length(metaData.files[goal]) |> collect; batchsize = 20)
   else
-    # if testing, variable 'groupFiles' has no effect.
-    return [datasetPath * "/data/test"] # Return placeholder
+    return [datasetPath * "/data/test"]
   end
 end
 
 # add fourth dimension to Flux data (width, height, channels, batch)
-dim4 = unsqueeze(; dims = 5)
+dim4 = unsqueeze(; dims = 4)
 
 # discard first channel of 3D array
 discardFirstChannel(x) = x[:, :, 2:end]
@@ -281,9 +282,9 @@ end
 # print summary statistics of GAN parameters
 function GANparamsStats(metaData)
   println("Generator:\n")
-  vcat((Iterators.flatten.(metaData.generator |> cpu |> Flux.params) .|> collect)...) |> statsum
+  vcat((Iterators.flatten.(getGen(metaData) |> cpu |> Flux.params) .|> collect)...) |> statsum
   println("Discriminator:\n")
-  vcat((Iterators.flatten.(metaData.discriminator |> cpu |> Flux.params) .|> collect)...) |> statsum
+  vcat((Iterators.flatten.(getDisc(metaData) |> cpu |> Flux.params) .|> collect)...) |> statsum
   return nothing
 end
 
@@ -330,12 +331,25 @@ function forceToMat(force)
 end
 
 function initializeHistories(_metaData)
-  push!(_metaData.discValues, :discTrue, 1, 0f0)
-  push!(_metaData.discValues, :discFalse, 1, 0f0)
-  push!(_metaData.generatorValues, :foolDisc, 1, 0f0)
-  push!(_metaData.generatorValues, :mse, 1, 0f0)
-  push!(_metaData.generatorValues, :vfMAE, 1, 0f0)
-  complianceLoss && push!(_metaData.generatorValues, :compRMSE, 1, 0f0)
+  if wasserstein # using wgan
+    push!(_metaData.discDefinition.nnValues, :criticOutFake, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :criticOutReal, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :genDoutFake, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :mse, 1, 0f0)
+  else
+    push!(_metaData.discDefinition.nnValues, :discTrue, 1, 0f0)
+    push!(_metaData.discDefinition.nnValues, :discFalse, 1, 0f0)
+    push!(_metaData.genDefinition.nnValues, :foolDisc, 1, 0f0)
+    push!(_metaData.genDefinition.nnValues, :mse, 1, 0f0)
+    push!(_metaData.genDefinition.nnValues, :vfMAE, 1, 0f0)
+  end
+  return nothing
+end
+
+# for wgan-gp loss, interpolate between fake and real topologies
+function interpolateTopologies(realTopology_::Array{Float32, 4}, fakeTopology_::Array{Float32, 4})::Array{Float32, 4}
+  ϵ = reshape(rand(Float32, size(realTopology_, 4)), (1, 1, 1, size(realTopology_, 4)))
+  return @. ϵ * realTopology_ + (1 - ϵ) * fakeTopology_
 end
 
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
@@ -372,19 +386,18 @@ function isoFeats(force, supp, topo)
 end
 
 # log discriminator batch values
-function logBatchDiscVals(metaData_, discOutReal, discOutFake)
-  newSize = length(metaData_.discValues[:discTrue]) + 1
-  push!(metaData_.discValues, :discTrue, newSize, Float32(logitBinCrossEnt(discOutReal, 0.85)))
-  push!(metaData_.discValues, :discFalse, newSize, Float32(logitBinCrossEnt(discOutFake, 0)))
+function logBatchDiscVals(metaData_, discTrueVal::Float32, discFalseVal::Float32)
+  newSize = length(metaData_.discDefinition.nnValues[:discTrue]) + 1
+  push!(metaData_.discDefinition.nnValues, :discTrue, newSize, discTrueVal)
+  push!(metaData_.discDefinition.nnValues, :discFalse, newSize, discFalseVal)
 end
 
 # log generator batch values
-function logBatchGenVals(metaData_, foolDisc, mse, vfMAE; compRMSE = 0f0)
-  newSize = length(metaData_.generatorValues[:foolDisc]) + 1
-  push!(metaData_.generatorValues, :foolDisc, newSize, foolDisc)
-  push!(metaData_.generatorValues, :mse, newSize, mse)
-  push!(metaData_.generatorValues, :vfMAE, newSize, vfMAE)
-  complianceLoss && push!(metaData_.generatorValues, :compRMSE, newSize, compRMSE)
+function logBatchGenVals(metaData_, foolDisc, mse, vfMAE)
+  newSize = length(metaData_.genDefinition.nnValues[:foolDisc]) + 1
+  push!(metaData_.genDefinition.nnValues, :foolDisc, newSize, foolDisc)
+  push!(metaData_.genDefinition.nnValues, :mse, newSize, mse)
+  push!(metaData_.genDefinition.nnValues, :vfMAE, newSize, vfMAE)
 end
 
 # contextual logit binary cross-entropy
@@ -393,6 +406,35 @@ function logitBinCrossEnt(logits, label)
     logits,
     fill(Float32(label), length(logits))
   )
+end
+
+# contextual logit binary cross-entropy.
+# includes noisy label-smoothing
+function logitBinCrossEntNoise(logits::Array{Float32, 2}, label::AbstractFloat)::Float32
+  # @show mean(logits)
+  if label < 0.5
+    return Flux.Losses.logitbinarycrossentropy(
+      logits,
+      randBetween(0, 0.15; sizeOut = size(logits)) .|> Float32
+    )
+  else
+    return Flux.Losses.logitbinarycrossentropy(
+      logits,
+      randBetween(0.85, 1.0; sizeOut = size(logits)) .|> Float32
+    )
+  end
+end
+
+# log losses from wgan model
+function logWGANloss(
+  metaData_, cOutFake::Float32, cOutReal::Float32,
+  generatorDoutFake::Float32, MSEerror::Float32
+)
+  newSize = length(metaData_.discDefinition.nnValues[:criticOutFake]) + 1
+  push!(metaData_.discDefinition.nnValues, :criticOutFake, newSize, cOutFake)
+  push!(metaData_.discDefinition.nnValues, :criticOutReal, newSize, cOutReal)
+  push!(metaData_.discDefinition.nnValues, :genDoutFake, newSize, generatorDoutFake)
+  push!(metaData_.discDefinition.nnValues, :mse, newSize, MSEerror)
 end
 
 # estimate total number of lines in project so far
@@ -436,12 +478,12 @@ function numSample(files)
 end
 
 # pad output of generator
-function padGen(genOut::Array{Float32, 4})::Array{Float32, 4}
+function padGen(genOut)
   return cat(
     cat(genOut, zeros(Float32, (FEAparams.meshSize[2], 1, 1, size(genOut, 4))); dims = 2),
     zeros(Float32, (1, FEAparams.meshMatrixSize[2], 1, size(genOut, 4)));
     dims = 1
-)
+  )
 end
 
 # get list of elements visited by a path
@@ -452,6 +494,10 @@ function pathEleList(aStar)
   end
   return list
 end
+
+pen_l1(x::AbstractArray) = sum(abs, x)
+
+pen_l2(x::AbstractArray) = sum(abs2, x)
 
 # generate string representing optimizer
 function printOptimizer(optimizer)
@@ -488,7 +534,7 @@ function randDiffInt(n, val)
 end
 
 # remove first position along 4th dimension in 4D array
-remFirstSample(x::Array{<:Real, 4})::Array{<:Real, 4} = x[:, :, :, 2:end]
+remFirstSample(x) = x[:, :, :, 2:end]
 
 # reshape output of discriminator
 reshapeDiscOut(x) = dropdims(x |> transpose |> Array; dims = 2)
@@ -506,6 +552,13 @@ function reshapeForces(predForces)
     end
   end
   return forces
+end
+
+# check for variation of certain pseudo-densities
+# across topologies in a fake batch
+function sampleVariety(genBatchOut::Array{Float32, 4})::Float32
+  means = mean(genBatchOut; dims = [1, 2, 3])
+  return maximum(means) - minimum(means)
 end
 
 # print real number in scientific notation
@@ -554,6 +607,9 @@ end
 
 # concatenate multiple 2D or 3D arrays in the 3rd dimension
 solidify(x...) = cat(x...; dims = 3)
+
+# slow down loss modulus increase
+smoothSqrt(x::Float32)::Float32 = sign(x) * sqrt(abs(x))
 
 # statistical summary of a numerical array
 function statsum(arr)

@@ -28,7 +28,7 @@ end
 
 earlyStopTrainConfig(
   validFreq; decay = 0.0, schedule = 0, evaluations = Float64[],
-  earlyStopQuant = 3, earlyStopPercent = 6
+  earlyStopQuant = 3, earlyStopPercent = 1
 ) = earlyStopTrainConfig(validFreq, decay, schedule, evaluations,
   earlyStopQuant, earlyStopPercent
 )
@@ -38,23 +38,27 @@ mutable struct optimisationInfo
   optState::NamedTuple # optimizer's state
 end
 
+mutable struct nnInfo
+  neuralNetwork::Chain # network
+  optInfo::optimisationInfo # optimisation setup
+  nnValues # log values during training
+end
+
 # Meta-data for GAN pipeline
 mutable struct GANmetaData
-  generator::Chain # generator network
-  discriminator::Chain # discriminator network
-  genOptInfo::optimisationInfo # generator optimisation setup
-  discOptInfo::optimisationInfo # discriminator optimisation setup
+  genDefinition::nnInfo # generator information
+  discDefinition::nnInfo # discriminator information
   const trainConfig::trainConfig # parameters for training
   lossesVals::Dict{Symbol, Vector{Float64}} # loss histories
   files::Dict{Symbol, Vector{String}}
   const datasetUsed::Float64 # fraction of dataset used
-  generatorValues # log values during training
-  discValues # log values during training
+  # number of critic iters. between gen iters. when using wasserstein loss
+  nCritic::Int32
 end
 
 ## GANmetaData APIs
 # save histories of losses
-function (ganMD::GANmetaData)(valLossHist::NTuple{2, Float64}; context = :validate)
+function (ganMD::GANmetaData)(valLossHist::NTuple{2, Float32}; context = :validate)
   if context == :validate
     push!(ganMD.lossesVals[:genValHistory], valLossHist[1])
     push!(ganMD.lossesVals[:discValHistory], valLossHist[2])
@@ -72,11 +76,10 @@ end
 GANmetaData(
   generator::Chain, discriminator::Chain,
   genOpt::Flux.Optimise.AbstractOptimiser, discOpt::Flux.Optimise.AbstractOptimiser,
-   myTrainConfig::trainConfig
+  myTrainConfig::trainConfig
 ) = GANmetaData(
-  generator, discriminator,
-  optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)),
-  optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)),
+  nnInfo(generator, optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)), MVHistory()),
+  nnInfo(discriminator, optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)), MVHistory()),
   myTrainConfig,
   Dict(
     :genValHistory => Float64[],
@@ -89,7 +92,7 @@ GANmetaData(
   else # if running in colab
     getNonTestFileLists("./gdrive/MyDrive/dataset files/trainValidate", 0.7)
   end,
-  percentageDataset, MVHistory(), MVHistory()
+  percentageDataset, 5
 )
 
 # Outer constructor to create object in the begining.
@@ -101,9 +104,8 @@ function GANmetaData(
 ) 
   genValidations_, discValidations_, testLosses_, _ = getValuesFromTxt(metaDataFilepath)
   return GANmetaData(
-    generator, discriminator,
-    optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)),
-    optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)),
+    nnInfo(generator, optimisationInfo(genOpt, Optimisers.setup(genOpt, generator)), MVHistory()),
+    nnInfo(discriminator, optimisationInfo(discOpt, Optimisers.setup(discOpt, discriminator)), MVHistory()),
     myTrainConfig,
     Dict(
       :genValHistory => Float64.(genValidations_),
@@ -112,13 +114,20 @@ function GANmetaData(
       :discTest => [Float64(testLosses_[2])]
     ),
     readDataSplits(metaDataFilepath),
-    readPercentage(metaDataFilepath), MVHistory(), MVHistory()
+    readPercentage(metaDataFilepath), 5
   )
+end
+
+function getGen(metaData::GANmetaData)
+  return metaData.genDefinition.neuralNetwork
+end
+function getDisc(metaData::GANmetaData)
+  return metaData.discDefinition.neuralNetwork
 end
 
 # disable/reenable training in model
 function switchTraining(metaData::GANmetaData, mode::Bool)
-  Flux.trainmode!(metaData.generator, mode); Flux.trainmode!(metaData.discriminator, mode)
+  Flux.trainmode!(getGen(metaData), mode); Flux.trainmode!(getGen(metaData), mode)
   return nothing
 end
 
@@ -144,27 +153,35 @@ else
 end
 
 # Squeeze and excitation block for TopologyGAN U-SE-ResNet generator
-struct SEblock
-  chain::Chain
-end
-function (m::SEblock)(input)
-  return m.chain(input)
-end
+struct SEblock chain::Chain end
+function (m::SEblock)(input) return m.chain(input) end
 Flux.@functor SEblock
 
 # Residual block for TopologyGAN U-SE-ResNet generator
-struct SEresNet
-  chain::Chain
-end
-function (m::SEresNet)(input)
-  return m.chain(input)
-end
+struct SEresNet chain::Chain end
+function (m::SEresNet)(input) return m.chain(input) end
 Flux.@functor SEresNet
 
 # custom Flux.jl split layer
-struct Split{T}
-  paths::T
-end
+struct Split{T} paths::T end
 Split(paths...) = Split(paths)
 Flux.@functor Split
 (m::Split)(x::AbstractArray) = map(f -> f(x), m.paths)
+
+struct convNext chain::Chain end
+function (m::convNext)(x) return m.chain(x) end
+Flux.@functor convNext
+
+stochasticDepth(x::Float32) = Flux.Dropout(x; dims = 4)
+
+struct ChannelLayerNorm{D, T} diag::D; ϵ::T end
+Flux.@functor ChannelLayerNorm
+function ChannelLayerNorm(sz::Integer, λ = identity; ϵ = 1.0f-6)
+  diag = Flux.Scale(1, 1, sz, λ)
+  return ChannelLayerNorm(diag, ϵ)
+end
+(m::ChannelLayerNorm)(x) = m.diag(Flux.normalise(x; dims = ndims(x) - 1, ϵ = m.ϵ))
+
+struct addNoise end
+Flux.@functor addNoise
+# (m::addNoise)(x::AbstractArray) = 

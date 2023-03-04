@@ -33,8 +33,7 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   combinePDFs(path, finalName)
 end
 
-# create plot with FEA inputs, and generator and real topologies.
-# uses samples from test split
+# create plot with FEA inputs, and generated and real topologies.
 function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; extension = :png)
   # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
   # dataDict_: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
@@ -103,17 +102,20 @@ function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; exte
     fakeTopoAxis.yreversed = true
     if extension == :png
       GLMakie.activate!()
-      Makie.save("$savePath/$(modelName)-$(sample).png", fig) # save pdf with plot
+      Makie.save(savePath * "$(modelName)-$(sample).png", fig) # save pdf with plot
     elseif extension == :pdf
       CairoMakie.activate!()
-      Makie.save("$savePath/$(modelName)-$(sample).pdf", fig) # save pdf with plot
+      Makie.save(savePath * "$(modelName)-$(sample).pdf", fig) # save pdf with plot
     end
   end
 end
 
+# call GANtestPlots() for final model report
 function GANtestPlotsReport(_modelName, _metaData, _path)
   GANtestPlots(
-    gpu(_metaData.generator), datasetPath * "data/test",
+    # gpu(getGen(_metaData)), datasetPath * "data/test",
+    gpu(getGen(_metaData)),
+    readdir(datasetPath * "data/trainValidate"; join = true)[end],
     15, _path, _modelName; extension = :pdf
   )
 end
@@ -267,25 +269,77 @@ function plotForce(
 end
 
 # line plots of histories of GAN losses
-function plotGANlogs(JLDpath)
-  savedStruct = load(JLDpath)["single_stored_object"]
-  GLMakie.activate!()
+function plotGANlogs(JLDpath::Vector{String})
+  mkpath(GANfolderPath * "logs") # folder for PDFs with plots
+  CairoMakie.activate!()
+  if haskey(load(JLDpath[1])["single_stored_object"].discDefinition.nnValues, :discTrue)
+    foolDisc, mse, vfMAE, discTrue, discFalse = Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[]
+    for filePath in JLDpath
+      savedStruct = 0
+      @suppress_err savedStruct = load(filePath)["single_stored_object"]
+      push!(foolDisc, get(savedStruct.genDefinition.nnValues[:foolDisc])[2][2 : end])
+      push!(mse, get(savedStruct.genDefinition.nnValues[:mse])[2][2 : end])
+      push!(vfMAE, get(savedStruct.genDefinition.nnValues[:vfMAE])[2][2 : end])
+      push!(discTrue, get(savedStruct.discDefinition.nnValues[:discTrue])[2][2 : end])
+      push!(discFalse, get(savedStruct.discDefinition.nnValues[:discFalse])[2][2 : end])
+    end
+    foolDisc = foolDisc |> Iterators.flatten |> collect
+    mse = mse |> Iterators.flatten |> collect
+    vfMAE = vfMAE |> Iterators.flatten |> collect
+    discTrue = discTrue |> Iterators.flatten |> collect
+    discFalse = discFalse |> Iterators.flatten |> collect
+    logsLines( # all intermediate terms
+      [foolDisc, mse, vfMAE, discTrue, discFalse],
+      ["foolDisc", "mse", "vfMAE", "discTrue", "discFalse"]
+    )
+    logsLines( # both final losses
+      [foolDisc + mse + vfMAE, discTrue + discFalse],
+      ["generator loss", "discriminator loss"]
+    )
+    logsLines( # intermediate and final generator values
+      [foolDisc, mse, vfMAE, foolDisc + mse + vfMAE],
+      ["foolDisc", "mse", "vfMAE", "generator loss"]
+    )
+    logsLines( # intermediate and final discriminator values
+      [discTrue, discFalse, discTrue + discFalse],
+      ["discTrue", "discFalse", "discriminator loss"]
+    )
+  else # wgan was used
+    criticOutFake, criticOutReal, genDoutFake, mse = Vector{Float32}[], Vector{Float32}[], Vector{Float32}[], Vector{Float32}[]
+    for filePath in JLDpath
+      savedStruct = 0
+      @suppress_err savedStruct = load(filePath)["single_stored_object"]
+      push!(criticOutFake, get(savedStruct.discDefinition.nnValues[:criticOutFake])[2][2 : end])
+      push!(criticOutReal, get(savedStruct.discDefinition.nnValues[:criticOutReal])[2][2 : end])
+      push!(genDoutFake, get(savedStruct.discDefinition.nnValues[:genDoutFake])[2][2 : end])
+      push!(mse, get(savedStruct.discDefinition.nnValues[:mse])[2][2 : end])
+    end
+    criticOutFake = criticOutFake |> Iterators.flatten |> collect
+    criticOutReal = criticOutReal |> Iterators.flatten |> collect
+    genDoutFake = genDoutFake |> Iterators.flatten |> collect
+    mse = mse |> Iterators.flatten |> collect
+    logsLines([criticOutFake - criticOutReal], ["critic loss"])
+    logsLines([genDoutFake + mse], ["generator loss"])
+    logsLines([mse], ["mse"])
+    logsLines([genDoutFake], ["genDoutFake"])
+    logsLines([criticOutFake],["discFake"])
+    logsLines([criticOutReal], ["discReal"])
+  end
+  combinePDFs(GANfolderPath * "logs", "logPlots $(GANfolderPath[end - 4 : end - 1])")
+end
+
+function logsLines(value, name)
   f = Figure(resolution = (1500, 800)); # create makie figure
-  ax = Axis(f[1:3, 1], # axis to draw on
-    xlabel = "Batches", title = "Logged values"
+  ax = Axis(f[1:3, 1], xlabel = "Batches", # axis to draw on
+    title = "Logged values",
   )
   # line plots of logs
-  gfd = lines!(ax, get(savedStruct.generatorValues[:foolDisc])[2][2 : end])
-  gmse = lines!(ax, get(savedStruct.generatorValues[:mse])[2][2 : end])
-  gvfmae = lines!(ax, get(savedStruct.generatorValues[:vfMAE])[2][2 : end])
-  ddt = lines!(ax, get(savedStruct.discValues[:discTrue])[2][2 : end])
-  ddf = lines!(ax, get(savedStruct.discValues[:discFalse])[2][2 : end])
-  logPlots = [gfd, gmse, gvfmae, ddt, ddf]
-  strings = ["foolDisc", "mse", "vfMAE", "discTrue", "discFalse"]
+  [lines!(ax, val; label = str) for (val, str) in zip(value, name)]
+  # legend
   t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
-  Legend(f[1, 2][1, 1], logPlots, strings)
-  colsize!(f.layout, 2, Fixed(130))
-  display(f)
+  Legend(f[1, 2][1, 1], ax)
+  colsize!(f.layout, 2, Fixed(160))
+  Makie.save(GANfolderPath * "logs/$(rand(1:9999)).pdf", f) # save pdf
 end
 
 # create line plots of GAN validation histories.
@@ -340,7 +394,7 @@ function plotGANValHist(lossesVals, validFreq, modelName; metaDataName = " ", mi
     display(f)
   else
     CairoMakie.activate!() # vector graphics
-    Makie.save("$GANfolderPath/validation histories.pdf", f) # save pdf with plot
+    Makie.save(GANfolderPath * "validation histories.pdf", f) # save pdf with plot
   end
 end
 

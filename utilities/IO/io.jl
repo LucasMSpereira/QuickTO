@@ -22,14 +22,13 @@ function createFile(quants, sec, runID, nelx, nely)
 end
 
 function createGANfolder(metaData)
-  modelName = string(metaData.trainConfig.epochs) * "-" *
-  string(round(percentageDataset * 100; digits = 1)) * "%-" *
+  folderName = timeNow() * "-" *
   randstring(Random.seed!(), 4)
   # create directory to store all PDFs
   if runningInColab == false # if running locally
-    path = projPath * "networks/GANplots/" * modelName
+    path = projPath * "networks/GANplots/" * folderName * "/"
   else # if running in colab
-    path = "./gdrive/MyDrive/dataset files/GAN saves/" * modelName
+    path = "./gdrive/MyDrive/dataset files/GAN saves/" * folderName * "/"
   end
   mkpath(path)
   return path
