@@ -146,11 +146,11 @@ function loadTrainedGANs(model::Symbol)
       cpuGenerator |> gpu,
       cpuDiscriminator |> gpu,
     )
-  elseif model == :convnvext
+  elseif model == :convnext
     gen = convNextModel(192, [3, 3, 27, 3], 0.5)
     disc = topologyGANdisc(; drop = 0.3)
-    BSON.@load datasetPath * "trainedNetworks/convnextGen" cpuGenerator
-    BSON.@load datasetPath * "trainedNetworks/convnextDisc" cpuDiscriminator
+    BSON.@load datasetPath * "trainedNetworks/convnextGen.bson" cpuGenerator
+    BSON.@load datasetPath * "trainedNetworks/convnextDisc.bson" cpuDiscriminator
     return (
       Flux.loadmodel!(gen, cpuGenerator),
       Flux.loadmodel!(disc, cpuDiscriminator),
