@@ -669,7 +669,7 @@ function trainedSamples(
   end
   randID = 0
   # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
-  # smallDataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
+  # MLdataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
   denseDataDict, MLdataDict = denseInfoFromGANdataset(sampleSource, sampleAmount)
   # tensor initializers
   genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
@@ -728,11 +728,11 @@ function trainedSamples(
       if batchIndex == 1
         randID = rand(1:9999)
         mkdir(
-          "./networks/resultPlots/$randID $split $NNtype"
+          "./networks/resultPlots/$NNtype $split $randID"
         )
       end
-      Makie.save(projPath * "networks/resultPlots/$randID $split $NNtype/$batchIndex.pdf", fig)
-    elseif goal == :display
+      Makie.save(projPath * "networks/resultPlots/$NNtype $split $randID/$batchIndex.pdf", fig)
+    elseif goal == :display # plot batch and exit
       GLMakie.activate!()
       display(fig)
       return Nothing

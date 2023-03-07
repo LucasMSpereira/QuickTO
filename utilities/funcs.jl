@@ -261,22 +261,68 @@ function estimateGrads(vals, quants, iCenter, jCenter)
     # calculate average neighborhood values
     circle == quants && (avgs = mean(filter(!iszero,mat)))
     # nullify previous internal matrix/center element
-    if size(mat,1) < 4
-      mat[2,2] = 0
+    if size(mat, 1) < 4
+      mat[2, 2] = 0
     else
-      mat[2:(end-1),2:(end-1)] .= 0
+      mat[2:(end - 1) , 2:(end - 1)] .= 0
     end
     # store maximum value of current ring (and its position relative to the center element)
     peaks[circle] = findmax(mat)
-    center = round(Int, (side+0.01)/2)
+    center = round(Int, (side + 0.01) / 2)
     Δx[circle] = peaks[circle][2][2] - center
     Δy[circle] = center - peaks[circle][2][1]
   end
   maxVals = [peaks[f][1] for f in keys(peaks)]
-  x̄ = Δx'*maxVals/sum(maxVals)
-  ȳ = Δy'*maxVals/sum(maxVals)
+  x̄ = Δx' * maxVals / sum(maxVals)
+  ȳ = Δy' * maxVals / sum(maxVals)
   return x̄, ȳ, avgs
 
+end
+
+# performance of trained generator is certain data split
+function genPerformance(gen::Chain, dataSplit::Vector{String})
+  sampleAmount = numSample(dataSplit)
+  splitError = Dict(
+    :topoSE => zeros(Float32, sampleAmount),
+    :VFerror => zeros(Float32, sampleAmount),
+    :compError => zeros(Float32, sampleAmount)
+  )
+  fakeVF, realVF, pastSample, globalID = 0f0, 0f0, 0, 0
+  for (fileIndex, filePath) in enumerate(dataSplit)
+    println(fileIndex, "/", length(dataSplit), " ", timeNow())
+    fileSize = numSample([dataSplit[fileIndex]])
+    # tensor initializers
+    genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
+    topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
+    # gather data from multiple files (or test file)
+    dataDict = readTopologyGANdataset(replace(filePath, "LucasK" => "k"))
+    genInput, FEAinfo, topology = groupGANdata!(
+      genInput, FEAinfo, topology, dataDict
+    )
+    # discard initializers
+    genInput, FEAinfo, realTopology = remFirstSample.((genInput, FEAinfo, topology))
+    for sample in 1:fileSize
+      globalID = pastSample + sample
+      fakeTopology = cpu(genInput[:, :, :, sample] |> dim4 |> gpu |> gen) # use generator
+      splitError[:topoSE][globalID] = sum( # squared topology error
+        (padGen(fakeTopology)[:, :, 1, 1] .- realTopology[:, :, 1, sample]) .^ 2
+      )
+      # relative volume fraction error
+      fakeVF = volFrac(fakeTopology[:, :, 1, 1])[1]
+      realVF = volFrac(realTopology[:, :, 1, sample])[1]
+      splitError[:VFerror][globalID] = abs(fakeVF - realVF) / realVF
+      # relative compliance error
+      splitError[:compError][globalID] = abs(topologyCompliance(
+        Float64(FEAinfo[1, 1, 1, sample]),
+        Int64.(binaryToDenseSupport(FEAinfo[:, :, 1, sample])[:, :, 1, 1]),
+        Float64.(forceMatrixToDense(FEAinfo[:, :, 2, sample], FEAinfo[:, :, 3, sample])[:, :, 1, 1]),
+        Float64.(fakeTopology[:, :, 1, 1])
+      ) - dataDict[:compliance][globalID]) / dataDict[:compliance][globalID]
+      sample % 350 == 0 && @show sample
+    end
+    pastSample += fileSize
+  end
+  return splitError
 end
 
 # print summary statistics of GAN parameters
@@ -290,7 +336,7 @@ end
 
 # Identify non-binary topologies
 function getNonBinaryTopos(forces, supps, vf, disp, top)
-  bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
+  bound = 0.35 # densities within (0.5 +/- bound) are considered intermediate
   boundPercent = 3 # allowed percentage of elements with intermediate densities
   intermQuant = length(filter(
       x -> (x > 0.5 - bound) && (x < 0.5 + bound),
@@ -477,7 +523,7 @@ function numSample(files)
   end
 end
 
-# pad output of generator
+# pad batch of generator outputs
 function padGen(genOut)
   return cat(
     cat(genOut, zeros(Float32, (FEAparams.meshSize[2], 1, 1, size(genOut, 4))); dims = 2),

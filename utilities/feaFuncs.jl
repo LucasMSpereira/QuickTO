@@ -38,7 +38,8 @@ function fakeCompliance(
 return [
   topologyCompliance(
       Float64.(_genInput[1, 1, 1, sample]),
-      Int64.(_supp[:, :, sample]), Float64.(_force[:, :, sample]), Float64.(_genOutput[:, :, 1, sample])
+      Int64.(_supp[:, :, sample]), Float64.(_force[:, :, sample]),
+      Float64.(_genOutput[:, :, 1, sample])
     )
     for sample in axes(_genOutput, 4) # iterate in batch
   ]
@@ -431,14 +432,15 @@ end
 
 # calculate compliance of topology
 function topologyCompliance(
-  vf::T, supp::Array{Int64, 2}, force::Array{T, 2}, topology_::Array{T, 2}
-)::Float64 where T<:Real
+  vf::Float64, supp::Array{Int64, 2},
+  force::Array{Float64, 2}, topology_::Array{Float64, 2}
+)::Float64
   problem, solver, comp, topComp = 0, 0, 0, 0
   @ignore_derivatives problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
   @ignore_derivatives solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
   @ignore_derivatives comp = TopOpt.Compliance(solver) # define compliance
   # use comp function in final topology and return result
-  topComp = comp(cat(
+  @suppress_err topComp = comp(cat(
     (eachslice(topology_; dims = 1) |> collect |> reverse)...;
     dims = 1
   ))
@@ -449,3 +451,5 @@ end
 function volFrac(topologyBatch::Array{Float32, 4})::Array{Float32}
   return [mean(topologyBatch[:, :, :, g]) for g in axes(topologyBatch, 4)]
 end
+
+volFrac(t::Matrix) = volFrac(reshape(t, (size(t)..., 1, 1)))
