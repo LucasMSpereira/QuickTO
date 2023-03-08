@@ -288,6 +288,7 @@ function genPerformance(gen::Chain, dataSplit::Vector{String})
     :compError => zeros(Float32, sampleAmount)
   )
   fakeVF, realVF, pastSample, globalID = 0f0, 0f0, 0, 0
+  fakeComp, realComp = 0f0, 0f0
   for (fileIndex, filePath) in enumerate(dataSplit)
     println(fileIndex, "/", length(dataSplit), " ", timeNow())
     fileSize = numSample([dataSplit[fileIndex]])
@@ -295,7 +296,8 @@ function genPerformance(gen::Chain, dataSplit::Vector{String})
     genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
     topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
     # gather data from multiple files (or test file)
-    dataDict = readTopologyGANdataset(replace(filePath, "LucasK" => "k"))
+    denseDataDict, dataDict = denseInfoFromGANdataset(replace(filePath, "LucasK" => "k"), fileSize)
+    # dataDict = readTopologyGANdataset(replace(filePath, "LucasK" => "k"))
     genInput, FEAinfo, topology = groupGANdata!(
       genInput, FEAinfo, topology, dataDict
     )
@@ -312,15 +314,24 @@ function genPerformance(gen::Chain, dataSplit::Vector{String})
       realVF = volFrac(realTopology[:, :, 1, sample])[1]
       splitError[:VFerror][globalID] = abs(fakeVF - realVF) / realVF
       # relative compliance error
-      splitError[:compError][globalID] = abs(topologyCompliance(
-        Float64(FEAinfo[1, 1, 1, sample]),
-        Int64.(binaryToDenseSupport(FEAinfo[:, :, 1, sample])[:, :, 1, 1]),
-        Float64.(forceMatrixToDense(FEAinfo[:, :, 2, sample], FEAinfo[:, :, 3, sample])[:, :, 1, 1]),
+      @suppress_err fakeComp = topologyCompliance(
+        Float64(denseDataDict[:vf][sample]),
+        Int.(denseDataDict[:denseSupport][:, :, sample]),
+        Float64.(denseDataDict[:force][:, :, sample]),
         Float64.(fakeTopology[:, :, 1, 1])
-      ) - dataDict[:compliance][globalID]) / dataDict[:compliance][globalID]
-      sample % 350 == 0 && @show sample
+      )
+      realComp = dataDict[:compliance][sample]
+      splitError[:compError][globalID] = abs(fakeComp - realComp) / realComp
+      # sample % 350 == 0 && @show sample
+      println(
+        "sample: ", sample,
+        "   fakeComp: ", sciNotation(fakeComp, 3),
+        "   realComp: ", sciNotation(realComp, 3),
+        "   rel. error: ", sciNotation(splitError[:compError][globalID], 3)
+      )
     end
     pastSample += fileSize
+    return splitError
   end
   return splitError
 end

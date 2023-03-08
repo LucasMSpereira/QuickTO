@@ -4,7 +4,13 @@ include("QTOutils.jl")
 topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
 # training and validation data splits used for ConvNeXt generator
 fileSplit = readDataSplits("./networks/GANplots/reuniao7-10.0%-2-12-12T19-00-34/12-12T00-00-13metaData.txt")
-resultDict = genPerformance(topoGANgen, fileSplit[:train])
+splitGoal = :train
+resultDict = genPerformance(topoGANgen, fileSplit[splitGoal])
+save_object("./networks/topoGAN $(String(splitGoal)).jld2", resultDict)
+length(resultDict[:compError])
+length(filter(isnan, resultDict[:compError]))
+length(filter(isnan, resultDict[:compError]))/length(resultDict[:compError])
+statsum(filter(!isnan, resultDict[:compError]))
 # plot results from generator
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :training)
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :validation)

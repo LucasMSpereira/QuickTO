@@ -435,7 +435,7 @@ function topologyCompliance(
   vf::Float64, supp::Array{Int64, 2},
   force::Array{Float64, 2}, topology_::Array{Float64, 2}
 )::Float64
-  problem, solver, comp, topComp = 0, 0, 0, 0
+  problem, solver, comp, topComp = 0, 0, 0, 0.0
   @ignore_derivatives problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
   @ignore_derivatives solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
   @ignore_derivatives comp = TopOpt.Compliance(solver) # define compliance

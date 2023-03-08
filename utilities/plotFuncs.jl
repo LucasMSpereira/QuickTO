@@ -728,10 +728,10 @@ function trainedSamples(
       if batchIndex == 1
         randID = rand(1:9999)
         mkdir(
-          "./networks/resultPlots/$NNtype $split $randID"
+          "./networks/results/$NNtype $split $randID"
         )
       end
-      Makie.save(projPath * "networks/resultPlots/$NNtype $split $randID/$batchIndex.pdf", fig)
+      Makie.save(projPath * "networks/results/$NNtype $split $randID/$batchIndex.pdf", fig)
     elseif goal == :display # plot batch and exit
       GLMakie.activate!()
       display(fig)
