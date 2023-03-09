@@ -649,6 +649,49 @@ function textConfig(l)
   l.axis.attributes.width = 300
 end
 
+# plot compliance, VF and topology errors from
+# trained models in all 3 data splits
+function trainedPerformancePlot(
+  topoGANerror::Dict{Symbol, Vector{Float32}},
+  convNextError::Dict{Symbol, Vector{Float32}}
+)
+  fig = Figure(resolution = (1200, 700)) # makie figure
+  topoGANseAx = Axis(fig[1, 1])
+  topoGANrelAx = Axis(fig[1, 2])
+  convNextSEax = Axis(fig[2, 1])
+  convNextRelAx = Axis(fig[2, 2])
+  bin = 20
+  ### topologyGAN histograms
+  # U-SE-ResNet topology squared error
+  hist!(topoGANseAx, topoGANerror[:topoSE]; bins = bin,
+    color = RGBA{Float64}(0.48, 0.41, 0.93,0.6), normalization = :probability
+  )
+  # U-SE-ResNet relative VF error
+  hist!(topoGANrelAx, topoGANerror[:VFerror]; bins = bin,
+    color = RGBA{Float64}(0.0, 0.8, 0.8, 0.6), normalization = :probability
+  )
+  # U-SE-ResNet relative compliance error
+  # hist!(topoGANrelAx, topoGANerror[:compError]; bins = bin,
+  #   color = RGBA{Float64}(0.8, 0.2, 0.2, 0.6), normalization = :probability
+  # )
+  ## QuickTO histograms
+  # ConvNeXt topology squared error
+  hist!(convNextSEax, convNextError[:topoSE]; bins = bin,
+    color = RGBA{Float64}(0.48, 0.41, 0.93,0.6), normalization = :probability
+  )
+  # ConvNeXt relative VF error
+  hist!(convNextRelAx, convNextError[:VFerror]; bins = bin,
+    color = RGBA{Float64}(0.0, 0.8, 0.8, 0.6), normalization = :probability
+  )
+  # ConvNeXt relative compliance error
+  # hist!(convNextRelAx, convNextError[:compError]; bins = bin,
+  #   color = RGBA{Float64}(0.8, 0.2, 0.2, 0.6), normalization = :probability
+  # )
+  GLMakie.activate!()
+  display(fig)
+end
+trainedPerformancePlot(topoGANperf, convNextPerf)
+
 # using trained models, create plot including
 # generator input, and generated and real topologies
 function trainedSamples(

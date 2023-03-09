@@ -281,7 +281,11 @@ end
 
 # performance of trained generator is certain data split
 function genPerformance(gen::Chain, dataSplit::Vector{String})
-  sampleAmount = numSample(dataSplit)
+  if length(dataSplit) == 1
+    sampleAmount = 15504
+  else
+    sampleAmount = numSample(dataSplit)
+  end
   splitError = Dict(
     :topoSE => zeros(Float32, sampleAmount),
     :VFerror => zeros(Float32, sampleAmount),
@@ -291,7 +295,11 @@ function genPerformance(gen::Chain, dataSplit::Vector{String})
   fakeComp, realComp = 0f0, 0f0
   for (fileIndex, filePath) in enumerate(dataSplit)
     println(fileIndex, "/", length(dataSplit), " ", timeNow())
-    fileSize = numSample([dataSplit[fileIndex]])
+    if length(dataSplit) == 1
+      fileSize = sampleAmount
+    else
+      fileSize = numSample([dataSplit[fileIndex]])
+    end
     # tensor initializers
     genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
     topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
@@ -322,16 +330,9 @@ function genPerformance(gen::Chain, dataSplit::Vector{String})
       )
       realComp = dataDict[:compliance][sample]
       splitError[:compError][globalID] = abs(fakeComp - realComp) / realComp
-      # sample % 350 == 0 && @show sample
-      println(
-        "sample: ", sample,
-        "   fakeComp: ", sciNotation(fakeComp, 3),
-        "   realComp: ", sciNotation(realComp, 3),
-        "   rel. error: ", sciNotation(splitError[:compError][globalID], 3)
-      )
+      sample % 350 == 0 && @show sample
     end
     pastSample += fileSize
-    return splitError
   end
   return splitError
 end
