@@ -38,7 +38,7 @@ statsum(convNextPerf[:VFerror])
 statsum(convNextPerf[:compError])
 quantile(convNextPerf[:compError], 0.93)
 
-  # # plot results from generator
+# # plot results from generator
 # trainedSamples(10, 5, convNextGen, "convnext"; split = :training)
 # trainedSamples(10, 5, convNextGen, "convnext"; split = :validation)
 # trainedSamples(10, 5, convNextGen, "convnext"; split = :test)

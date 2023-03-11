@@ -670,10 +670,6 @@ function trainedPerformancePlot(
   hist!(topoGANrelAx, topoGANerror[:VFerror]; bins = bin,
     color = RGBA{Float64}(0.0, 0.8, 0.8, 0.6), normalization = :probability
   )
-  # U-SE-ResNet relative compliance error
-  # hist!(topoGANrelAx, topoGANerror[:compError]; bins = bin,
-  #   color = RGBA{Float64}(0.8, 0.2, 0.2, 0.6), normalization = :probability
-  # )
   ## QuickTO histograms
   # ConvNeXt topology squared error
   hist!(convNextSEax, convNextError[:topoSE]; bins = bin,
@@ -683,14 +679,12 @@ function trainedPerformancePlot(
   hist!(convNextRelAx, convNextError[:VFerror]; bins = bin,
     color = RGBA{Float64}(0.0, 0.8, 0.8, 0.6), normalization = :probability
   )
-  # ConvNeXt relative compliance error
-  # hist!(convNextRelAx, convNextError[:compError]; bins = bin,
-  #   color = RGBA{Float64}(0.8, 0.2, 0.2, 0.6), normalization = :probability
-  # )
-  GLMakie.activate!()
-  display(fig)
+  # GLMakie.activate!()
+  # display(fig)
+  CairoMakie.activate!()
+  Makie.save(projPath * "networks/results/TrainedTestErrorMetrics.pdf", fig)
 end
-trainedPerformancePlot(topoGANperf, convNextPerf)
+# trainedPerformancePlot(topoGANperf, convNextPerf)
 
 # using trained models, create plot including
 # generator input, and generated and real topologies
