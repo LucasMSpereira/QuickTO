@@ -13,11 +13,20 @@ topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
 # resultDict = genPerformance(topoGANgen, fileSplit[splitGoal])
 # resultDict = genPerformance(topoGANgen, [datasetPath * "data/test"])
 # save_object("./networks/topoGAN $(String(splitGoal)).jld2", resultDict)
-topoGANperf = load("./networks/topoGAN train.jld2")["single_stored_object"]
+topoGANperf = load("./networks/topoGAN test.jld2")["single_stored_object"]
 statsum(topoGANperf[:topoSE])
 statsum(topoGANperf[:VFerror])
 statsum(topoGANperf[:compError])
-quantile(topoGANperf[:compError], 0.9978)
+topoGANCompError = filter(<(quantile(topoGANperf[:compError], 0.992)), topoGANperf[:compError])
+statsum(topoGANCompError)
+
+# interpret topologyGAN (explainable AI)
+LRP_CONFIG.supports_layer(SEblock) = true # for structs
+LRP_CONFIG.supports_layer(::typeof(SEblock)) = true  # for functions
+LRP_CONFIG.supports_layer(SEresNet) = true # for structs
+LRP_CONFIG.supports_layer(::typeof(SEresNet)) = true  # for functions
+analyzer = LRP(topoGANgen)
+expl = analyzer(input)
 
 # # plot results from generator
 # trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :training)
@@ -32,13 +41,16 @@ splitGoal = :test
 # resultDict = genPerformance(convNextGen, fileSplit[splitGoal])
 resultDict = genPerformance(convNextGen, [datasetPath * "data/test"])
 save_object("./networks/convNextGen $(String(splitGoal)).jld2", resultDict)
-convNextPerf = load("./networks/convNextGen train.jld2")["single_stored_object"]
+convNextPerf = load("./networks/convNextGen test.jld2")["single_stored_object"]
 statsum(convNextPerf[:topoSE])
 statsum(convNextPerf[:VFerror])
 statsum(convNextPerf[:compError])
-quantile(convNextPerf[:compError], 0.93)
+quantile(convNextPerf[:compError], 0.916)
+convNextCompError = filter(<(quantile(convNextPerf[:compError], 0.916)), convNextPerf[:compError])
+statsum(convNextCompError)
 
 # # plot results from generator
 # trainedSamples(10, 5, convNextGen, "convnext"; split = :training)
 # trainedSamples(10, 5, convNextGen, "convnext"; split = :validation)
 # trainedSamples(10, 5, convNextGen, "convnext"; split = :test)
+

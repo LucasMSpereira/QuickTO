@@ -684,7 +684,6 @@ function trainedPerformancePlot(
   CairoMakie.activate!()
   Makie.save(projPath * "networks/results/TrainedTestErrorMetrics.pdf", fig)
 end
-# trainedPerformancePlot(topoGANperf, convNextPerf)
 
 # using trained models, create plot including
 # generator input, and generated and real topologies
