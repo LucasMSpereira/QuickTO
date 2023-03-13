@@ -5,10 +5,10 @@ using Suppressor
   ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
   Suppressor.@suppress_err begin
     using LinearAlgebra, Makie, TopOpt, Ferrite, JLD2, TimerOutputs
-    using Parameters, HDF5, Statistics, BSON, ValueHistories, ExplainableAI
+    using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
     using CUDA, Poppler_jll, MultivariateStats, Random, Colors
     using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie
-    using Zygote, Optimisers, ChainRulesCore, Interpolations
+    using Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
     using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
   end
 end

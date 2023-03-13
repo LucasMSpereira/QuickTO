@@ -20,26 +20,7 @@ topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
 # topoGANCompError = filter(<(quantile(topoGANperf[:compError], 0.992)), topoGANperf[:compError])
 # statsum(topoGANCompError)
 # interpret topologyGAN (explainable AI)
-LRP_CONFIG.supports_layer(SEblock) = true # for structs
-LRP_CONFIG.supports_layer(::typeof(SEblock)) = true  # for functions
-LRP_CONFIG.supports_layer(SEresNet) = true # for structs
-LRP_CONFIG.supports_layer(::typeof(SEresNet)) = true  # for functions
-analyzer = LRP(cpu(topoGANgen))
-batches = dataBatch(:training, 1)
-expl = 0
-begin
-  r = rand(1:length(batches))
-  for (i, a) in zip(batches, 1:length(batches))
-    if a == r
-      println("a ", timeNow())
-      expl = analyzer(i)
-      println("b ", timeNow())
-      display(ExplainableAI.heatmap(expl, reduce = :sum))
-      println("c ", timeNow())
-      break
-    end
-  end
-end
+
 # # plot results from generator
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :training)
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :validation)

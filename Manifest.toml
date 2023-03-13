@@ -2,7 +2,7 @@
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "69173ed1fe701da04327e8c4e682c1995ecbc07a"
+project_hash = "85d2c7f54f35e6d261d08ee431c6ac1494bc948b"
 
 [[deps.ADNLPModels]]
 deps = ["ForwardDiff", "LinearAlgebra", "NLPModels", "Requires", "ReverseDiff", "SparseArrays"]
@@ -598,12 +598,6 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "bad72f730e9e91c08d9427d5e8db95478a3c323d"
 uuid = "2e619515-83b5-522b-bb60-26c02a35a201"
 version = "2.4.8+0"
-
-[[deps.ExplainableAI]]
-deps = ["ColorSchemes", "Distributions", "Flux", "ImageCore", "ImageTransformations", "LinearAlgebra", "Markdown", "PrettyTables", "Random", "Statistics", "Tullio", "Zygote"]
-git-tree-sha1 = "1a45ff7c23cafd1ecccd291e1c4936a4912bcb07"
-uuid = "4f1bc3e1-d60d-4ed0-9367-9bdff9846d3b"
-version = "0.5.7"
 
 [[deps.ExprTools]]
 git-tree-sha1 = "56559bbef6ca5ea0c0818fa5c90320398a6fbf8d"
@@ -2346,6 +2340,12 @@ git-tree-sha1 = "6b5bba824b515ec026064d1e7f5d61432e954b71"
 uuid = "65257c39-d410-5151-9873-9b3e5be5013e"
 version = "0.2.9"
 
+[[deps.ShapML]]
+deps = ["DataFrames", "Distributed", "Random", "Statistics"]
+git-tree-sha1 = "0db184b0d56a440b73bbe0586ab018cf264fa39e"
+uuid = "8523bd24-6f66-414b-9e1e-b02db3916d64"
+version = "0.3.2"
+
 [[deps.SharedArrays]]
 deps = ["Distributed", "Mmap", "Random", "Serialization"]
 uuid = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
@@ -2670,12 +2670,6 @@ version = "0.3.0"
 git-tree-sha1 = "4d4ed7f294cda19382ff7de4c137d24d16adc89b"
 uuid = "981d1d27-644d-49a2-9326-4793e63143c3"
 version = "0.1.0"
-
-[[deps.Tullio]]
-deps = ["ChainRulesCore", "DiffRules", "LinearAlgebra", "Requires"]
-git-tree-sha1 = "7871a39eac745697ee512a87eeff06a048a7905b"
-uuid = "bc48ee85-29a4-5162-ae0b-a64e1601d4bc"
-version = "0.3.5"
 
 [[deps.TupleTools]]
 git-tree-sha1 = "3c712976c47707ff893cf6ba4354aa14db1d8938"
