@@ -694,10 +694,10 @@ function trainedSamples(
   sampleAmount = imageAmount * samplesPerImage
   if split == :training # file used in training
     sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[1]
-    print(sampleSource)
+    println(sampleSource)
   elseif split == :validation # file used in validation, but still varied
     sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end]
-    print(sampleSource)
+    println(sampleSource)
   elseif split == :test # file with unseen type of support
     sampleSource = datasetPath * "data/test"
   else

@@ -1,38 +1,51 @@
-import Pkg
-Pkg.activate(".")
-Pkg. instantiate()
+# import Pkg
+# Pkg.activate(".")
+# Pkg. instantiate()
 include("QTOutils.jl")
 
 ### TopologyGAN
 # load trained topologyGAN models
 topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
-# # training and validation data splits used for ConvNeXt generator
+# training and validation data splits used for ConvNeXt generator
 # fileSplit = readDataSplits("./networks/GANplots/reuniao7-10.0%-2-12-12T19-00-34/12-12T00-00-13metaData.txt")
-# topology, VF and compliance errors in data splits
+# # topology, VF and compliance errors in data splits
 # splitGoal = :test
-# resultDict = genPerformance(topoGANgen, fileSplit[splitGoal])
+# # resultDict = genPerformance(topoGANgen, fileSplit[splitGoal])
 # resultDict = genPerformance(topoGANgen, [datasetPath * "data/test"])
 # save_object("./networks/topoGAN $(String(splitGoal)).jld2", resultDict)
-topoGANperf = load("./networks/topoGAN test.jld2")["single_stored_object"]
-statsum(topoGANperf[:topoSE])
-statsum(topoGANperf[:VFerror])
-statsum(topoGANperf[:compError])
-topoGANCompError = filter(<(quantile(topoGANperf[:compError], 0.992)), topoGANperf[:compError])
-statsum(topoGANCompError)
-
+# topoGANperf = load("./networks/topoGAN test.jld2")["single_stored_object"]
+# statsum(topoGANperf[:topoSE])
+# statsum(topoGANperf[:VFerror])
+# statsum(topoGANperf[:compError])
+# topoGANCompError = filter(<(quantile(topoGANperf[:compError], 0.992)), topoGANperf[:compError])
+# statsum(topoGANCompError)
 # interpret topologyGAN (explainable AI)
 LRP_CONFIG.supports_layer(SEblock) = true # for structs
 LRP_CONFIG.supports_layer(::typeof(SEblock)) = true  # for functions
 LRP_CONFIG.supports_layer(SEresNet) = true # for structs
 LRP_CONFIG.supports_layer(::typeof(SEresNet)) = true  # for functions
-analyzer = LRP(topoGANgen)
-expl = analyzer(input)
-
+analyzer = LRP(cpu(topoGANgen))
+batches = dataBatch(:training, 1)
+expl = 0
+begin
+  r = rand(1:length(batches))
+  for (i, a) in zip(batches, 1:length(batches))
+    if a == r
+      println("a ", timeNow())
+      expl = analyzer(i)
+      println("b ", timeNow())
+      display(ExplainableAI.heatmap(expl, reduce = :sum))
+      println("c ", timeNow())
+      break
+    end
+  end
+end
 # # plot results from generator
-# trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :training)
-# trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :validation)
-# trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :test)
+trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :training)
+trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :validation)
+trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :test)
 
+### ConvNeXt
 # load trained ConvNeXt models
 convNextGen, convNextDisc = loadTrainedGANs(:convnext)
 # training and validation data splits used for ConvNeXt generator
@@ -48,9 +61,7 @@ statsum(convNextPerf[:compError])
 quantile(convNextPerf[:compError], 0.916)
 convNextCompError = filter(<(quantile(convNextPerf[:compError], 0.916)), convNextPerf[:compError])
 statsum(convNextCompError)
-
-# # plot results from generator
-# trainedSamples(10, 5, convNextGen, "convnext"; split = :training)
-# trainedSamples(10, 5, convNextGen, "convnext"; split = :validation)
-# trainedSamples(10, 5, convNextGen, "convnext"; split = :test)
-
+# plot results from generator
+trainedSamples(10, 5, convNextGen, "convnext"; split = :training)
+trainedSamples(10, 5, convNextGen, "convnext"; split = :validation)
+trainedSamples(10, 5, convNextGen, "convnext"; split = :test)
