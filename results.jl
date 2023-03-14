@@ -20,8 +20,8 @@ topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
 # topoGANCompError = filter(<(quantile(topoGANperf[:compError], 0.992)), topoGANperf[:compError])
 # statsum(topoGANCompError)
 # interpret topologyGAN (explainable AI)
-
-# # plot results from generator
+genShapleyValPlots(:training, topoGANgen, "asd")
+# plot results from generator
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :training)
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :validation)
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :test)

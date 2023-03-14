@@ -2,13 +2,11 @@
 # used for ML pipelines
 
 # return batched data of certain split
-function dataBatch(split::Symbol, sizeOfBatch::Int)::DataLoader
+function dataBatch(split::Symbol, sizeOfBatch::Int)
   if split == :training # file used in training
     sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[1]
-    println(sampleSource)
   elseif split == :validation # file used in validation, but still varied
     sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end]
-    println(sampleSource)
   elseif split == :test # file with unseen type of support
     sampleSource = datasetPath * "data/test"
   end
@@ -21,8 +19,9 @@ function dataBatch(split::Symbol, sizeOfBatch::Int)::DataLoader
     genInput, FEAinfo, topology, MLdataDict; sampleAmount = 0
   )
   # discard first position of arrays (initialization)
-  genInput, _, _ = remFirstSample.((genInput, FEAinfo, topology))
-  return DataLoader(genInput; batchsize = sizeOfBatch, parallel = true)
+  genInput, FEAinfo, topology = remFirstSample.((genInput, FEAinfo, topology))
+  return DataLoader((genInput, FEAinfo, topology); batchsize = sizeOfBatch, parallel = true),
+    genInput, FEAinfo, topology
 end
 
 # prepare data for GAN training. Receives list of HDF5 files.

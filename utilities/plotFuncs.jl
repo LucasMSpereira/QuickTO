@@ -118,6 +118,52 @@ function GANtestPlotsReport(_modelName, _metaData, _path)
   )
 end
 
+function genShapleyValPlots(split::Symbol, generator::Chain, nnName::String)
+  # get input data
+  _, genInput, _, _ = dataBatch(split, 1)
+  inputFrame = DataFrame( # organize inside DataFrame
+    :vf => [genInput[:, :, 1, s] for s in axes(genInput, 4)],
+    :vm => [genInput[:, :, 2, s] for s in axes(genInput, 4)],
+    :energy => [genInput[:, :, 3, s] for s in axes(genInput, 4)]
+  )
+  # Define predict_function for calculations
+  ShapML.@everywhere function predict_function(model, data)
+    topoBatch = model(cat(
+      [solidify(data[sample, :]...) |> dim4 for sample in axes(data, 1)]...; dims = 4
+    ))
+    return DataFrame(:topo => [topoBatch[:, :, 1, s] for s in axes(topoBatch, 4)])
+  end
+  # more setup
+  explain = copy(inputFrame[1:5, :])
+  reference = copy(inputFrame[1:50, :])
+  sample_size = 10
+  # run simulation
+  data_shap = ShapML.shap(explain = explain,
+    reference = reference,
+    model = cpu(generator),
+    predict_function = predict_function,
+    sample_size = sample_size,
+    parallel = :samples,
+    seed = 1
+  )
+  # plot heatmaps and save as pdf
+  n = 0
+  for row in eachrow(data_shap)
+    for ele in row[3:end]
+      n += 1
+      fig = Figure(resolution = (1500, 800))
+      ax = Axis(fig[1, 1], title = "$n $(row[1]) $(row[2])")
+      ax.yreversed = true
+      hidespines!(ax); hidedecorations!(ax)
+      hm = heatmap!(ax, ele' |> Array)
+      Colorbar(fig[1, 2], hm)
+      CairoMakie.activate!()
+      Makie.save("./networks/results/topologyGANshap/$(rand(1:9999)).pdf", fig)
+    end
+  end
+  combinePDFs("./networks/results/topologyGANshap/", "shaps")
+end
+
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
 function loadCNNtestPlots(
