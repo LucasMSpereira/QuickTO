@@ -118,6 +118,14 @@ function GANtestPlotsReport(_modelName, _metaData, _path)
   )
 end
 
+# Define predict_function for calculations
+ShapML.@everywhere function predict_function(model, data)
+  topoBatch = model(cat(
+    [solidify(data[sample, :]...) |> dim4 for sample in axes(data, 1)]...; dims = 4
+  ))
+  return DataFrame(:topo => [topoBatch[:, :, 1, s] for s in axes(topoBatch, 4)])
+end
+
 function genShapleyValPlots(split::Symbol, generator::Chain, nnName::String)
   # get input data
   _, genInput, _, _ = dataBatch(split, 1)
@@ -126,13 +134,6 @@ function genShapleyValPlots(split::Symbol, generator::Chain, nnName::String)
     :vm => [genInput[:, :, 2, s] for s in axes(genInput, 4)],
     :energy => [genInput[:, :, 3, s] for s in axes(genInput, 4)]
   )
-  # Define predict_function for calculations
-  ShapML.@everywhere function predict_function(model, data)
-    topoBatch = model(cat(
-      [solidify(data[sample, :]...) |> dim4 for sample in axes(data, 1)]...; dims = 4
-    ))
-    return DataFrame(:topo => [topoBatch[:, :, 1, s] for s in axes(topoBatch, 4)])
-  end
   # more setup
   explain = copy(inputFrame[1:5, :])
   reference = copy(inputFrame[1:50, :])
@@ -151,14 +152,17 @@ function genShapleyValPlots(split::Symbol, generator::Chain, nnName::String)
   for row in eachrow(data_shap)
     for ele in row[3:end]
       n += 1
-      fig = Figure(resolution = (1500, 800))
+      imgWidth = 1300
+      fig = Figure(resolution = (imgWidth, 700)) # makie figure
+      # colSize = round(Int, (0.9 * imgWidth) / 4)
+      # rowHeight = round(Int, colSize * (50/140))
       ax = Axis(fig[1, 1], title = "$n $(row[1]) $(row[2])")
       ax.yreversed = true
       hidespines!(ax); hidedecorations!(ax)
       hm = heatmap!(ax, ele' |> Array)
       Colorbar(fig[1, 2], hm)
       CairoMakie.activate!()
-      Makie.save("./networks/results/topologyGANshap/$(rand(1:9999)).pdf", fig)
+      Makie.save("./networks/results/topologyGANshap/1$n $(row[1]) $(row[2]).pdf", fig)
     end
   end
   combinePDFs("./networks/results/topologyGANshap/", "shaps")
@@ -795,6 +799,7 @@ function trainedSamples(
       heatmap!(vmAxis, denseDataDict[:vm][sampleID]' |> Array)
       ## fakeTopology
       fakeTopoAxis = Axis(fig[sample + 1, 3]; height = rowHeight)
+      fakeTopoAxis.yreversed = true
       heatmap!(fakeTopoAxis, fakeTopology[:, :, 1, sample]' |> Array)
       hidespines!(fakeTopoAxis); hidedecorations!(fakeTopoAxis)
       ## true topology

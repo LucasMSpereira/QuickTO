@@ -23,7 +23,7 @@ function multiOutputs(kernel, activ, ch)
     Conv(kernel, 1 => 1, activ),
     BatchNorm(1),
     Conv(kernel, 1 => 1, activ),
-    flatten)
+    MLUtils.flatten)
   m1size = prod(Flux.outputsize(module1, (51, 141, 2, 1)))
   module2 = Split(
     Chain(Dense(m1size => m1size ÷ 10), Dense(m1size ÷ 10 => 2, activ)),
@@ -54,7 +54,7 @@ function topologyGANdisc(; normal = :BN, drop = 0.0)
     normal == :BN ? BatchNorm(df_dim * 8) : ChannelLayerNorm(df_dim * 8),
     leakyrelu, # h3
     drop > 0.0 ? Dropout(drop) : identity,
-    flatten,
+    MLUtils.flatten,
   )
   m1size = prod(Flux.outputsize(m1, (51, 141, 7, 1)))
   m2 = Chain(
@@ -81,14 +81,14 @@ function patchGANdisc(; normal = :BN, tiny = false)
     normal == :BN ? BatchNorm(beginChannel * 8) : ChannelLayerNorm(beginChannel * 8),
     leakyrelu,
     Conv((4, 4), beginChannel * 8 => 1; pad = SamePad()),
-    flatten
+    MLUtils.flatten
   ) |> gpu
 end
 
 # Return Flux Chain of SE-ResNet blocks of desired size.
 # Generator from original paper used 32 blocks
 function SE_ResNetChain(sizeChain)
-  se1 = Chain(GlobalMeanPool(), flatten)
+  se1 = Chain(GlobalMeanPool(), MLUtils.flatten)
   se1Size = prod(Flux.outputsize(se1, (1, 1, gf_dim * 4, 1)))
   se2 = Chain(
     Dense(se1Size => se1Size ÷ 16, relu),
