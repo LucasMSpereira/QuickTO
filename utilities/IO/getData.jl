@@ -2,16 +2,16 @@
 # used for ML pipelines
 
 # return batched data of certain split
-function dataBatch(split::Symbol, sizeOfBatch::Int)
+function dataBatch(split::Symbol, sizeOfBatch::Int; extraFiles = 0, numOfSamples = 0)
   if split == :training # file used in training
-    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[1]
+    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[1 : 1 + extraFiles]
   elseif split == :validation # file used in validation, but still varied
-    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end]
+    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end - extraFiles: end]
   elseif split == :test # file with unseen type of support
     sampleSource = datasetPath * "data/test"
   end
   # MLdataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
-  _, MLdataDict = denseInfoFromGANdataset(sampleSource, 720)
+  _, MLdataDict = denseInfoFromGANdataset(sampleSource, numOfSamples)
   # tensor initializers
   genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
   topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)

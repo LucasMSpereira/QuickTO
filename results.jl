@@ -20,6 +20,7 @@ topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
 # topoGANCompError = filter(<(quantile(topoGANperf[:compError], 0.992)), topoGANperf[:compError])
 # statsum(topoGANCompError)
 # interpret topologyGAN (explainable AI)
+corrs = generatorCorrelation(topoGANgen, :test)
 # plot results from generator
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :training)
 trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :validation)

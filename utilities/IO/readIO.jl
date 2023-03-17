@@ -8,7 +8,11 @@ function denseInfoFromGANdataset(path::String, sampleAmount::Int)::Tuple{Dict, D
   dataDict = readTopologyGANdataset(path) # data from file
   compliance = dataDict[:compliance]::Vector{Float32}
   # choose random 'numSamples' samples in file
-  sampleIDs = shuffle(1:length(dataDict[:compliance]))[1:sampleAmount]
+  if sampleAmount != 0
+    sampleIDs = shuffle(1:length(dataDict[:compliance]))[1:sampleAmount]
+  else
+    sampleIDs = shuffle(1:length(dataDict[:compliance]))
+  end
   # transform data of desired samples to dense format
   vf = (dataDict[:vf][1, 1, :, sampleIDs] |> vec)::Vector{Float32}
   vm = Array{Matrix{Float32}}(undef, length(sampleIDs))
