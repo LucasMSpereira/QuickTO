@@ -371,13 +371,13 @@ end
 
 # Get pixel-wise correlations for each generator
 # input channel in a certain split
-function generatorCorrelation(gen::Chain, split::Symbol)::Vector{Matrix{Float32}}
+function generatorCorrelation(gen::Chain, split::Symbol; additionalFiles = 0)::Vector{Matrix{Float32}}
   # initialize arrays
   input = zeros(Float32, (51, 141, 3, 1))
   fakeTopology = zeros(Float32, (51, 141, 1, 1))
   iter = 0
   # batches of data split
-  for (genInput, _, _) in dataBatch(split, 200; numOfSamples = 0)[1]
+  for (genInput, _, _) in dataBatch(split, 200; extraFiles = additionalFiles, numOfSamples = 0)[1]
     iter += 1
     rand() < 0.3 && println(iter, "  ", timeNow())
     input = cat(input, genInput; dims = 4) # store batch input

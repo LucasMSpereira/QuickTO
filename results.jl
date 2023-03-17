@@ -46,3 +46,6 @@ statsum(convNextCompError)
 trainedSamples(10, 5, convNextGen, "convnext"; split = :training)
 trainedSamples(10, 5, convNextGen, "convnext"; split = :validation)
 trainedSamples(10, 5, convNextGen, "convnext"; split = :test)
+# interpret topologyGAN (explainable AI)
+corrs = generatorCorrelation(convNextGen, :test)
+[@show mean(corr) for corr in corrs]

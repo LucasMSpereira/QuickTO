@@ -8,17 +8,19 @@ function dataBatch(split::Symbol, sizeOfBatch::Int; extraFiles = 0, numOfSamples
   elseif split == :validation # file used in validation, but still varied
     sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end - extraFiles: end]
   elseif split == :test # file with unseen type of support
-    sampleSource = datasetPath * "data/test"
+    sampleSource = [datasetPath * "data/test"]
   end
-  # MLdataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
-  _, MLdataDict = denseInfoFromGANdataset(sampleSource, numOfSamples)
-  # tensor initializers
   genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
   topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
-  genInput, FEAinfo, topology = groupGANdata!(
-    genInput, FEAinfo, topology, MLdataDict; sampleAmount = 0
-  )
-  # discard first position of arrays (initialization)
+  for file in sampleSource
+    # MLdataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
+    _, MLdataDict = denseInfoFromGANdataset(file, numOfSamples)
+    # tensor initializers
+    genInput, FEAinfo, topology = groupGANdata!(
+      genInput, FEAinfo, topology, MLdataDict; sampleAmount = 0
+    )
+    # discard first position of arrays (initialization)
+  end
   genInput, FEAinfo, topology = remFirstSample.((genInput, FEAinfo, topology))
   return DataLoader((genInput, FEAinfo, topology); batchsize = sizeOfBatch, parallel = true),
     genInput, FEAinfo, topology
