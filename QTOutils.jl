@@ -7,7 +7,7 @@ using Suppressor
     using LinearAlgebra, Makie, TopOpt, Ferrite, JLD2, TimerOutputs
     using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
     using CUDA, Poppler_jll, MultivariateStats, Random, Colors
-    using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie
+    using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie, ExplainableAI
     using Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
     using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
   end

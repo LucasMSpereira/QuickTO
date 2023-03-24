@@ -33,6 +33,46 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   combinePDFs(path, finalName)
 end
 
+# Plot XAI results from each input channel for discriminator/critic
+function explainDiscCritic(
+  input::Array{Float32, 4}, analyzer::AbstractXAIMethod, network::String; goal = :display
+)
+  # get explanation for given input
+  expl = analyzer(input)
+  refs = Dict(
+    :rows => [1, 1, 2, 2, 3], # columns in figure
+    :cols => repeat([1, 2], 3), # columns in figure
+    :channel => [1, 2, 4, 5, 7], # input channels to access
+    # heatmap labels
+    :label => ["VF", "VM", "Supports", "Forces", "Input topology"]
+  )
+  # reshaped input data
+  data = dropdims.(eachslice(expl.attribution; dims = 3) |> collect .|> Array; dims = 3)
+  imgWidth = 1100 # width of image
+  fig = Figure(resolution = (imgWidth, 750)) # makie figure
+  # columns and rows sizes
+  colSize = round(Int, (0.95 * imgWidth) / 2); rowHeight = round(Int, colSize * (50/140))
+  # iterate in input channels
+  for (col, row, channel, label) in zip(refs[:cols], refs[:rows], refs[:channel], refs[:label])
+    # axis, heatmap and colorbar for explanation of current input channel
+    explAxis = Axis(fig[row, col]; height = rowHeight, title = label)
+    explAxis.yreversed = true; hidespines!(explAxis); hidedecorations!(explAxis)
+    heatmap!(explAxis, data[channel]' |> Array)
+  end
+  # fix size of columns
+  [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:2]
+  # axis and heatmap of target topology
+  topoAxis = Axis(fig[3, 2]; height = rowHeight, title = "Target topology")
+  topoAxis.yreversed = true; hidespines!(topoAxis); hidedecorations!(topoAxis)
+  heatmap!(topoAxis, input[:, :, 7, 1]' |> Array)
+  if goal == :display
+    GLMakie.activate!()
+    display(fig)
+  elseif goal == :save
+    Makie.save("./networks/results/" * network * "-XAI.pdf", fig)
+  end
+end
+
 # create plot with FEA inputs, and generated and real topologies.
 function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; extension = :png)
   # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
