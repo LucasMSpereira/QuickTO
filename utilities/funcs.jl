@@ -279,6 +279,67 @@ function estimateGrads(vals, quants, iCenter, jCenter)
 
 end
 
+# convert loads from dataset to dense format
+function forceMatrixToDense(sparseX, sparseY)::Array{Float32, 3}
+  denseForce = zeros(Float32, (2, 4, size(sparseX, 3)))
+  for sample_ in axes(sparseX, 3), (index, loadPos) in findall(!=(0.0), sparseX[:, :, sample_]) |> enumerate
+    denseForce[index, :, sample_] .= loadPos[1], loadPos[2], sparseX[:, :, sample_][loadPos], sparseY[:, :, sample_][loadPos]
+  end
+  return denseForce
+end
+
+# build sparse force matrices from dense format
+function forceToMat(force)
+  forceXmatrix = zeros(FEAparams.meshMatrixSize)
+  forceYmatrix = zeros(FEAparams.meshMatrixSize)
+  forceXmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 3] # x component of first load
+  forceXmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 3] # x component of second load
+  forceYmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 4] # y component of first load
+  forceYmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 4] # y component of second load
+  return forceXmatrix, forceYmatrix
+end
+
+# print summary statistics of GAN parameters
+function GANparamsStats(metaData)
+  println("Generator:\n")
+  vcat((Iterators.flatten.(getGen(metaData) |> cpu |> Flux.params) .|> collect)...) |> statsum
+  println("Discriminator:\n")
+  vcat((Iterators.flatten.(getDisc(metaData) |> cpu |> Flux.params) .|> collect)...) |> statsum
+  return nothing
+end
+
+# Get pixel-wise correlations for each generator
+# input channel in a certain split
+function generatorCorrelation(gen::Chain, split::Symbol; additionalFiles = 0)::Vector{Matrix{Float32}}
+  # initialize arrays
+  input = zeros(Float32, (51, 141, 3, 1))
+  fakeTopology = zeros(Float32, (51, 141, 1, 1))
+  iter = 0
+  # batches of data split
+  for (genInput, _, _) in dataBatch(split, 200; extraFiles = additionalFiles, numOfSamples = 0)[1]
+    iter += 1
+    rand() < 0.3 && println(iter, "  ", timeNow())
+    input = cat(input, genInput; dims = 4) # store batch input
+    # store topology
+    fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu |> padGen; dims = 4)
+  end
+  input, fakeTopology = remFirstSample.((input, fakeTopology))
+  # correlations
+  channelCorr = [map(Statistics.cor,
+    [input[i, j, ch, :] for i in axes(input, 1), j in axes(input, 2)],
+    [fakeTopology[i, j, 1, :] for i in axes(fakeTopology, 1), j in axes(fakeTopology, 2)],
+  ) for ch in 1:3]
+  # discard last row and column because of difference
+  # in size of generator input and output
+  channelCorr = [corMat[1 : end - 1, 1 : end - 1] for corMat in channelCorr]
+  # in test set, all samples are clamped at the top. these
+  # points are constant in the output, causing NaN correlations
+  if split == :test
+    channelCorr = [corMat[2 : end, :] for corMat in channelCorr]
+  end
+  return channelCorr
+end
+
 # performance of trained generator is certain data split
 function genPerformance(gen::Chain, dataSplit::Vector{String})
   if length(dataSplit) == 1
@@ -337,13 +398,10 @@ function genPerformance(gen::Chain, dataSplit::Vector{String})
   return splitError
 end
 
-# print summary statistics of GAN parameters
-function GANparamsStats(metaData)
-  println("Generator:\n")
-  vcat((Iterators.flatten.(getGen(metaData) |> cpu |> Flux.params) .|> collect)...) |> statsum
-  println("Discriminator:\n")
-  vcat((Iterators.flatten.(getDisc(metaData) |> cpu |> Flux.params) .|> collect)...) |> statsum
-  return nothing
+# Get section and dataset IDs of sample
+function getIDs(pathing)
+  s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
+  return s[1], s[2]
 end
 
 # Identify non-binary topologies
@@ -363,63 +421,7 @@ function getNonBinaryTopos(forces, supps, vf, disp, top)
   end
 end
 
-# Get section and dataset IDs of sample
-function getIDs(pathing)
-  s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
-  return s[1], s[2]
-end
-
-# Get pixel-wise correlations for each generator
-# input channel in a certain split
-function generatorCorrelation(gen::Chain, split::Symbol; additionalFiles = 0)::Vector{Matrix{Float32}}
-  # initialize arrays
-  input = zeros(Float32, (51, 141, 3, 1))
-  fakeTopology = zeros(Float32, (51, 141, 1, 1))
-  iter = 0
-  # batches of data split
-  for (genInput, _, _) in dataBatch(split, 200; extraFiles = additionalFiles, numOfSamples = 0)[1]
-    iter += 1
-    rand() < 0.3 && println(iter, "  ", timeNow())
-    input = cat(input, genInput; dims = 4) # store batch input
-    # store topology
-    fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu |> padGen; dims = 4)
-  end
-  input, fakeTopology = remFirstSample.((input, fakeTopology))
-  # correlations
-  channelCorr = [map(Statistics.cor,
-    [input[i, j, ch, :] for i in axes(input, 1), j in axes(input, 2)],
-    [fakeTopology[i, j, 1, :] for i in axes(fakeTopology, 1), j in axes(fakeTopology, 2)],
-  ) for ch in 1:3]
-  # discard last row and column because of difference
-  # in size of generator input and output
-  channelCorr = [corMat[1 : end - 1, 1 : end - 1] for corMat in channelCorr]
-  # in test set, all samples are clamped at the top. these
-  # points are constant in the output, causing NaN correlations
-  if split == :test
-    channelCorr = [corMat[2 : end, :] for corMat in channelCorr]
-  end
-  return channelCorr
-end
-
-# convert loads from dataset to dense format
-function forceMatrixToDense(sparseX, sparseY)::Array{Float32, 3}
-  denseForce = zeros(Float32, (2, 4, size(sparseX, 3)))
-  for sample_ in axes(sparseX, 3), (index, loadPos) in findall(!=(0.0), sparseX[:, :, sample_]) |> enumerate
-    denseForce[index, :, sample_] .= loadPos[1], loadPos[2], sparseX[:, :, sample_][loadPos], sparseY[:, :, sample_][loadPos]
-  end
-  return denseForce
-end
-
-function forceToMat(force)
-  forceXmatrix = zeros(FEAparams.meshMatrixSize)
-  forceYmatrix = zeros(FEAparams.meshMatrixSize)
-  forceXmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 3] # x component of first load
-  forceXmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 3] # x component of second load
-  forceYmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 4] # y component of first load
-  forceYmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 4] # y component of second load
-  return forceXmatrix, forceYmatrix
-end
-
+# initialize variables used to store loss histories
 function initializeHistories(_metaData)
   if wasserstein # using wgan
     push!(_metaData.discDefinition.nnValues, :criticOutFake, 1, 0f0)
