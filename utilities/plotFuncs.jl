@@ -746,10 +746,14 @@ function trainedPerformancePlot(
   convNextError::Dict{Symbol, Vector{Float32}}
 )
   fig = Figure(resolution = (1200, 700)) # makie figure
-  topoGANseAx = Axis(fig[1, 1])
-  topoGANrelAx = Axis(fig[1, 2])
-  convNextSEax = Axis(fig[2, 1])
-  convNextRelAx = Axis(fig[2, 2])
+  # U-SE-ResNet total squared error axis
+  topoGANseAx = Axis(fig[1, 1]); xlims!(topoGANseAx, 0, 4500)
+  # U-SE-ResNet relative volume fraction error axis
+  topoGANrelAx = Axis(fig[1, 2]); xlims!(topoGANrelAx, 0, 2)
+  # QuickTO total squared error axis
+  convNextSEax = Axis(fig[2, 1]); xlims!(convNextSEax, 0, 4500)
+  # QuickTO relative volume fraction error axis
+  convNextRelAx = Axis(fig[2, 2]); xlims!(convNextRelAx, 0, 2)
   bin = 20
   ### topologyGAN histograms
   # U-SE-ResNet topology squared error
