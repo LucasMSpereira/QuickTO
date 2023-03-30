@@ -518,6 +518,130 @@ function plotLearnTries(trainParams, tries; drawLegend = true, name = timeNow(),
   Makie.save("$path/$name.pdf", f) # save pdf with plot
 end
 
+# plot samples that are outliers according to each
+# error metric (VF and compliance relative errors, and
+# total squared error)
+function plotOutliers(
+  gen::Chain, split::Symbol, error::Dict{Symbol, Vector{Float32}},
+  network::String, goal::Symbol, outlierPercentage::Real
+)
+  # indicators for each metric
+  tseChosen = false; vfChosen = false; compChosen = false
+  # store outlier data for plotting
+  outlierData = Dict(:tseOut => Dict(), :vfOut => Dict(), :compOut => Dict())
+  # get outlier error values
+  tseOutlier = quantile(error[:topoSE], outlierPercentage)
+  vfOutlier = quantile(error[:VFerror], outlierPercentage)
+  compOutlier = quantile(error[:compError], outlierPercentage)
+  # prepare data
+  _, genInput, _, realTopology, vf, force, supp, comp, vm = dataBatch(
+    split, 1; extraFiles = 20, extraInfo = true
+  )
+  # iterate in samples from data split
+  for sample in axes(genInput, 4)
+    sample % 150 == 0 && println("$sample/$(size(genInput, 4))")
+    fakeTopology = gen(genInput[:, :, :, sample] |> dim4 |> gpu) |> cpu # use generator
+    ## calculate errors
+    topoSE = sum( # squared topology error
+      (padGen(fakeTopology)[:, :, 1, 1] .- realTopology[:, :, 1, sample]) .^ 2
+    )
+    # relative volume fraction error
+    fakeVF = volFrac(fakeTopology[:, :, 1, 1])[1]
+    realVF = volFrac(realTopology[:, :, 1, sample])[1]
+    VFerror = abs(fakeVF - realVF) / realVF
+    # relative compliance error
+    fakeComp = 0.0
+    @suppress_err fakeComp = topologyCompliance(
+      Float64(vf[sample]),
+      Int.(supp[:, :, sample]),
+      Float64.(force[:, :, sample]),
+      Float64.(fakeTopology[:, :, 1, 1])
+    )
+    compError = abs(fakeComp - comp[sample]) / comp[sample]
+    # store sample if it's an outlier in some metric
+    if topoSE > tseOutlier && tseChosen == false
+      push!(outlierData[:tseOut], :force => force[:, :, sample])
+      push!(outlierData[:tseOut], :supp => supp[:, :, sample])
+      push!(outlierData[:tseOut], :vm => vm[:, :, 1, sample])
+      push!(outlierData[:tseOut], :fakeTopology => fakeTopology[:, :, 1, 1])
+      push!(outlierData[:tseOut], :realTopology => realTopology[:, :, 1, sample])
+      @show fakeVF
+      @show realVF
+      # indicate that an outlier for this metric has already been chosen
+      tseChosen = true
+      println("Sample $sample is a TSE outlier")
+    elseif VFerror > vfOutlier && vfChosen == false
+      push!(outlierData[:vfOut], :force => force[:, :, sample])
+      push!(outlierData[:vfOut], :supp => supp[:, :, sample])
+      push!(outlierData[:vfOut], :vm => vm[:, :, 1, sample])
+      push!(outlierData[:vfOut], :fakeTopology => fakeTopology[:, :, 1, 1])
+      push!(outlierData[:vfOut], :realTopology => realTopology[:, :, 1, sample])
+      @show fakeVF
+      @show realVF
+      # indicate that an outlier for this metric has already been chosen
+      vfChosen = true
+      println("Sample $sample is a VF outlier")
+    elseif compError > compOutlier && compChosen == false
+      push!(outlierData[:compOut], :force => force[:, :, sample])
+      push!(outlierData[:compOut], :supp => supp[:, :, sample])
+      push!(outlierData[:compOut], :vm => vm[:, :, 1, sample])
+      push!(outlierData[:compOut], :fakeTopology => fakeTopology[:, :, 1, 1])
+      push!(outlierData[:compOut], :realTopology => realTopology[:, :, 1, sample])
+      # indicate that an outlier for this metric has already been chosen
+      compChosen = true
+      println("Sample $sample is a compliance outlier")
+    end
+    all([tseChosen, vfChosen, compChosen]) && break
+    sample == size(genInput, 4) && println("DIDN'T FOUND ALL OUTLIERS")
+  end
+  # common image setup
+  imgWidth = 1300
+  fig = Figure(resolution = (imgWidth, 500)) # makie figure
+  colSize = round(Int, (0.9 * imgWidth) / 4); rowHeight = round(Int, colSize * (50/140))
+  Label(fig[1, 1], "FEM inputs"; lineheight = 0.6)
+  Label(fig[1, 2], "von Mises")
+  Label(fig[1, 3], "QuickTO"); Label(fig[1, 4], "FEA topology")
+  [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:4]
+  ## prepare plot as in trainedSamples()
+  # iterate in chosen outliers
+  for (row, (_, outDict)) in enumerate(outlierData)
+    ## FEA intputs (supports and loads)
+    FEAaxis = Axis(fig[row + 1, 1]; height = rowHeight)
+    hidespines!(FEAaxis); hidedecorations!(FEAaxis)
+    limits!(FEAaxis, 1, FEAparams.meshSize[1], 1, FEAparams.meshSize[2])
+    FEAaxis.yreversed = true
+    # plot supports
+    heatmap!(FEAaxis, suppToBinary(outDict[:supp])[2]' |> Array, colormap = :bluesreds)
+    plotForce( # plot forces
+      FEAparams, outDict[:force],
+      fig, (2, 3), (2, 4); topologyGANtest = true,
+      newAxis = FEAaxis, paintArrow = :orange,
+      arrowWidth = 2, arrowHead = 15, includeText = false
+    )
+    ## VM
+    vmAxis = Axis(fig[row + 1, 2]; height = rowHeight)
+    vmAxis.yreversed = true; hidespines!(vmAxis); hidedecorations!(vmAxis)
+    heatmap!(vmAxis, outDict[:vm]' |> Array)
+    ## fakeTopology
+    fakeTopoAxis = Axis(fig[row + 1, 3]; height = rowHeight)
+    fakeTopoAxis.yreversed = true; hidespines!(fakeTopoAxis); hidedecorations!(fakeTopoAxis)
+    heatmap!(fakeTopoAxis, outDict[:fakeTopology]' |> Array)
+    ## true topology
+    trueTopoAxis = Axis(fig[row + 1, 4]; height = rowHeight)
+    heatmap!(trueTopoAxis, outDict[:realTopology]' |> Array)
+    hidespines!(trueTopoAxis); hidedecorations!(trueTopoAxis); trueTopoAxis.yreversed = true
+  end
+  if goal == :save # save image file as pdf
+    CairoMakie.activate!()
+    Makie.save(projPath * "networks/results/outliers $split $network.pdf", fig)
+    return Nothing
+  elseif goal == :display # plot batch and exit
+    GLMakie.activate!()
+    display(fig)
+    return Nothing
+  end
+end
+
 # create figure to vizualize sample
 function plotSample(FEAparams, supps, forces, vf, top, disp, dataset, section, sample; goal = "display")
   # create makie figure and set it up
@@ -816,7 +940,7 @@ function trainedSamples(
   colSize = round(Int, (0.9 * imgWidth) / 4); rowHeight = round(Int, colSize * (50/140))
   Label(fig[1, 1], "FEM inputs"; lineheight = 0.6)
   Label(fig[1, 2], "von Mises")
-  Label(fig[1, 3], "Fake topology"); Label(fig[1, 4], "Real topology")
+  Label(fig[1, 3], "QuickTO"); Label(fig[1, 4], "FEA topology")
   [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:4]
   for (batchIndex, gIn) in enumerate(dataBatch)
     fakeTopology = gen(gIn |> gpu) |> cpu |> padGen # use generator

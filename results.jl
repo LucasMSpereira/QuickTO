@@ -1,7 +1,12 @@
 # import Pkg
 # Pkg.activate(".")
 # Pkg. instantiate()
+begin
 include("QTOutils.jl")
+convNextGen, convNextDisc = loadTrainedGANs(:convnext)
+convNextPerf = load("./networks/convNextGen validate.jld2")["single_stored_object"]
+plotOutliers(convNextGen, :validation, convNextPerf, "ConvNeXt", :save, 0.995)
+end
 
 # Script used to quantify performance of trained models
 
@@ -11,14 +16,14 @@ topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
 # training and validation data splits used for U-SE-ResNet generator
 fileSplit = readDataSplits("./networks/GANplots/reuniao7-10.0%-2-12-12T19-00-34/12-12T00-00-13metaData.txt")
 ## topology, VF and compliance errors in data splits
-splitGoal = :test
+splitGoal = :validation
 # if training or validation split
 # resultDict = genPerformance(topoGANgen, fileSplit[splitGoal])
 # if test split
 resultDict = genPerformance(topoGANgen, [datasetPath * "data/test"])
 # save/load results
 save_object("./networks/topoGAN $(String(splitGoal)).jld2", resultDict)
-topoGANperf = load("./networks/topoGAN test.jld2")["single_stored_object"]
+topoGANperf = load("./networks/topoGAN validate.jld2")["single_stored_object"]
 # statistical summary of results
 statsum(topoGANperf[:topoSE])
 statsum(topoGANperf[:VFerror])
