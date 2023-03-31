@@ -316,19 +316,25 @@ function generatorCorrelation(gen::Chain, split::Symbol; additionalFiles = 0)::V
   fakeTopology = zeros(Float32, (51, 141, 1, 1))
   iter = 0
   # batches of data split
-  for (genInput, _, _) in dataBatch(split, 200; extraFiles = additionalFiles, numOfSamples = 0)[1]
+  @inbounds for (genInput, _, _) in dataBatch(split, 200; extraFiles = additionalFiles)[1]
     iter += 1
-    rand() < 0.3 && println(iter, "  ", timeNow())
+    rand() < 0.15 && println(iter, "  ", timeNow())
     input = cat(input, genInput; dims = 4) # store batch input
     # store topology
     fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu |> padGen; dims = 4)
   end
   input, fakeTopology = remFirstSample.((input, fakeTopology))
-  # correlations
-  channelCorr = [map(Statistics.cor,
-    [input[i, j, ch, :] for i in axes(input, 1), j in axes(input, 2)],
-    [fakeTopology[i, j, 1, :] for i in axes(fakeTopology, 1), j in axes(fakeTopology, 2)],
-  ) for ch in 1:3]
+  # VM-topology and energy-topology pixelwise correlations
+  channelCorr = [zeros(Float32, (51, 141)) for _ in 1:2]
+  for ch in 2:3
+    @inbounds for i in axes(input, 1), j in axes(input, 2)
+      # standardized inputs
+      channelCorr[ch - 1][i, j] = Statistics.cor(
+        StatsBase.standardize(StatsBase.ZScoreTransform, input[i, j, ch, :]),
+        StatsBase.standardize(StatsBase.ZScoreTransform, fakeTopology[i, j, 1, :]),
+      )
+    end
+  end
   # discard last row and column because of difference
   # in size of generator input and output
   channelCorr = [corMat[1 : end - 1, 1 : end - 1] for corMat in channelCorr]

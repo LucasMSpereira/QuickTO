@@ -1,15 +1,11 @@
-# import Pkg
-# Pkg.activate(".")
-# Pkg. instantiate()
-begin
-include("QTOutils.jl")
-convNextGen, convNextDisc = loadTrainedGANs(:convnext)
-convNextPerf = load("./networks/convNextGen validate.jld2")["single_stored_object"]
-plotOutliers(convNextGen, :validation, convNextPerf, "ConvNeXt", :save, 0.995)
-end
-
 # Script used to quantify performance of trained models
 
+begin
+include("QTOutils.jl")
+convNextGen, _ = loadTrainedGANs(:convnext)
+corrs = generatorCorrelation(convNextGen, :training; additionalFiles = 9)
+[@show mean(corr) for corr in corrs]
+end
 ### TopologyGAN
 # load trained topologyGAN models
 topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
@@ -32,6 +28,8 @@ statsum(topoGANperf[:compError])
 topoGANCompError = filter(<(quantile(topoGANperf[:compError], 0.992)), topoGANperf[:compError])
 # statistical summary of compliance error without outliers
 statsum(topoGANCompError)
+# plot including examples of outliers in each error metric
+plotOutliers(topoGANgen, :validation, topoGANperf, "U-SE-ResNet", :save, 0.995)
 ## interpret topologyGAN (explainable AI)
 # Generator - average pointwise correlations
 corrs = generatorCorrelation(topoGANgen, :validation; additionalFiles = 6)
@@ -71,6 +69,8 @@ statsum(convNextPerf[:compError])
 convNextCompError = filter(<(quantile(convNextPerf[:compError], 0.916)), convNextPerf[:compError])
 # statistical summary of compliance error without outliers
 statsum(convNextCompError)
+# plot including examples of outliers in each error metric
+plotOutliers(convNextGen, :validation, convNextPerf, "ConvNeXt", :save, 0.995)
 ## interpret ConvNeXt (explainable AI)
 # Generator - average pointwise correlations
 corrs = generatorCorrelation(convNextGen, :validation; additionalFiles = 6)
