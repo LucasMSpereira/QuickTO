@@ -2,9 +2,10 @@
 
 begin
 include("QTOutils.jl")
-convNextGen, _ = loadTrainedGANs(:convnext)
-corrs = generatorCorrelation(convNextGen, :training; additionalFiles = 9)
-[@show mean(corr) for corr in corrs]
+topoGANgen, _ = loadTrainedGANs(:topologyGAN)
+corrs = generatorCorrelation(topoGANgen, :test; additionalFiles = 12, VFcorrelation = true)
+# [@show mean(corr) for corr in corrs]
+@show corrs
 end
 ### TopologyGAN
 # load trained topologyGAN models

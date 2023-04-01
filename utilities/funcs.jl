@@ -310,7 +310,10 @@ end
 
 # Get pixel-wise correlations for each generator
 # input channel in a certain split
-function generatorCorrelation(gen::Chain, split::Symbol; additionalFiles = 0)::Vector{Matrix{Float32}}
+function generatorCorrelation(
+  gen::Chain, split::Symbol;
+  additionalFiles = 0, VFcorrelation = false
+)::Union{Vector{Matrix{Float32}}, Float32}
   # initialize arrays
   input = zeros(Float32, (51, 141, 3, 1))
   fakeTopology = zeros(Float32, (51, 141, 1, 1))
@@ -318,32 +321,40 @@ function generatorCorrelation(gen::Chain, split::Symbol; additionalFiles = 0)::V
   # batches of data split
   @inbounds for (genInput, _, _) in dataBatch(split, 200; extraFiles = additionalFiles)[1]
     iter += 1
-    rand() < 0.15 && println(iter, "  ", timeNow())
+    rand() < 0.1 && println(iter, "  ", timeNow())
     input = cat(input, genInput; dims = 4) # store batch input
     # store topology
     fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu |> padGen; dims = 4)
   end
+  # remove first samples (null initialization)
   input, fakeTopology = remFirstSample.((input, fakeTopology))
-  # VM-topology and energy-topology pixelwise correlations
-  channelCorr = [zeros(Float32, (51, 141)) for _ in 1:2]
-  for ch in 2:3
-    @inbounds for i in axes(input, 1), j in axes(input, 2)
-      # standardized inputs
-      channelCorr[ch - 1][i, j] = Statistics.cor(
-        StatsBase.standardize(StatsBase.ZScoreTransform, input[i, j, ch, :]),
-        StatsBase.standardize(StatsBase.ZScoreTransform, fakeTopology[i, j, 1, :]),
-      )
+  if !VFcorrelation # if calculating VM and energy pixelwise correlations
+    # VM-topology and energy-topology pixelwise correlations
+    channelCorr = [zeros(Float32, (51, 141)) for _ in 1:2]
+    @inbounds for ch in 2:3 # iterate in both channels
+      @inbounds for i in axes(input, 1), j in axes(input, 2)
+        # standardize data and calculate correlation for current "pixel"
+        channelCorr[ch - 1][i, j] = Statistics.cor(
+          StatsBase.standardize(StatsBase.ZScoreTransform, input[i, j, ch, :]),
+          StatsBase.standardize(StatsBase.ZScoreTransform, fakeTopology[i, j, 1, :])
+        )
+      end
     end
+    # discard last row and column because of difference
+    # in size of generator input and output
+    channelCorr = [corMat[1 : end - 1, 1 : end - 1] for corMat in channelCorr]
+    # in test set, all samples are clamped at the top. these
+    # points are constant in the output, causing NaN correlations
+    if split == :test
+      channelCorr = [corMat[2 : end, :] for corMat in channelCorr]
+    end
+    return channelCorr
+  else # if calculating only VF correlations
+    return Statistics.cor(
+      StatsBase.standardize(StatsBase.ZScoreTransform, volFrac(fakeTopology)),
+      StatsBase.standardize(StatsBase.ZScoreTransform, input[1, 1, 1, :])
+    )
   end
-  # discard last row and column because of difference
-  # in size of generator input and output
-  channelCorr = [corMat[1 : end - 1, 1 : end - 1] for corMat in channelCorr]
-  # in test set, all samples are clamped at the top. these
-  # points are constant in the output, causing NaN correlations
-  if split == :test
-    channelCorr = [corMat[2 : end, :] for corMat in channelCorr]
-  end
-  return channelCorr
 end
 
 # performance of trained generator is certain data split
