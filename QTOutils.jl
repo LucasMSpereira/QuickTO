@@ -12,8 +12,6 @@ using Suppressor
     using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
   end
 end
-# import Nonconvex
-# Nonconvex.@load NLopt
 CUDA.allowscalar(false)
 println("Utilities...")
 # function and type definitions in "utilities" folder

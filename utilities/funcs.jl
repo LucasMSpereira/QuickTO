@@ -455,12 +455,6 @@ function initializeHistories(_metaData)
   return nothing
 end
 
-# for wgan-gp loss, interpolate between fake and real topologies
-function interpolateTopologies(realTopology_::Array{Float32, 4}, fakeTopology_::Array{Float32, 4})::Array{Float32, 4}
-  ϵ = reshape(rand(Float32, size(realTopology_, 4)), (1, 1, 1, size(realTopology_, 4)))
-  return @. ϵ * realTopology_ + (1 - ϵ) * fakeTopology_
-end
-
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
 function isoFeats(force, supp, topo)
   pos = [
@@ -546,6 +540,47 @@ function logWGANloss(
   push!(metaData_.discDefinition.nnValues, :mse, newSize, MSEerror)
 end
 
+# compare problem throughput of OT and ML models
+function methodThroughput(nSample::Int, topologyGANgen::Chain, quickTOgen::Chain)
+  for sample in 1:nSample
+    sample % round(Int, nSample/5) == 0 && @show sample
+    # keep trying until sample isn't problematic
+    while true
+      # random problem
+      problem, vf, force = randomFEAproblem(FEAparams)
+      # build solver
+      solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
+      # obtain FEA solution
+      solver()
+      # determine von Mises field
+      vm, energy, _, _ = calcCondsGAN(deepcopy(solver.u), 210e3 * vf, 0.33; dispShape = :vector)
+      if checkSample(size(force, 1), vm, 3, force) # if sample isn't problematic
+        ## standard TO
+        comp = TopOpt.Compliance(solver) # compliance
+        filter = DensityFilter(solver; rmin = 3.0) # filtering to avoid checkerboard
+        obj = x -> comp(filter(PseudoDensities(x))) # objective
+        x0 = fill(vf, FEAparams.nElements) # starting densities (VF everywhere)
+        volfrac = TopOpt.Volume(solver)
+        constr = x -> volfrac(filter(PseudoDensities(x))) - vf # volume fraction constraint
+        model = Nonconvex.Model(obj) # create optimization model
+        Nonconvex.addvar!( # add optimization variable
+          model, zeros(FEAparams.nElements), ones(FEAparams.nElements), init = x0
+        )
+        Nonconvex.add_ineq_constraint!(model, constr) # add volume constraint
+        # time standard optimization with MMA
+        @timeit to "standard" Nonconvex.optimize(model, NLoptAlg(:LD_MMA), x0; options = NLoptOptions())
+        ## ML models
+        mlInput = solidify(fill(vf, FEAparams.meshMatrixSize), vm, energy) |> dim4 |> gpu
+        # time topologyGAN generator
+        @timeit to "U-SE-ResNet" topologyGANgen(mlInput)
+        # time QuickTO generator
+        @timeit to "QuickTO" quickTOgen(mlInput)
+        break
+      end
+    end
+  end
+end
+
 # estimate total number of lines in project so far
 function numLines()
   sum(
@@ -627,6 +662,12 @@ function quad(nelx::Int, nely::Int, vec::Vector{<:Real})
     end
   end
   return quadd
+end
+
+# uniformly generate random Float64 between inputs
+function randBetween(lower::Real, upper::Real; sizeOut = 1)::Array{Float64}
+  output = zeros(sizeOut)
+  return [lower + (upper - lower) * rand() for _ in keys(output)]
 end
 
 # generate vector with n random and different integer values from 1 to val

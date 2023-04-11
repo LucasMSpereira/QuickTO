@@ -789,7 +789,7 @@ end
 # plot von Mises field
 function plotVM(FEAparams, disp, vf, fig, figPos)
   # get von Mises field
-  vm = calcVM(FEAparams.nElements, FEAparams, disp, 210e3*vf, 0.3)
+  vm = calcVM(FEAparams, disp, 210e3*vf, 0.3)
   # plot von Mises
   _,hm = heatmap(fig[figPos[1], figPos[2]],
     1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, vm';

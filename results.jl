@@ -1,12 +1,7 @@
 # Script used to quantify performance of trained models
 
-begin
 include("QTOutils.jl")
-topoGANgen, _ = loadTrainedGANs(:topologyGAN)
-corrs = generatorCorrelation(topoGANgen, :test; additionalFiles = 12, VFcorrelation = true)
-# [@show mean(corr) for corr in corrs]
-@show corrs
-end
+
 ### TopologyGAN
 # load trained topologyGAN models
 topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
@@ -88,3 +83,19 @@ explainDiscCritic(rand(input), analyzer, "QuickTO"; goal = :save)
 trainedSamples(10, 5, convNextGen, "convnext"; split = :training)
 trainedSamples(10, 5, convNextGen, "convnext"; split = :validation)
 trainedSamples(10, 5, convNextGen, "convnext"; split = :test)
+
+## Compare computational performance
+import Nonconvex
+Nonconvex.@load NLopt
+const to = TimerOutput()
+reset_timer!(to)
+sampleAmount = 150
+methodThroughput(sampleAmount, loadTrainedGANs(:topologyGAN)[1], loadTrainedGANs(:convnext)[1])
+show(to)
+standardTOseconds = TimerOutputs.time(to["standard"])/sampleAmount/1e9
+println()
+println(round(standardTOseconds; digits = 1), " s")
+uSEresNetSeconds = TimerOutputs.time(to["U-SE-ResNet"])/sampleAmount/1e9
+println("$(round(uSEresNetSeconds; digits = 1)) s ($(round(uSEresNetSeconds/standardTOseconds * 100; digits = 1))%)")
+quickTOseconds = TimerOutputs.time(to["QuickTO"])/sampleAmount/1e9
+println("$(round(quickTOseconds; digits = 1)) s ($(round(quickTOseconds/standardTOseconds * 100; digits = 1))%)")
