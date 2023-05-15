@@ -1,6 +1,9 @@
 # Script used to quantify performance of trained models
-
-include("QTOutils.jl")
+begin
+  include("QTOutils.jl")
+  convNextGen = loadTrainedGANs(:topologyGAN)[1]
+  corrs = generatorCorrelation(convNextGen, :validation, :flatten; additionalFiles = 6)
+end
 
 ### TopologyGAN
 # load trained topologyGAN models
