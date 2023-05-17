@@ -832,7 +832,7 @@ function VMandEnergyCorrelations(
     # in size of generator input and output
     input = input[1 : end - 1, 1 : end - 1, :, :]
     # flatten VM, energy and topology
-    flatVM, flatEnergy, fakeTopology = Base.Iterators.((input[:, :, 2, ], input[:, :, 3, ], fakeTopology))
+    flatVM, flatEnergy, fakeTopology = Base.Iterators.flatten.((input[:, :, 2, :], input[:, :, 3, :], fakeTopology)) .|> collect
     # standardize suggested topologies
     fakeTopology = StatsBase.standardize(StatsBase.ZScoreTransform, fakeTopology)
     # correlations
