@@ -2,7 +2,7 @@
 begin
   include("QTOutils.jl")
   convNextGen, convNextDisc = loadTrainedGANs(:convnext, "bson")
-  corrs = generatorCorrelation(convNextGen, :validation, :flatten)
+  corrs = generatorCorrelation(convNextGen, :validation, :flatten; additionalFiles = 1)
 end
 
 ### TopologyGAN

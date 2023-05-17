@@ -323,10 +323,15 @@ function generatorCorrelation(
     rand() < 0.1 && println(iter, "  ", timeNow())
     input = cat(input, genInput; dims = 4) # store batch input
     # store topology
-    fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu |> padGen; dims = 4)
+    fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu; dims = 4)
   end
   # remove first samples (null initialization)
   input, fakeTopology = remFirstSample.((input, fakeTopology))
+  @show size(input)
+  @show length(input)
+  @show size(fakeTopology)
+  @show length(fakeTopology)
+  println()
   if !VFcorrelation # if calculating VM and energy pixelwise correlations
     return VMandEnergyCorrelations(corrType, input, fakeTopology, split)
   else # if calculating only VF correlations
@@ -828,13 +833,16 @@ function VMandEnergyCorrelations(
 )
   # correlation between flattenen input channels and topologies
   if corrType == :flatten
-    # remove last row and column of input because of difference
-    # in size of generator input and output
+    # remove input padding so generator input and output
+    # have equal shapes
     input = input[1 : end - 1, 1 : end - 1, :, :]
     # flatten VM, energy and topology
     flatVM, flatEnergy, fakeTopology = Base.Iterators.flatten.((input[:, :, 2, :], input[:, :, 3, :], fakeTopology)) .|> collect
     # standardize suggested topologies
     fakeTopology = StatsBase.standardize(StatsBase.ZScoreTransform, fakeTopology)
+    @show size(fakeTopology)
+    @show size(flatVM)
+    @show size(flatEnergy)
     # correlations
     return (
       Statistics.cor(
