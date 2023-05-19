@@ -3,9 +3,9 @@ begin
   include("QTOutils.jl")
   CUDA.reclaim()
   GC.gc()
-  convNextGen, convNextDisc = loadTrainedGANs(:topologyGAN, "bson")
+  convNextGen = loadTrainedGANs(:convnext, "bson")[1]
   corrs = generatorInterpretation(convNextGen, :validation, :perturbation;
-    additionalFiles = 6, perturbation = 1, perturbedChannel = 2
+    additionalFiles = 6, perturbation = 1, perturbedChannel = 3
   )
 end
 

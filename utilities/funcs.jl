@@ -331,10 +331,7 @@ function generatorInterpretation(
       realTopology = cat(realTopology, realTopo; dims = 4)
       perturbInput = deepcopy(genInput)
       # pointwise multiply input by random perturbation of [1 - α; 1 + α], α ∈ [0; 1]
-      # a[:, :, 2, :] .*= randBetween(0.95, 1.05; sizeOut = (3, 3, 3))
-      perturbInput[:, :, perturbedChannel, :] .*= randBetween(
-        1 - perturbation, 1 + perturbation; sizeOut = (FEAparams.meshMatrixSize..., size(genInput, 4))
-      )
+      perturbInput[:, :, perturbedChannel, :] .*= rand(Float32, (FEAparams.meshMatrixSize..., size(genInput, 4))) .> perturbation
       # feed perturbed input to generator and store topology suggested
       perturbFakeTopo = cat(perturbFakeTopo, perturbInput |> gpu |> gen |> cpu; dims = 4)
     end
@@ -356,7 +353,7 @@ function generatorInterpretation(
     MAE = [
       mean(abs.((padGen(fakeTopology) .- realTopology))),
       mean(abs.((padGen(perturbFakeTopo) .- realTopology))),
-    ] 
+    ]
     println( # print results
       ["VM\n", "Energy\n"][perturbedChannel - 1],
       "   Topology MAE without perturbation: ", sciNotation(MAE[1], 3),
