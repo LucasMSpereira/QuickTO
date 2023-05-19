@@ -310,30 +310,61 @@ end
 
 # Get pixel-wise correlations for each generator
 # input channel in a certain split
-function generatorCorrelation(
-  gen::Chain, split::Symbol, corrType::Symbol; additionalFiles = 6, VFcorrelation = false
+function generatorInterpretation(
+  gen::Chain, split::Symbol, corrType::Symbol; additionalFiles = 6,
+  VFcorrelation = false, perturbation = 0.05, perturbedChannel = 2
 )
   # initialize arrays
-  input = zeros(Float32, (51, 141, 3, 1))
-  fakeTopology = zeros(Float32, (51, 141, 1, 1))
+  input = zeros(Float32, (FEAparams.meshMatrixSize..., 3, 1))
+  fakeTopology = zeros(Float32, (FEAparams.meshMatrixSize .- 1..., 1, 1))
+  realTopology = zeros(Float32, (FEAparams.meshMatrixSize..., 1, 1))
+  corrType == :perturbation && (perturbFakeTopo = zeros(Float32, (FEAparams.meshMatrixSize .- 1..., 1, 1)))
   iter = 0
   # batches of data split
-  @inbounds for (genInput, _, _) in dataBatch(split, 200; extraFiles = additionalFiles)[1]
+  @inbounds for (genInput, _, realTopo) in dataBatch(split, 200; extraFiles = additionalFiles)[1]
     iter += 1
     rand() < 0.1 && println(iter, "  ", timeNow())
-    input = cat(input, genInput; dims = 4) # store batch input
-    # store topology
+    # store batch input
+    corrType != :perturbation && (input = cat(input, genInput; dims = 4))
+    # if interpreting generator through input perturbation
+    if corrType == :perturbation
+      realTopology = cat(realTopology, realTopo; dims = 4)
+      perturbInput = deepcopy(genInput)
+      # pointwise multiply input by random perturbation of [1 - α; 1 + α], α ∈ [0; 1]
+      # a[:, :, 2, :] .*= randBetween(0.95, 1.05; sizeOut = (3, 3, 3))
+      perturbInput[:, :, perturbedChannel, :] .*= randBetween(
+        1 - perturbation, 1 + perturbation; sizeOut = (FEAparams.meshMatrixSize..., size(genInput, 4))
+      )
+      # feed perturbed input to generator and store topology suggested
+      perturbFakeTopo = cat(perturbFakeTopo, perturbInput |> gpu |> gen |> cpu; dims = 4)
+    end
+    # feed input to generator and store topology suggested
     fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu; dims = 4)
   end
   # remove first samples (null initialization)
-  input, fakeTopology = remFirstSample.((input, fakeTopology))
-  @show size(input)
-  @show length(input)
-  @show size(fakeTopology)
-  @show length(fakeTopology)
-  println()
-  if !VFcorrelation # if calculating VM and energy pixelwise correlations
+  if corrType == :perturbation
+    fakeTopology, perturbFakeTopo, realTopology = remFirstSample.((fakeTopology, perturbFakeTopo, realTopology))
+  else
+    input, fakeTopology = remFirstSample.((input, fakeTopology))
+  end
+  # if calculating VM and energy pixelwise correlations
+  if !VFcorrelation && corrType != :perturbation
     return VMandEnergyCorrelations(corrType, input, fakeTopology, split)
+  # if interpreting generator through input perturbation
+  elseif corrType == :perturbation
+    # topology MSE with and without perturbation
+    MAE = [
+      mean(abs.((padGen(fakeTopology) .- realTopology))),
+      mean(abs.((padGen(perturbFakeTopo) .- realTopology))),
+    ] 
+    println( # print results
+      ["VM\n", "Energy\n"][perturbedChannel - 1],
+      "   Topology MAE without perturbation: ", sciNotation(MAE[1], 3),
+      "\n   Topology MAE with $(perturbation * 100)% perturbation: ", sciNotation(MAE[2], 3),
+      "\n   Change of ", sciNotation(MAE[2] / MAE[1] - 1, 3), "%"
+    )
+    # return MAE values
+    return MAE
   else # if calculating only VF correlations
     return Statistics.cor(
       StatsBase.standardize(StatsBase.ZScoreTransform, volFrac(fakeTopology)),
@@ -650,7 +681,7 @@ function quad(nelx::Int, nely::Int, vec::Vector{<:Real})
 end
 
 # uniformly generate random Float64 between inputs
-function randBetween(lower::Real, upper::Real; sizeOut = 1)::Array{Float64}
+function randBetween(lower::Real, upper::Real; sizeOut = 1)::Array{Float32}
   output = zeros(sizeOut)
   return [lower + (upper - lower) * rand() for _ in keys(output)]
 end
@@ -711,34 +742,6 @@ function sciNotation(num::Real, printDigits::Int)
 end
 
 showVal(x) = println(round.(x; digits = 4)) # auxiliary print function
-
-# print order of layers and variation in data size along Flux chain
-# problem with number print and recursion
-function sizeLayers(myChain, input; currentLayer = 0)
-  @show currentLayer
-  if currentLayer == 0
-    println("Input size: ", size(input))
-    layer = 1
-  else
-    layer = copy(currentLayer)
-  end
-  for _ in 1:length(myChain) # iterate in NN layers
-    if typeof(myChain[layer]) <: SkipConnection # recursion in case of skip connection
-      sizeLayers(
-        myChain[layer].layers,
-        input |> myChain[1 : layer - 1];
-        currentLayer = max(layer - 1, 1)
-      )
-    else # print size of output if not skip connection
-      println(
-        layer + currentLayer, ": ", typeof(myChain[layer]),
-        "   -   output size: ", input |> myChain[1:layer] |> size
-      )
-      layer += 1
-    end
-  end
-  return currentLayer
-end
 
 # concatenate multiple 2D or 3D arrays in the 3rd dimension
 solidify(x...) = cat(x...; dims = 3)
@@ -840,9 +843,6 @@ function VMandEnergyCorrelations(
     flatVM, flatEnergy, fakeTopology = Base.Iterators.flatten.((input[:, :, 2, :], input[:, :, 3, :], fakeTopology)) .|> collect
     # standardize suggested topologies
     fakeTopology = StatsBase.standardize(StatsBase.ZScoreTransform, fakeTopology)
-    @show size(fakeTopology)
-    @show size(flatVM)
-    @show size(flatEnergy)
     # correlations
     return (
       Statistics.cor(

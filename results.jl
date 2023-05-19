@@ -1,8 +1,12 @@
 # Script used to quantify performance of trained models
 begin
   include("QTOutils.jl")
-  convNextGen, convNextDisc = loadTrainedGANs(:convnext, "bson")
-  corrs = generatorCorrelation(convNextGen, :validation, :flatten; additionalFiles = 1)
+  CUDA.reclaim()
+  GC.gc()
+  convNextGen, convNextDisc = loadTrainedGANs(:topologyGAN, "bson")
+  corrs = generatorInterpretation(convNextGen, :validation, :perturbation;
+    additionalFiles = 6, perturbation = 1, perturbedChannel = 2
+  )
 end
 
 ### TopologyGAN
@@ -31,7 +35,7 @@ statsum(topoGANCompError)
 plotOutliers(topoGANgen, :validation, topoGANperf, "U-SE-ResNet", :save, 0.995)
 ## interpret topologyGAN (explainable AI)
 # Generator - average pointwise correlations
-corrs = generatorCorrelation(topoGANgen, :validation)
+corrs = generatorInterpretation(topoGANgen, :validation, :pixelwise)
 [@show mean(corr) for corr in corrs]
 # Discriminator - (input * gradient) for each channel
 # input data
@@ -72,7 +76,7 @@ statsum(convNextCompError)
 plotOutliers(convNextGen, :validation, convNextPerf, "ConvNeXt", :save, 0.995)
 ## interpret ConvNeXt (explainable AI)
 # Generator - average pointwise correlations
-corrs = generatorCorrelation(convNextGen, :validation)
+corrs = generatorInterpretation(convNextGen, :validation, :pixelwise)
 [@show mean(corr) for corr in corrs]
 # Discriminator - (input * gradient) for each channel
 # input data
