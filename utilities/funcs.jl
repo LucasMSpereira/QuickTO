@@ -318,7 +318,7 @@ function generatorInterpretation(
   input = zeros(Float32, (FEAparams.meshMatrixSize..., 3, 1))
   fakeTopology = zeros(Float32, (FEAparams.meshMatrixSize .- 1..., 1, 1))
   realTopology = zeros(Float32, (FEAparams.meshMatrixSize..., 1, 1))
-  corrType == :perturbation && (perturbFakeTopo = zeros(Float32, (FEAparams.meshMatrixSize .- 1..., 1, 1)))
+  perturbFakeTopo = zeros(Float32, (FEAparams.meshMatrixSize .- 1..., 1, 1))
   iter = 0
   # batches of data split
   @inbounds for (genInput, _, realTopo) in dataBatch(split, 200; extraFiles = additionalFiles)[1]
@@ -327,11 +327,19 @@ function generatorInterpretation(
     # store batch input
     corrType != :perturbation && (input = cat(input, genInput; dims = 4))
     # if interpreting generator through input perturbation
-    if corrType == :perturbation
+    if corrType == :binaryPerturb || corrType == :continuousPerturb
       realTopology = cat(realTopology, realTopo; dims = 4)
       perturbInput = deepcopy(genInput)
-      # pointwise multiply input by random perturbation of [1 - α; 1 + α], α ∈ [0; 1]
-      perturbInput[:, :, perturbedChannel, :] .*= rand(Float32, (FEAparams.meshMatrixSize..., size(genInput, 4))) .> perturbation
+      if corrType == :binaryPerturb
+        # binary noise (zero out some elements)
+        perturbInput[:, :, perturbedChannel, :] .*= 
+          rand(Float32, (FEAparams.meshMatrixSize..., size(genInput, 4))) .> perturbation
+      else
+        # pointwise multiply input by random perturbation in [1 - α; 1 + α], α ∈ [0; 1]
+        perturbInput[:, :, perturbedChannel, :] .*= randBetween(
+          1 - perturbation, 1 + perturbation; sizeOut = (FEAparams.meshMatrixSize..., size(genInput, 4))
+        )
+      end
       # feed perturbed input to generator and store topology suggested
       perturbFakeTopo = cat(perturbFakeTopo, perturbInput |> gpu |> gen |> cpu; dims = 4)
     end
@@ -339,29 +347,28 @@ function generatorInterpretation(
     fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu; dims = 4)
   end
   # remove first samples (null initialization)
-  if corrType == :perturbation
+  if corrType == :binaryPerturb || corrType == :continuousPerturb
     fakeTopology, perturbFakeTopo, realTopology = remFirstSample.((fakeTopology, perturbFakeTopo, realTopology))
   else
     input, fakeTopology = remFirstSample.((input, fakeTopology))
   end
   # if calculating VM and energy pixelwise correlations
-  if !VFcorrelation && corrType != :perturbation
+  if !VFcorrelation && corrType in [:flatten, :pixelwise]
     return VMandEnergyCorrelations(corrType, input, fakeTopology, split)
   # if interpreting generator through input perturbation
-  elseif corrType == :perturbation
-    # topology MSE with and without perturbation
-    MAE = [
-      mean(abs.((padGen(fakeTopology) .- realTopology))),
-      mean(abs.((padGen(perturbFakeTopo) .- realTopology))),
+  elseif corrType == :binaryPerturb || corrType == :continuousPerturb
+    er = [ # topology error with and without perturbation
+      sum((padGen(fakeTopology) .- realTopology) .^ 2),
+      sum((padGen(perturbFakeTopo) .- realTopology) .^ 2)
     ]
     println( # print results
-      ["VM\n", "Energy\n"][perturbedChannel - 1],
-      "   Topology MAE without perturbation: ", sciNotation(MAE[1], 3),
-      "\n   Topology MAE with $(perturbation * 100)% perturbation: ", sciNotation(MAE[2], 3),
-      "\n   Change of ", sciNotation(MAE[2] / MAE[1] - 1, 3), "%"
+      ["VM\n", "Energy\n"][min(perturbedChannel - 1, 2)],
+      "   Topology error without perturbation: ", sciNotation(er[1], 3),
+      "\n   Topology error with $(perturbation * 100)% perturbation: ", sciNotation(er[2], 3),
+      "\n   Change of ", round((er[2] / er[1] - 1) * 100; digits = 4), "%"
     )
-    # return MAE values
-    return MAE
+    # return error values
+    return er
   else # if calculating only VF correlations
     return Statistics.cor(
       StatsBase.standardize(StatsBase.ZScoreTransform, volFrac(fakeTopology)),
