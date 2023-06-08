@@ -6,7 +6,7 @@ begin
   topoGANgenState = Flux.state(topoGANgen)
   topoGANdiscState = Flux.state(topoGANdisc)
   convNextGenState = Flux.state(convNextGen)
-  convNextDiscState = Flux.state(topoGANdisc)
+  convNextDiscState = Flux.state(convNextDisc)
   jldsave(datasetPath * "trainedNetworks/topoGANgenState.jld2"; topoGANgenState)
   jldsave(datasetPath * "trainedNetworks/topoGANdiscState.jld2"; topoGANdiscState)
   jldsave(datasetPath * "trainedNetworks/convNextGenState.jld2"; convNextGenState)
