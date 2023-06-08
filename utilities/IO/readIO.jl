@@ -149,6 +149,7 @@ function loadTrainedGANs(model::Symbol, extension::String)
       BSON.@load datasetPath * "trainedNetworks/topologyGANgen.$extension" cpuGenerator
       BSON.@load datasetPath * "trainedNetworks/topologyGANdisc.$extension" cpuDiscriminator
     elseif extension == "jld2"
+      
       cpuGenerator = load_object(datasetPath * "trainedNetworks/topologyGANgen.$extension")
       cpuDiscriminator = load_object(datasetPath * "trainedNetworks/topologyGANdisc.$extension")
     else

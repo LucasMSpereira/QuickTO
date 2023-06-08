@@ -1,14 +1,26 @@
 # Script used to quantify performance of trained models
 begin
   include("QTOutils.jl")
-  CUDA.reclaim()
-  GC.gc()
-  for net in [:topologyGAN, :convnext], p in [2, 3]
-    corrs = generatorInterpretation(
-      loadTrainedGANs(net, "bson")[1], :validation, :binaryPerturb;
-      additionalFiles = 8, perturbation = 0.5, perturbedChannel = p
-    )
-  end
+  topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN, "bson") .|> cpu
+  convNextGen, convNextDisc = loadTrainedGANs(:convnext, "bson") .|> cpu
+  topoGANgenState = Flux.state(topoGANgen)
+  topoGANdiscState = Flux.state(topoGANdisc)
+  convNextGenState = Flux.state(convNextGen)
+  convNextDiscState = Flux.state(topoGANdisc)
+  jldsave(datasetPath * "trainedNetworks/topoGANgenState.jld2"; topoGANgenState)
+  jldsave(datasetPath * "trainedNetworks/topoGANdiscState.jld2"; topoGANdiscState)
+  jldsave(datasetPath * "trainedNetworks/convNextGenState.jld2"; convNextGenState)
+  jldsave(datasetPath * "trainedNetworks/convNextDiscState.jld2"; convNextDiscState)
+end
+begin
+  # model = cpu(convNextModel(192, [3, 3, 27, 3], 0.5))
+  model = cpu(topologyGANdisc(; drop = 0.3))
+  Flux.loadmodel!(
+    model,
+    JLD2.load(datasetPath * "trainedNetworks/convNextDiscState.jld2", "convNextDiscState")
+  )
+  model = gpu(model)
+  model(rand(Float32, (51, 141, 7, 256)) |> gpu)
 end
 
 ### TopologyGAN
@@ -108,3 +120,11 @@ uSEresNetSeconds = TimerOutputs.time(to["U-SE-ResNet"])/sampleAmount/1e9
 println("$(round(uSEresNetSeconds; digits = 1)) s ($(round(uSEresNetSeconds/standardTOseconds * 100; digits = 1))%)")
 quickTOseconds = TimerOutputs.time(to["QuickTO"])/sampleAmount/1e9
 println("$(round(quickTOseconds; digits = 1)) s ($(round(quickTOseconds/standardTOseconds * 100; digits = 1))%)")
+
+# generator interpretation
+for net in [:topologyGAN, :convnext], p in [2, 3]
+  corrs = generatorInterpretation(
+    loadTrainedGANs(net, "bson")[1], :validation, :binaryPerturb;
+    additionalFiles = 8, perturbation = 0.5, perturbedChannel = p
+  )
+end
