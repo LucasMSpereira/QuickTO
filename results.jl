@@ -1,31 +1,9 @@
 # Script used to quantify performance of trained models
-begin
-  include("QTOutils.jl")
-  topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN, "bson") .|> cpu
-  convNextGen, convNextDisc = loadTrainedGANs(:convnext, "bson") .|> cpu
-  topoGANgenState = Flux.state(topoGANgen)
-  topoGANdiscState = Flux.state(topoGANdisc)
-  convNextGenState = Flux.state(convNextGen)
-  convNextDiscState = Flux.state(convNextDisc)
-  jldsave(datasetPath * "trainedNetworks/topoGANgenState.jld2"; topoGANgenState)
-  jldsave(datasetPath * "trainedNetworks/topoGANdiscState.jld2"; topoGANdiscState)
-  jldsave(datasetPath * "trainedNetworks/convNextGenState.jld2"; convNextGenState)
-  jldsave(datasetPath * "trainedNetworks/convNextDiscState.jld2"; convNextDiscState)
-end
-begin
-  # model = cpu(convNextModel(192, [3, 3, 27, 3], 0.5))
-  model = cpu(topologyGANdisc(; drop = 0.3))
-  Flux.loadmodel!(
-    model,
-    JLD2.load(datasetPath * "trainedNetworks/convNextDiscState.jld2", "convNextDiscState")
-  )
-  model = gpu(model)
-  model(rand(Float32, (51, 141, 7, 256)) |> gpu)
-end
+include("QTOutils.jl")
 
 ### TopologyGAN
 # load trained topologyGAN models
-topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN)
+topoGANgen, topoGANdisc = loadTrainedGANs(:topologyGAN, "jld2")
 # training and validation data splits used for U-SE-ResNet generator
 fileSplit = readDataSplits("./networks/GANplots/reuniao7-10.0%-2-12-12T19-00-34/12-12T00-00-13metaData.txt")
 ## topology, VF and compliance errors in data splits
@@ -48,9 +26,13 @@ statsum(topoGANCompError)
 # plot including examples of outliers in each error metric
 plotOutliers(topoGANgen, :validation, topoGANperf, "U-SE-ResNet", :save, 0.995)
 ## interpret topologyGAN (explainable AI)
-# Generator - average pointwise correlations
-corrs = generatorInterpretation(topoGANgen, :validation, :pixelwise)
-[@show mean(corr) for corr in corrs]
+# generator interpretation
+for p in [2, 3]
+  corrs = generatorInterpretation(
+    loadTrainedGANs(:topologyGAN, "jld2")[1], :validation, :binaryPerturb;
+    additionalFiles = 8, perturbation = 0.5, perturbedChannel = p
+  )
+end
 # Discriminator - (input * gradient) for each channel
 # input data
 data = dataBatch(:test, 1)[2:4]
@@ -66,7 +48,7 @@ trainedSamples(10, 5, topoGANgen, "topoGAN"; split = :test)
 
 ### ConvNeXt
 # load trained ConvNeXt models (QuickTO)
-convNextGen, convNextDisc = loadTrainedGANs(:convnext)
+convNextGen, convNextDisc = loadTrainedGANs(:convnext, "jld2")
 # training and validation data splits used for ConvNeXt generator
 fileSplit = readDataSplits("./networks/GANplots/01-29T09-45-03-Bvp4/01-29T20-07-39metaData.txt")
 ## topology, VF and compliance errors in data splits
@@ -89,9 +71,13 @@ statsum(convNextCompError)
 # plot including examples of outliers in each error metric
 plotOutliers(convNextGen, :validation, convNextPerf, "ConvNeXt", :save, 0.995)
 ## interpret ConvNeXt (explainable AI)
-# Generator - average pointwise correlations
-corrs = generatorInterpretation(convNextGen, :validation, :pixelwise)
-[@show mean(corr) for corr in corrs]
+# generator interpretation
+for p in [2, 3]
+  corrs = generatorInterpretation(
+    loadTrainedGANs(:convnext, "jld2")[1], :validation, :binaryPerturb;
+    additionalFiles = 8, perturbation = 0.5, perturbedChannel = p
+  )
+end
 # Discriminator - (input * gradient) for each channel
 # input data
 data = dataBatch(:test, 1)[2:4]
@@ -120,11 +106,3 @@ uSEresNetSeconds = TimerOutputs.time(to["U-SE-ResNet"])/sampleAmount/1e9
 println("$(round(uSEresNetSeconds; digits = 1)) s ($(round(uSEresNetSeconds/standardTOseconds * 100; digits = 1))%)")
 quickTOseconds = TimerOutputs.time(to["QuickTO"])/sampleAmount/1e9
 println("$(round(quickTOseconds; digits = 1)) s ($(round(quickTOseconds/standardTOseconds * 100; digits = 1))%)")
-
-# generator interpretation
-for net in [:topologyGAN, :convnext], p in [2, 3]
-  corrs = generatorInterpretation(
-    loadTrainedGANs(net, "bson")[1], :validation, :binaryPerturb;
-    additionalFiles = 8, perturbation = 0.5, perturbedChannel = p
-  )
-end

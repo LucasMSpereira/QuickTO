@@ -146,36 +146,34 @@ function loadTrainedGANs(model::Symbol, extension::String)
   # load topologyGAN models according to file extension
   if model == :topologyGAN
     if extension == "bson"
-      BSON.@load datasetPath * "trainedNetworks/topologyGANgen.$extension" cpuGenerator
-      BSON.@load datasetPath * "trainedNetworks/topologyGANdisc.$extension" cpuDiscriminator
+      BSON.@load datasetPath * "trainedNetworks/topoGANgen.bson" cpuGenerator
+      BSON.@load datasetPath * "trainedNetworks/topoGANdisc.bson" cpuDiscriminator
     elseif extension == "jld2"
-      
-      cpuGenerator = load_object(datasetPath * "trainedNetworks/topologyGANgen.$extension")
-      cpuDiscriminator = load_object(datasetPath * "trainedNetworks/topologyGANdisc.$extension")
+      cpuGenerator = U_SE_ResNetGenerator() |> cpu
+      cpuDiscriminator = topologyGANdisc() |> cpu
+      Flux.loadmodel!(cpuGenerator, JLD2.load(datasetPath * "trainedNetworks/topoGANgen.jld2", "topoGANgenState"))
+      Flux.loadmodel!(cpuDiscriminator, JLD2.load(datasetPath * "trainedNetworks/topoGANdisc.jld2", "topoGANdiscState"))
     else
       error("Invalid extension in 'loadTrainedGANs()'")
     end
-    return (
-      cpuGenerator |> gpu,
-      cpuDiscriminator |> gpu
-    )
+    return (cpuGenerator, cpuDiscriminator) .|> gpu
   # load convNext models according to file extension
   elseif model == :convnext
-    gen = convNextModel(192, [3, 3, 27, 3], 0.5)
-    disc = topologyGANdisc(; drop = 0.3)
     if extension == "bson"
-      BSON.@load datasetPath * "trainedNetworks/convNextGen.$extension" cpuGenerator
-      BSON.@load datasetPath * "trainedNetworks/convNextDisc.$extension" cpuDiscriminator
+      gen = convNextModel(192, [3, 3, 27, 3], 0.5)
+      disc = convNextCritic()
+      BSON.@load datasetPath * "trainedNetworks/convNextGen.bson" cpuGenerator
+      BSON.@load datasetPath * "trainedNetworks/convNextCritic.bson" cpuDiscriminator
+      return Flux.loadmodel!(gen, cpuGenerator), Flux.loadmodel!(disc, cpuDiscriminator)
     elseif extension == "jld2"
-      cpuGenerator = load_object(datasetPath * "trainedNetworks/convNextGen.$extension")
-      cpuDiscriminator = load_object(datasetPath * "trainedNetworks/convNextDisc.$extension")
+      gen = convNextModel(192, [3, 3, 27, 3], 0.5) |> cpu
+      disc = convNextCritic() |> cpu
+      Flux.loadmodel!(gen, JLD2.load(datasetPath * "trainedNetworks/convNextGen.jld2", "convNextGenState"))
+      Flux.loadmodel!(disc, JLD2.load(datasetPath * "trainedNetworks/convNextCritic.jld2", "convNextCriticState"))
+      return (gen, disc) .|> gpu
     else
       error("Invalid extension in 'loadTrainedGANs()'")
     end
-    return (
-      Flux.loadmodel!(gen, cpuGenerator),
-      Flux.loadmodel!(disc, cpuDiscriminator)
-    )
   else
     error("Invalid model given as argument.")
   end
