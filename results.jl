@@ -97,7 +97,7 @@ Nonconvex.@load NLopt
 const to = TimerOutput()
 reset_timer!(to)
 sampleAmount = 150
-methodThroughput(sampleAmount, loadTrainedGANs(:topologyGAN)[1], loadTrainedGANs(:convnext)[1])
+methodThroughput(sampleAmount, loadTrainedGANs(:topologyGAN, "jld2")[1], loadTrainedGANs(:convnext, "jld2")[1])
 show(to)
 standardTOseconds = TimerOutputs.time(to["standard"])/sampleAmount/1e9
 println()
