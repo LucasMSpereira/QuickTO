@@ -33,6 +33,46 @@ function dispCNNtestPlotsFEAloss(quant::Int, path::String, dispTestLoader, final
   combinePDFs(path, finalName)
 end
 
+# Plot XAI results from each input channel for discriminator/critic
+function explainDiscCritic(
+  input::Array{Float32, 4}, analyzer::AbstractXAIMethod, network::String; goal = :display
+)
+  # get explanation for given input
+  expl = analyzer(input)
+  refs = Dict(
+    :rows => [1, 1, 2, 2, 3], # columns in figure
+    :cols => repeat([1, 2], 3), # columns in figure
+    :channel => [1, 2, 4, 5, 7], # input channels to access
+    # heatmap labels
+    :label => ["VF", "VM", "Supports", "Forces", "Input topology"]
+  )
+  # reshaped input data
+  data = dropdims.(eachslice(expl.attribution; dims = 3) |> collect .|> Array; dims = 3)
+  imgWidth = 1100 # width of image
+  fig = Figure(resolution = (imgWidth, 750)) # makie figure
+  # columns and rows sizes
+  colSize = round(Int, (0.95 * imgWidth) / 2); rowHeight = round(Int, colSize * (50/140))
+  # iterate in input channels
+  for (col, row, channel, label) in zip(refs[:cols], refs[:rows], refs[:channel], refs[:label])
+    # axis, heatmap and colorbar for explanation of current input channel
+    explAxis = Axis(fig[row, col]; height = rowHeight, title = label)
+    explAxis.yreversed = true; hidespines!(explAxis); hidedecorations!(explAxis)
+    heatmap!(explAxis, data[channel]' |> Array)
+  end
+  # fix size of columns
+  [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:2]
+  # axis and heatmap of target topology
+  topoAxis = Axis(fig[3, 2]; height = rowHeight, title = "Target topology")
+  topoAxis.yreversed = true; hidespines!(topoAxis); hidedecorations!(topoAxis)
+  heatmap!(topoAxis, input[:, :, 7, 1]' |> Array)
+  if goal == :display
+    GLMakie.activate!()
+    display(fig)
+  elseif goal == :save
+    Makie.save("./networks/results/" * network * "-XAI.pdf", fig)
+  end
+end
+
 # create plot with FEA inputs, and generated and real topologies.
 function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; extension = :png)
   # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
@@ -73,12 +113,10 @@ function GANtestPlots(generator, dataPath, numSamples, savePath, modelName; exte
     )
     Colorbar(fig[4, 2], trueTopoHeatmap)
     trueTopoAxis.yreversed = true; trueTopoAxis.height = rowHeight
-    genInput = dim4(
-      solidify( # concatenate input channels
-        dataDict_[:vf][:, :, sample],
-        dataDict_[:vm][:, :, sample],
-        dataDict_[:energy][:, :, sample]
-      )
+    genInput = solidify( # concatenate input channels
+      dataDict_[:vf][:, :, :, sample],
+      dataDict_[:vm][:, :, :, sample],
+      dataDict_[:energy][:, :, :, sample]
     )
     # optional data normalization in [-1; 1]
     normalizeDataset && (genInput = mapslices(normalizeVals, genInput; dims = [1 2]))
@@ -120,6 +158,56 @@ function GANtestPlotsReport(_modelName, _metaData, _path)
   )
 end
 
+# Define predict_function for calculations
+ShapML.@everywhere function predict_function(model, data)
+  topoBatch = model(cat(
+    [solidify(data[sample, :]...) |> dim4 for sample in axes(data, 1)]...; dims = 4
+  ))
+  return DataFrame(:topo => [topoBatch[:, :, 1, s] for s in axes(topoBatch, 4)])
+end
+
+function genShapleyValPlots(split::Symbol, generator::Chain, nnName::String)
+  # get input data
+  _, genInput, _, _ = dataBatch(split, 1)
+  inputFrame = DataFrame( # organize inside DataFrame
+    :vf => [genInput[:, :, 1, s] for s in axes(genInput, 4)],
+    :vm => [genInput[:, :, 2, s] for s in axes(genInput, 4)],
+    :energy => [genInput[:, :, 3, s] for s in axes(genInput, 4)]
+  )
+  # more setup
+  explain = copy(inputFrame[1:5, :])
+  reference = copy(inputFrame[1:50, :])
+  sample_size = 10
+  # run simulation
+  data_shap = ShapML.shap(explain = explain,
+    reference = reference,
+    model = cpu(generator),
+    predict_function = predict_function,
+    sample_size = sample_size,
+    parallel = :samples,
+    seed = 1
+  )
+  # plot heatmaps and save as pdf
+  n = 0
+  for row in eachrow(data_shap)
+    for ele in row[3:end]
+      n += 1
+      imgWidth = 1300
+      fig = Figure(resolution = (imgWidth, 700)) # makie figure
+      # colSize = round(Int, (0.9 * imgWidth) / 4)
+      # rowHeight = round(Int, colSize * (50/140))
+      ax = Axis(fig[1, 1], title = "$n $(row[1]) $(row[2])")
+      ax.yreversed = true
+      hidespines!(ax); hidedecorations!(ax)
+      hm = heatmap!(ax, ele' |> Array)
+      Colorbar(fig[1, 2], hm)
+      CairoMakie.activate!()
+      Makie.save("./networks/results/topologyGANshap/1$n $(row[1]) $(row[2]).pdf", fig)
+    end
+  end
+  combinePDFs("./networks/results/topologyGANshap/", "shaps")
+end
+
 # Use a trained model to predict samples and make plots comparing
 # with ground truth. In the end, combine plots into single pdf file
 function loadCNNtestPlots(
@@ -130,6 +218,20 @@ function loadCNNtestPlots(
     plotVMtest(FEparams, vm[:, :, 1, sample], forceData[:, :, sample], MLmodel, 0, lossFun; folder = path)
   end
   combinePDFs(path, finalName)
+end
+
+function logsLines(value, name)
+  f = Figure(resolution = (1500, 800)); # create makie figure
+  ax = Axis(f[1:3, 1], xlabel = "Batches", # axis to draw on
+    title = "Logged values",
+  )
+  # line plots of logs
+  [lines!(ax, val; label = str) for (val, str) in zip(value, name)]
+  # legend
+  t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
+  Legend(f[1, 2][1, 1], ax)
+  colsize!(f.layout, 2, Fixed(160))
+  Makie.save(GANfolderPath * "logs/$(rand(1:9999)).pdf", f) # save pdf
 end
 
 # Generate pdf with list of hyperparameters used to train model.
@@ -211,7 +313,8 @@ function plotForce(
   FEAparams, forces, fig, arrowsPos, textPos;
   newAxis = "true", paintArrow = :black, paintText = :black,
   alignText = (:left, :center), axisHeight = 0,
-  topologyGANtest = false, arrowWidth = 1.5, arrowHead = 1.5
+  topologyGANtest = false, arrowWidth = 1.5,
+  arrowHead = 1.5, includeText = True
 )
   if typeof(forces) <: Tuple
     forceMat = reduce(hcat, [forces[i] for i in axes(forces)[1]])
@@ -253,18 +356,20 @@ function plotForce(
     linecolor = paintArrow, arrowcolor = paintArrow,
     linewidth = arrowWidth, arrowsize = arrowHead
   )
-  text!(#axis,
-    loadXcoord, loadYcoord,
-    text = ["1", "2"], color = :white
-  )
-  # text with values of force components
-  f1 = "Forces (N):\n1: $(round(Int, forceMat[1, 3])); $(round(Int, forceMat[1, 4]))\n"
-  f2 = "2: $(round(Int, forceMat[2, 3])); $(round(Int, forceMat[2, 4]))"
-  t = Axis(fig[textPos[1], textPos[2]]); hidespines!(t); hidedecorations!(t)
-  text!(t,
-      f1*f2; color = paintText,
-      align = alignText, offset = (-60, 0)
-  )
+  if includeText
+    text!(
+      loadXcoord, loadYcoord,
+      text = ["1", "2"], color = :white
+    )
+    # text with values of force components
+    f1 = "Forces (N):\n1: $(round(Int, forceMat[1, 3])); $(round(Int, forceMat[1, 4]))\n"
+    f2 = "2: $(round(Int, forceMat[2, 3])); $(round(Int, forceMat[2, 4]))"
+    t = Axis(fig[textPos[1], textPos[2]]); hidespines!(t); hidedecorations!(t)
+    text!(t,
+        f1*f2; color = paintText,
+        align = alignText, offset = (-60, 0)
+    )
+  end
   return axis
 end
 
@@ -326,20 +431,6 @@ function plotGANlogs(JLDpath::Vector{String})
     logsLines([criticOutReal], ["discReal"])
   end
   combinePDFs(GANfolderPath * "logs", "logPlots $(GANfolderPath[end - 4 : end - 1])")
-end
-
-function logsLines(value, name)
-  f = Figure(resolution = (1500, 800)); # create makie figure
-  ax = Axis(f[1:3, 1], xlabel = "Batches", # axis to draw on
-    title = "Logged values",
-  )
-  # line plots of logs
-  [lines!(ax, val; label = str) for (val, str) in zip(value, name)]
-  # legend
-  t = Axis(f[1, 2][1, 2]); hidespines!(t); hidedecorations!(t)
-  Legend(f[1, 2][1, 1], ax)
-  colsize!(f.layout, 2, Fixed(160))
-  Makie.save(GANfolderPath * "logs/$(rand(1:9999)).pdf", f) # save pdf
 end
 
 # create line plots of GAN validation histories.
@@ -425,6 +516,130 @@ function plotLearnTries(trainParams, tries; drawLegend = true, name = timeNow(),
   textConfig(t) # setup label
   colsize!(f.layout, 2, Fixed(300))
   Makie.save("$path/$name.pdf", f) # save pdf with plot
+end
+
+# plot samples that are outliers according to each
+# error metric (VF and compliance relative errors, and
+# total squared error)
+function plotOutliers(
+  gen::Chain, split::Symbol, error::Dict{Symbol, Vector{Float32}},
+  network::String, goal::Symbol, outlierPercentage::Real
+)
+  # indicators for each metric
+  tseChosen = false; vfChosen = false; compChosen = false
+  # store outlier data for plotting
+  outlierData = Dict(:tseOut => Dict(), :vfOut => Dict(), :compOut => Dict())
+  # get outlier error values
+  tseOutlier = quantile(error[:topoSE], outlierPercentage)
+  vfOutlier = quantile(error[:VFerror], outlierPercentage)
+  compOutlier = quantile(error[:compError], outlierPercentage)
+  # prepare data
+  _, genInput, _, realTopology, vf, force, supp, comp, vm = dataBatch(
+    split, 1; extraFiles = 20, extraInfo = true
+  )
+  # iterate in samples from data split
+  for sample in axes(genInput, 4)
+    sample % 150 == 0 && println("$sample/$(size(genInput, 4))")
+    fakeTopology = gen(genInput[:, :, :, sample] |> dim4 |> gpu) |> cpu # use generator
+    ## calculate errors
+    topoSE = sum( # squared topology error
+      (padGen(fakeTopology)[:, :, 1, 1] .- realTopology[:, :, 1, sample]) .^ 2
+    )
+    # relative volume fraction error
+    fakeVF = volFrac(fakeTopology[:, :, 1, 1])[1]
+    realVF = volFrac(realTopology[:, :, 1, sample])[1]
+    VFerror = abs(fakeVF - realVF) / realVF
+    # relative compliance error
+    fakeComp = 0.0
+    @suppress_err fakeComp = topologyCompliance(
+      Float64(vf[sample]),
+      Int.(supp[:, :, sample]),
+      Float64.(force[:, :, sample]),
+      Float64.(fakeTopology[:, :, 1, 1])
+    )
+    compError = abs(fakeComp - comp[sample]) / comp[sample]
+    # store sample if it's an outlier in some metric
+    if topoSE > tseOutlier && tseChosen == false
+      push!(outlierData[:tseOut], :force => force[:, :, sample])
+      push!(outlierData[:tseOut], :supp => supp[:, :, sample])
+      push!(outlierData[:tseOut], :vm => vm[:, :, 1, sample])
+      push!(outlierData[:tseOut], :fakeTopology => fakeTopology[:, :, 1, 1])
+      push!(outlierData[:tseOut], :realTopology => realTopology[:, :, 1, sample])
+      @show fakeVF
+      @show realVF
+      # indicate that an outlier for this metric has already been chosen
+      tseChosen = true
+      println("Sample $sample is a TSE outlier")
+    elseif VFerror > vfOutlier && vfChosen == false
+      push!(outlierData[:vfOut], :force => force[:, :, sample])
+      push!(outlierData[:vfOut], :supp => supp[:, :, sample])
+      push!(outlierData[:vfOut], :vm => vm[:, :, 1, sample])
+      push!(outlierData[:vfOut], :fakeTopology => fakeTopology[:, :, 1, 1])
+      push!(outlierData[:vfOut], :realTopology => realTopology[:, :, 1, sample])
+      @show fakeVF
+      @show realVF
+      # indicate that an outlier for this metric has already been chosen
+      vfChosen = true
+      println("Sample $sample is a VF outlier")
+    elseif compError > compOutlier && compChosen == false
+      push!(outlierData[:compOut], :force => force[:, :, sample])
+      push!(outlierData[:compOut], :supp => supp[:, :, sample])
+      push!(outlierData[:compOut], :vm => vm[:, :, 1, sample])
+      push!(outlierData[:compOut], :fakeTopology => fakeTopology[:, :, 1, 1])
+      push!(outlierData[:compOut], :realTopology => realTopology[:, :, 1, sample])
+      # indicate that an outlier for this metric has already been chosen
+      compChosen = true
+      println("Sample $sample is a compliance outlier")
+    end
+    all([tseChosen, vfChosen, compChosen]) && break
+    sample == size(genInput, 4) && println("DIDN'T FOUND ALL OUTLIERS")
+  end
+  # common image setup
+  imgWidth = 1300
+  fig = Figure(resolution = (imgWidth, 500)) # makie figure
+  colSize = round(Int, (0.9 * imgWidth) / 4); rowHeight = round(Int, colSize * (50/140))
+  Label(fig[1, 1], "FEM inputs"; lineheight = 0.6)
+  Label(fig[1, 2], "von Mises")
+  Label(fig[1, 3], "QuickTO"); Label(fig[1, 4], "FEA topology")
+  [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:4]
+  ## prepare plot as in trainedSamples()
+  # iterate in chosen outliers
+  for (row, (_, outDict)) in enumerate(outlierData)
+    ## FEA intputs (supports and loads)
+    FEAaxis = Axis(fig[row + 1, 1]; height = rowHeight)
+    hidespines!(FEAaxis); hidedecorations!(FEAaxis)
+    limits!(FEAaxis, 1, FEAparams.meshSize[1], 1, FEAparams.meshSize[2])
+    FEAaxis.yreversed = true
+    # plot supports
+    heatmap!(FEAaxis, suppToBinary(outDict[:supp])[2]' |> Array, colormap = :bluesreds)
+    plotForce( # plot forces
+      FEAparams, outDict[:force],
+      fig, (2, 3), (2, 4); topologyGANtest = true,
+      newAxis = FEAaxis, paintArrow = :orange,
+      arrowWidth = 2, arrowHead = 15, includeText = false
+    )
+    ## VM
+    vmAxis = Axis(fig[row + 1, 2]; height = rowHeight)
+    vmAxis.yreversed = true; hidespines!(vmAxis); hidedecorations!(vmAxis)
+    heatmap!(vmAxis, outDict[:vm]' |> Array)
+    ## fakeTopology
+    fakeTopoAxis = Axis(fig[row + 1, 3]; height = rowHeight)
+    fakeTopoAxis.yreversed = true; hidespines!(fakeTopoAxis); hidedecorations!(fakeTopoAxis)
+    heatmap!(fakeTopoAxis, outDict[:fakeTopology]' |> Array)
+    ## true topology
+    trueTopoAxis = Axis(fig[row + 1, 4]; height = rowHeight)
+    heatmap!(trueTopoAxis, outDict[:realTopology]' |> Array)
+    hidespines!(trueTopoAxis); hidedecorations!(trueTopoAxis); trueTopoAxis.yreversed = true
+  end
+  if goal == :save # save image file as pdf
+    CairoMakie.activate!()
+    Makie.save(projPath * "networks/results/outliers $split $network.pdf", fig)
+    return Nothing
+  elseif goal == :display # plot batch and exit
+    GLMakie.activate!()
+    display(fig)
+    return Nothing
+  end
 end
 
 # create figure to vizualize sample
@@ -574,7 +789,7 @@ end
 # plot von Mises field
 function plotVM(FEAparams, disp, vf, fig, figPos)
   # get von Mises field
-  vm = calcVM(FEAparams.nElements, FEAparams, disp, 210e3*vf, 0.3)
+  vm = calcVM(FEAparams, disp, 210e3*vf, 0.3)
   # plot von Mises
   _,hm = heatmap(fig[figPos[1], figPos[2]],
     1:FEAparams.meshSize[2], FEAparams.meshSize[1]:-1:1, vm';
@@ -646,4 +861,136 @@ function textConfig(l)
   l.axis.attributes.tellwidth = false
   l.axis.attributes.halign = :center
   l.axis.attributes.width = 300
+end
+
+# plot compliance, VF and topology errors from
+# trained models in all 3 data splits
+function trainedPerformancePlot(
+  topoGANerror::Dict{Symbol, Vector{Float32}},
+  convNextError::Dict{Symbol, Vector{Float32}}
+)
+  fig = Figure(resolution = (1200, 700)) # makie figure
+  # U-SE-ResNet total squared error axis
+  topoGANseAx = Axis(fig[1, 1]); xlims!(topoGANseAx, 0, 4500)
+  # U-SE-ResNet relative volume fraction error axis
+  topoGANrelAx = Axis(fig[1, 2]); xlims!(topoGANrelAx, 0, 2)
+  # QuickTO total squared error axis
+  convNextSEax = Axis(fig[2, 1]); xlims!(convNextSEax, 0, 4500)
+  # QuickTO relative volume fraction error axis
+  convNextRelAx = Axis(fig[2, 2]); xlims!(convNextRelAx, 0, 2)
+  bin = 20
+  ### topologyGAN histograms
+  # U-SE-ResNet topology squared error
+  hist!(topoGANseAx, topoGANerror[:topoSE]; bins = bin,
+    color = RGBA{Float64}(0.48, 0.41, 0.93,0.6), normalization = :probability
+  )
+  # U-SE-ResNet relative VF error
+  hist!(topoGANrelAx, topoGANerror[:VFerror]; bins = bin,
+    color = RGBA{Float64}(0.0, 0.8, 0.8, 0.6), normalization = :probability
+  )
+  ## QuickTO histograms
+  # ConvNeXt topology squared error
+  hist!(convNextSEax, convNextError[:topoSE]; bins = bin,
+    color = RGBA{Float64}(0.48, 0.41, 0.93,0.6), normalization = :probability
+  )
+  # ConvNeXt relative VF error
+  hist!(convNextRelAx, convNextError[:VFerror]; bins = bin,
+    color = RGBA{Float64}(0.0, 0.8, 0.8, 0.6), normalization = :probability
+  )
+  # GLMakie.activate!()
+  # display(fig)
+  CairoMakie.activate!()
+  Makie.save(projPath * "networks/results/TrainedTestErrorMetrics.pdf", fig)
+end
+
+# using trained models, create plot including
+# generator input, and generated and real topologies
+function trainedSamples(
+  imageAmount::Int, samplesPerImage::Int, gen::Chain, NNtype::String;
+  goal = :save, split = :training
+)
+  sampleAmount = imageAmount * samplesPerImage
+  if split == :training # file used in training
+    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[1]
+    println(sampleSource)
+  elseif split == :validation # file used in validation, but still varied
+    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end]
+    println(sampleSource)
+  elseif split == :test # file with unseen type of support
+    sampleSource = datasetPath * "data/test"
+  else
+    error("Wrong 'split' kwarg in 'trainedSamples()'.")
+  end
+  randID = 0
+  # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
+  # MLdataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
+  denseDataDict, MLdataDict = denseInfoFromGANdataset(sampleSource, sampleAmount)
+  # tensor initializers
+  genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
+  topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
+  genInput, FEAinfo, topology = groupGANdata!(
+    genInput, FEAinfo, topology, MLdataDict; sampleAmount = 0
+  )
+  # discard first position of arrays (initialization)
+  genInput, _, _ = remFirstSample.((genInput, FEAinfo, topology))
+  dataBatch = DataLoader(genInput; batchsize = samplesPerImage, parallel = true)
+  # each image
+  imgWidth = 1300
+  fig = Figure(resolution = (imgWidth, 700)) # makie figure
+  colSize = round(Int, (0.9 * imgWidth) / 4); rowHeight = round(Int, colSize * (50/140))
+  Label(fig[1, 1], "FEM inputs"; lineheight = 0.6)
+  Label(fig[1, 2], "von Mises")
+  Label(fig[1, 3], "QuickTO"); Label(fig[1, 4], "FEA topology")
+  [colsize!(fig.layout, i, Fixed(colSize)) for i in 1:4]
+  for (batchIndex, gIn) in enumerate(dataBatch)
+    fakeTopology = gen(gIn |> gpu) |> cpu |> padGen # use generator
+    for sample in 1:samplesPerImage # each sample in current image
+      sampleID = samplesPerImage * (batchIndex - 1) + sample
+      ## FEA intputs (supports and loads)
+      FEAaxis = Axis(fig[sample + 1, 1]; height = rowHeight)
+      hidespines!(FEAaxis); hidedecorations!(FEAaxis)
+      limits!(FEAaxis, 1, FEAparams.meshSize[1], 1, FEAparams.meshSize[2])
+      FEAaxis.yreversed = true
+      heatmap!(FEAaxis, # plot supports
+        suppToBinary(denseDataDict[:denseSupport][:, :, sampleID])[2]' |> Array,
+        colormap = :bluesreds
+      )
+      plotForce( # plot forces
+        FEAparams, denseDataDict[:force][:, :, sampleID],
+        fig, (2, 3), (2, 4); topologyGANtest = true,
+        newAxis = FEAaxis, paintArrow = :orange,
+        arrowWidth = 2, arrowHead = 15, includeText = false
+      )
+      ## VM
+      vmAxis = Axis(fig[sample + 1, 2]; height = rowHeight)
+      vmAxis.yreversed = true; hidespines!(vmAxis); hidedecorations!(vmAxis)
+      heatmap!(vmAxis, denseDataDict[:vm][sampleID]' |> Array)
+      ## fakeTopology
+      fakeTopoAxis = Axis(fig[sample + 1, 3]; height = rowHeight)
+      fakeTopoAxis.yreversed = true
+      heatmap!(fakeTopoAxis, fakeTopology[:, :, 1, sample]' |> Array)
+      hidespines!(fakeTopoAxis); hidedecorations!(fakeTopoAxis)
+      ## true topology
+      trueTopoAxis = Axis(fig[sample + 1, 4]; height = rowHeight)
+      heatmap!(trueTopoAxis,
+        denseDataDict[:topologies][:, :, sampleID]' |> Array
+      )
+      hidespines!(trueTopoAxis); hidedecorations!(trueTopoAxis)
+      trueTopoAxis.yreversed = true
+    end
+    if goal == :save # save image file as pdf
+      CairoMakie.activate!()
+      if batchIndex == 1
+        randID = rand(1:9999)
+        mkdir(
+          "./networks/results/$NNtype $split $randID"
+        )
+      end
+      Makie.save(projPath * "networks/results/$NNtype $split $randID/$batchIndex.pdf", fig)
+    elseif goal == :display # plot batch and exit
+      GLMakie.activate!()
+      display(fig)
+      return Nothing
+    end
+  end
 end

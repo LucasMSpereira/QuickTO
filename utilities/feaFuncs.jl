@@ -38,7 +38,8 @@ function fakeCompliance(
 return [
   topologyCompliance(
       Float64.(_genInput[1, 1, 1, sample]),
-      Int64.(_supp[:, :, sample]), Float64.(_force[:, :, sample]), Float64.(_genOutput[:, :, 1, sample])
+      Int64.(_supp[:, :, sample]), Float64.(_force[:, :, sample]),
+      Float64.(_genOutput[:, :, 1, sample])
     )
     for sample in axes(_genOutput, 4) # iterate in batch
   ]
@@ -216,8 +217,8 @@ function predFEA(predForce, vf, supp)
   return solidify(xDisp, yDisp)
 end
 
-# Create randomized FEA problem
-function problem!(FEAparams)
+# Include random problem in initialization of FEAparams struct
+function initializerProblem!(FEAparams)
   elType = "CPS4"
   if elType == "CPS4"
     grid = generate_grid(Quadrilateral, FEAparams.meshSize)
@@ -275,6 +276,65 @@ function problem!(FEAparams)
   return FEAparams
 end
 
+# create random FEA problem
+function randomFEAproblem(FEAparams)
+  elType = "CPS4"
+  if elType == "CPS4"
+    grid = generate_grid(Quadrilateral, FEAparams.meshSize)
+  elseif elType == "CPS8"
+    grid = generate_grid(QuadraticQuadrilateral, FEAparams.meshSize)
+  end
+  numCellNodes = length(grid.cells[1].nodes) # number of nodes per cell/element
+  nels = prod(FEAparams.meshSize) # number of elements in the mesh
+  # nodeCoords = Vector of tuples with node coordinates
+  # cells = Vector of tuples of integers. Each line refers to an element
+  # and lists the IDs of its nodes
+  if elType == "CPS4"
+    nodeCoords, cells = mshData(FEAparams.meshSize)
+  elseif elType == "CPS8"
+    nodeCoords, cells = mshDataQuadratic(FEAparams.meshSize)
+  end
+  # Similar to nodeSets, but refers to groups of cells (FEA elements) 
+  cellSets = Dict(
+    "SolidMaterialSolid" => FEAparams.elementIDarray,
+    "Eall"               => FEAparams.elementIDarray,
+    "Evolumes"           => FEAparams.elementIDarray
+  )
+  dispBC = zeros(Int, (3,3))
+  # nodeSets = dictionary mapping strings to vectors of integers. The vector groups 
+  # node IDs that can be later referenced by the name in the string
+  if rand() > 0.6
+      # "clamp" a side
+      nodeSets, dispBC = simplePins!("rand", dispBC, FEAparams)
+  else
+      # position pins randomly
+      nodeSets, dispBC = randPins!(nels, FEAparams, dispBC, grid)
+  end
+  # lpos has the IDs of the loaded nodes.
+  # each line in "forces" contains [forceLine forceCol forceXcomponent forceYcomponent]
+  lpos, forces = loadPos(nels, dispBC, FEAparams, grid)
+  # Dictionary mapping integers to vectors of floats. The vector
+  # represents a force applied to the node with
+  # the respective integer ID.
+  cLoads = Dict(lpos[1] => forces[1,3:4])
+  [merge!(cLoads, Dict(lpos[c] => forces[1,3:4])) for c in 2:numCellNodes];
+  if length(lpos) > numCellNodes+1
+      for pos in (numCellNodes+1):length(lpos)
+          pos == (numCellNodes+1) && (global ll = 2)
+          merge!(cLoads, Dict(lpos[pos] => forces[ll,3:4]))
+          pos % numCellNodes == 0 && (global ll += 1)
+      end
+  end
+  vf = randBetween(0.3, 0.9)[1]
+  return InpStiffness(
+      InpContent(
+          nodeCoords, elType, cells, nodeSets, cellSets,  vf * 210e3, 0.3,
+          0.0, Dict("supps" => [(1, 0.0), (2, 0.0)]), cLoads,
+          Dict("uselessFaces" => [(1,1)]), Dict("uselessFaces" => 0.0)
+      )
+  ), vf, forces
+end
+
 # Pin a few random elements
 function randPins!(nels, FEAparams, dispBC, grid)
   # generate random element IDs
@@ -294,7 +354,7 @@ function randPins!(nels, FEAparams, dispBC, grid)
   return nodeSets, dispBC
 end
 
-# Rebuild FEA problem
+# Rebuild FEA problem struct from dense definitions
 function rebuildProblem(vf, BCs, forces)
   elementIDarray = [i for i in 1:FEAparams.nElements] # Vector that lists element IDs
   nodeCoords, cells = mshData(FEAparams.meshSize) # node coordinates and element definitions
@@ -431,14 +491,15 @@ end
 
 # calculate compliance of topology
 function topologyCompliance(
-  vf::T, supp::Array{Int64, 2}, force::Array{T, 2}, topology_::Array{T, 2}
-)::Float64 where T<:Real
-  problem, solver, comp, topComp = 0, 0, 0, 0
+  vf::Float64, supp::Array{Int64, 2},
+  force::Array{Float64, 2}, topology_::Array{Float64, 2}
+)::Float64
+  problem, solver, comp, topComp = 0, 0, 0, 0.0
   @ignore_derivatives problem = rebuildProblem(vf, supp, force) # InpContent struct from original problem
   @ignore_derivatives solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
   @ignore_derivatives comp = TopOpt.Compliance(solver) # define compliance
   # use comp function in final topology and return result
-  topComp = comp(cat(
+  @suppress_err topComp = comp(cat(
     (eachslice(topology_; dims = 1) |> collect |> reverse)...;
     dims = 1
   ))
@@ -449,3 +510,5 @@ end
 function volFrac(topologyBatch::Array{Float32, 4})::Array{Float32}
   return [mean(topologyBatch[:, :, :, g]) for g in axes(topologyBatch, 4)]
 end
+
+volFrac(t::Matrix) = volFrac(reshape(t, (size(t)..., 1, 1)))

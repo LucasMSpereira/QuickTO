@@ -4,16 +4,14 @@ using Suppressor
   println("Packages...")
   ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
   Suppressor.@suppress_err begin
-    using LinearAlgebra, Makie, TopOpt, Ferrite, JLD2, TimerOutputs
-    using Parameters, HDF5, Statistics, BSON, ValueHistories
-    using CUDA, Poppler_jll, MultivariateStats, Random
-    using StatsBase, CairoMakie, MLUtils, Dates, Flux, GLMakie
-    using Zygote, Optimisers, ChainRulesCore, Interpolations
+    using LinearAlgebra, Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs
+    using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
+    using CUDA, Poppler_jll, MultivariateStats, Random, Colors
+    using StatsBase, CairoMakie, MLUtils, Flux, GLMakie, ExplainableAI
+    using Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
     using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
   end
 end
-# import Nonconvex
-# Nonconvex.@load NLopt
 CUDA.allowscalar(false)
 println("Utilities...")
 # function and type definitions in "utilities" folder

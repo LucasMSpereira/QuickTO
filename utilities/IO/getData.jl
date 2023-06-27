@@ -1,6 +1,53 @@
 # functions that read data from hdf5 files, usually to be
 # used for ML pipelines
 
+# return batched data of certain split
+function dataBatch(split::Symbol, sizeOfBatch::Int; extraFiles = 0, numOfSamples = 0, extraInfo = false)
+  if split == :training # file used in training
+    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[1 : 1 + extraFiles]
+  elseif split == :validation # file used in validation, but still varied
+    sampleSource = readdir(datasetPath * "data/trainValidate"; join = true)[end - extraFiles: end]
+  elseif split == :test # file with unseen type of support
+    sampleSource = [datasetPath * "data/test"]
+  end
+  genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
+  topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
+  if extraInfo
+    vf = zeros(Float32, 1); force = zeros(Float32, (2, 4, 1))
+    supp = zeros(Float32, (3, 3, 1)); comp = zeros(Float32, 1)
+    vm = similar(topology)
+  end
+  for file in sampleSource
+    # MLdataDict: compliance, vf, vm, energy, binarySupp, Fx, Fy, topologies
+    # denseDataDict: compliance, vf, vm, energy, denseSupport, force, topology
+    denseDataDict, MLdataDict = denseInfoFromGANdataset(file, numOfSamples)
+    # tensor initializers
+    genInput, FEAinfo, topology = groupGANdata!(
+      genInput, FEAinfo, topology, MLdataDict; sampleAmount = 0
+    )
+    if extraInfo
+      vf = vcat(vf, denseDataDict[:vf])
+      force = cat(force, denseDataDict[:force]; dims = 3)
+      supp = cat(supp, denseDataDict[:denseSupport]; dims = 3)
+      comp = vcat(comp, denseDataDict[:compliance])
+      vm = cat(vm, MLdataDict[:vm]; dims = 4)
+    end
+  end
+  if extraInfo
+    # discard first position of arrays (initialization) and return values
+    genInput, FEAinfo, topology, vm = remFirstSample.((genInput, FEAinfo, topology, vm))
+    vf = vf[2 : end]; force = force[:, :, 2 : end]
+    supp = supp[:, :, 2 : end]; comp = comp[2 : end]
+    return DataLoader((genInput, FEAinfo, topology); batchsize = sizeOfBatch, parallel = true),
+    genInput, FEAinfo, topology, vf, force, supp, comp, vm
+  else
+    # discard first position of arrays (initialization) and return values
+    genInput, FEAinfo, topology = remFirstSample.((genInput, FEAinfo, topology))
+    return DataLoader((genInput, FEAinfo, topology); batchsize = sizeOfBatch, parallel = true),
+      genInput, FEAinfo, topology
+  end
+end
+
 # prepare data for GAN training. Receives list of HDF5 files.
 # Returns data loader to iterate in batches of samples
 function GANdata(metaData::GANmetaData, group, goal::Symbol, _lastFileBatch::Bool)

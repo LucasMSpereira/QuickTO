@@ -147,7 +147,7 @@ end
 end
 if runningInColab == false # if running locally
   FEAparams = FEAparameters()
-  problem!(FEAparams)
+  initializerProblem!(FEAparams)
 else
   const FEAparams = FEAparameters()
 end

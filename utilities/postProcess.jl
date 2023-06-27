@@ -44,8 +44,8 @@ function calcConds(nels, disp, problemID, e, v, numCellNode)
   return vm, σ, principals, strainEnergy
 end
 
-# calculate stresses, principal components and strain energy density
-function calcCondsGAN(disp, e, v)
+# calculate stresses, and strain energy density
+function calcCondsGAN(disp, e, v; dispShape = :matrix)
   toyGrid = generate_grid(Quadrilateral, FEAparams.meshSize)
   # initialize variables
   vm = zeros(FEAparams.meshSize)' |> Array; strainEnergy = similar(vm)
@@ -56,7 +56,11 @@ function calcCondsGAN(disp, e, v)
   cellValue = CellVectorValues(quadRule, ip)
   # determine stress-strain relationship dee according to 2D stress type
   dee = deeMat("stress", e, v)
-  vecDisp = dispVec(disp[:, :, 1:2]) # rearrange disp into vector
+  if dispShape == :matrix
+    vecDisp = dispVec(disp[:, :, 1:2]) # rearrange disp into vector
+  elseif dispShape == :vector
+    vecDisp = disp
+  end
   # loop in elements
   for (el, cell) in enumerate(CellIterator(FEAparams.problems[1].ch.dh))
       reinit!(cellValue, cell)
@@ -83,15 +87,14 @@ function calcCondsGAN(disp, e, v)
     interpQuant[i] = interpolation(nodeY, nodeX)
   end
   return [replace(x -> max(x, 0), quant) for quant in interpQuant]..., vm, strainEnergy
-  # return [quad((FEAparams.meshMatrixSize |> reverse)..., quant) for quant in interpQuant]..., vm, strainEnergy
 end
 
 # calculate von Mises stress
-function calcVM(nels, FEAparams, disp, e, v)
+function calcVM(FEAparams, disp, e, v)
   # "Programming the finite element method", 5. ed, Wiley, pg 35
   state = "stress"
   vm = zeros(FEAparams.meshSize)' |> Array # von Mises for each element
-  centerDispGrad = Array{Real}(undef, nels, 2)
+  centerDispGrad = Array{Real}(undef, FEAparams.nElements, 2)
   numCellNode = 4 # number of nodes per cell/element
   cellValue = CellVectorValues(QuadratureRule{2, RefCube}(2), Lagrange{2,RefCube,ceil(Int, numCellNode/7)}())
   el = 1

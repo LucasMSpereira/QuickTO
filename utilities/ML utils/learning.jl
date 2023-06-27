@@ -390,134 +390,134 @@ end
 
 #= Determine shape of test targets when generating report
 for stress CNN in hiperGrid() function. Shape changes
-  if multi-output models are used =#
-    function shapeTargetloadCNN(multiLossArch::Bool, testData)
-      if multiLossArch
-        testTargets = zeros(Float32, (2, 4, size(testData.data.label[1], 2)))
-        for sample in 1:size(testData.data.label[1], 2)
-          [testTargets[:, col, sample] .= testData.data.label[col][:, sample] for col in 1:4]
+if multi-output models are used =#
+function shapeTargetloadCNN(multiLossArch::Bool, testData)
+  if multiLossArch
+    testTargets = zeros(Float32, (2, 4, size(testData.data.label[1], 2)))
+    for sample in 1:size(testData.data.label[1], 2)
+      [testTargets[:, col, sample] .= testData.data.label[col][:, sample] for col in 1:4]
+    end
+    else
+      testTargets = reshape(testData.data.label.parent,(2, 4, :))
+  end
+  return testTargets
+end
+
+# test different learning rates and generate plot
+function testRates!(rates, trainConfigs, trianLoader, validateLoader, opt, architecture, modelParams, lossFun)
+  # Multiple instances to store histories
+  for (currentRate, parameters) in zip(rates, trainConfigs)
+    trainEpochs!(architecture(modelParams...), trianLoader, validateLoader, opt(currentRate), parameters, lossFun)
+  end
+  plotLearnTries(trainConfigs, rates)
+end
+
+# Get outputs from generator and discriminator
+
+
+#= Train ML model with early stopping.
+In predetermined intervals of epochs, evaluate
+the current model and print validation loss.=#
+function trainEarlyStop!(
+  mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun;
+  modelName = timeNow(), saveModel = true, FEAloss = false
+)
+  epoch = 1
+  while true
+    # In case of learning rate scheduling, apply decay at certain interval of epochs
+    if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
+      opt.eta *= trainParams.decay
+      println("New learning rate: ", sciNotation(opt.eta, 1))
+    end
+    # Batch training and parameter update
+    if FEAloss
+      batchTrainFEAloss!(trainDataLoader, mlModel, opt)
+    else
+      batchTrain!(trainDataLoader, mlModel, opt, lossFun)
+    end
+    # Evaluate model and print info at certain epoch intervals
+    if epoch % trainParams.validFreq == 0
+      epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun; FEAloss = FEAloss)
+      if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
+        valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
+        # @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
+        if stopTraining
+          println("EARLY STOPPING")
+          break
         end
       else
-        testTargets = reshape(testData.data.label.parent,(2, 4, :))
-      end
-      return testTargets
-    end
-    
-    # test different learning rates and generate plot
-    function testRates!(rates, trainConfigs, trianLoader, validateLoader, opt, architecture, modelParams, lossFun)
-      # Multiple instances to store histories
-      for (currentRate, parameters) in zip(rates, trainConfigs)
-        trainEpochs!(architecture(modelParams...), trianLoader, validateLoader, opt(currentRate), parameters, lossFun)
-      end
-      plotLearnTries(trainConfigs, rates)
-    end
-    
-    # Get outputs from generator and discriminator
-    
-    
-    #= Train ML model with early stopping.
-    In predetermined intervals of epochs, evaluate
-    the current model and print validation loss.=#
-    function trainEarlyStop!(
-      mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun;
-      modelName = timeNow(), saveModel = true, FEAloss = false
-      )
-      epoch = 1
-      while true
-        # In case of learning rate scheduling, apply decay at certain interval of epochs
-        if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
-          opt.eta *= trainParams.decay
-          println("New learning rate: ", sciNotation(opt.eta, 1))
-        end
-        # Batch training and parameter update
-        if FEAloss
-          batchTrainFEAloss!(trainDataLoader, mlModel, opt)
-        else
-          batchTrain!(trainDataLoader, mlModel, opt, lossFun)
-        end
-        # Evaluate model and print info at certain epoch intervals
-        if epoch % trainParams.validFreq == 0
-          epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun; FEAloss = FEAloss)
-          if length(trainParams.evaluations) > trainParams.earlyStopQuant # Early stopping
-            valLossPercentDrop, stopTraining = earlyStopCheck(trainParams) # Check for early stop criterion
-            # @printf "Early stop: %.1f%%/-%.1f%%\n" valLossPercentDrop trainParams.earlyStopPercent
-            if stopTraining
-              println("EARLY STOPPING")
-              break
-            end
-          else
-            println("No early stop check.")
-          end
-        end
-        epoch % 300 == 0 && intermediateSave(mlModel) # intermediate save checkpoint
-        epoch += 1
-      end
-      if saveModel
-        cpu_model = cpu(mlModel)
-        BSON.@save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
+        println("No early stop check.")
       end
     end
-    
-    #= Train ML model for certain number of epochs.
-      In predetermined intervals of epochs, evaluate the current
-      model and print validation loss.=#
-      function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun; save = false)
-        # Epochs loop
-        for epoch in 1:trainParams.epochs
-          # In case of learning rate scheduling, apply decay at certain interval of epochs
-          if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
-            opt.eta *= trainParams.decay
-            println("New learning rate: ", sciNotation(opt.eta, 1))
-          end
-          # Batch training and parameter update
-          batchTrain!(trainDataLoader, mlModel, opt, lossFun)
-          # Evaluate model and print info at certain epoch intervals
-          epoch % trainParams.validFreq == 0 && epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun)
-        end
-        if save
-          cpu_model = cpu(mlModel)
-          BSON.@save "./networks/models/$(timeNow()).bson" cpu_model
-        end
-      end
-      
-      function trainGANs(;
-        genOpt_, discOpt_, genName_ = " ", discName_ = " ",
-        metaDataName = "", originalFolder = " ",
-        architectures = :none, trainConfig
-        )
-        # object with metadata. includes instantiation of NNs,
-        # optimisers, dataloaders, training configurations,
-        # validation histories, and test losses
-        if genName_ == " " # new NNs
-          metaData = GANmetaData(
-            if architectures == :none
-              (U_SE_ResNetGenerator(), topologyGANdisc())
-            else
-              architectures
-            end...,
-            genOpt_, discOpt_, trainConfig
-          )
-          # create folder to store plots and report
-          global GANfolderPath = createGANfolder(metaData)::String
-        else # use input path to load previous models
-          # create folder to store plots and report
-          global GANfolderPath = originalFolder
-          metaData = GANmetaData(
-            loadGANs(genName_, discName_)...,
-            genOpt_, discOpt_, trainConfig,
-            metaDataName
-          )
-        end
-        initializeHistories(metaData)
-        println("Starting training ", timeNow())
-        if typeof(metaData.trainConfig) == earlyStopTrainConfig
-          @suppress_err earlyStopGANs(metaData) # train with early-stopping
-        elseif typeof(metaData.trainConfig) == epochTrainConfig
-          @suppress_err fixedEpochGANs(metaData) # train for fixed number of epochs
-        end
-        println("Testing ", timeNow())
-        switchTraining(metaData, false) # disable model updating during test
-        @suppress_err metaData(GANepoch!(metaData, :test); context = :test) # test GANs
-        switchTraining(metaData, true) # reenable model updating
-        return metaData
-      end
+    epoch % 300 == 0 && intermediateSave(mlModel) # intermediate save checkpoint
+    epoch += 1
+  end
+  if saveModel
+    cpu_model = cpu(mlModel)
+    BSON.@save "./networks/models/$modelName/FEA-$(rand(1:99999)).bson" cpu_model
+  end
+end
+
+#= Train ML model for certain number of epochs.
+In predetermined intervals of epochs, evaluate the current
+model and print validation loss.=#
+function trainEpochs!(mlModel, trainDataLoader, validateDataLoader, opt, trainParams, lossFun; save = false)
+  # Epochs loop
+  for epoch in 1:trainParams.epochs
+    # In case of learning rate scheduling, apply decay at certain interval of epochs
+    if (trainParams.schedule != 0) && (epoch % trainParams.schedule == 0)
+      opt.eta *= trainParams.decay
+      println("New learning rate: ", sciNotation(opt.eta, 1))
+    end
+    # Batch training and parameter update
+    batchTrain!(trainDataLoader, mlModel, opt, lossFun)
+    # Evaluate model and print info at certain epoch intervals
+    epoch % trainParams.validFreq == 0 && epochEval!(validateDataLoader, mlModel, trainParams, epoch, lossFun)
+  end
+  if save
+    cpu_model = cpu(mlModel)
+    BSON.@save "./networks/models/$(timeNow()).bson" cpu_model
+  end
+end
+
+function trainGANs(;
+  genOpt_, discOpt_, genName_ = " ", discName_ = " ",
+  metaDataName = "", originalFolder = " ",
+  architectures = :none, trainConfig
+)
+  # object with metadata. includes instantiation of NNs,
+  # optimisers, dataloaders, training configurations,
+  # validation histories, and test losses
+  if genName_ == " " # new NNs
+    metaData = GANmetaData(
+      if architectures == :none
+        (U_SE_ResNetGenerator(), topologyGANdisc())
+      else
+        architectures
+      end...,
+      genOpt_, discOpt_, trainConfig
+    )
+    # create folder to store plots and report
+    global GANfolderPath = createGANfolder(metaData)::String
+  else # use input path to load previous models
+    # create folder to store plots and report
+    global GANfolderPath = originalFolder
+    metaData = GANmetaData(
+      loadGANs(genName_, discName_)...,
+      genOpt_, discOpt_, trainConfig,
+      metaDataName
+    )
+  end
+  initializeHistories(metaData)
+  println("Starting training ", timeNow())
+  if typeof(metaData.trainConfig) == earlyStopTrainConfig
+    @suppress_err earlyStopGANs(metaData) # train with early-stopping
+  elseif typeof(metaData.trainConfig) == epochTrainConfig
+    @suppress_err fixedEpochGANs(metaData) # train for fixed number of epochs
+  end
+  println("Testing ", timeNow())
+  switchTraining(metaData, false) # disable model updating during test
+  @suppress_err metaData(GANepoch!(metaData, :test); context = :test) # test GANs
+  switchTraining(metaData, true) # reenable model updating
+  return metaData
+end

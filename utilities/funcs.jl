@@ -261,22 +261,42 @@ function estimateGrads(vals, quants, iCenter, jCenter)
     # calculate average neighborhood values
     circle == quants && (avgs = mean(filter(!iszero,mat)))
     # nullify previous internal matrix/center element
-    if size(mat,1) < 4
-      mat[2,2] = 0
+    if size(mat, 1) < 4
+      mat[2, 2] = 0
     else
-      mat[2:(end-1),2:(end-1)] .= 0
+      mat[2:(end - 1) , 2:(end - 1)] .= 0
     end
     # store maximum value of current ring (and its position relative to the center element)
     peaks[circle] = findmax(mat)
-    center = round(Int, (side+0.01)/2)
+    center = round(Int, (side + 0.01) / 2)
     Δx[circle] = peaks[circle][2][2] - center
     Δy[circle] = center - peaks[circle][2][1]
   end
   maxVals = [peaks[f][1] for f in keys(peaks)]
-  x̄ = Δx'*maxVals/sum(maxVals)
-  ȳ = Δy'*maxVals/sum(maxVals)
+  x̄ = Δx' * maxVals / sum(maxVals)
+  ȳ = Δy' * maxVals / sum(maxVals)
   return x̄, ȳ, avgs
 
+end
+
+# convert loads from dataset to dense format
+function forceMatrixToDense(sparseX, sparseY)::Array{Float32, 3}
+  denseForce = zeros(Float32, (2, 4, size(sparseX, 3)))
+  for sample_ in axes(sparseX, 3), (index, loadPos) in findall(!=(0.0), sparseX[:, :, sample_]) |> enumerate
+    denseForce[index, :, sample_] .= loadPos[1], loadPos[2], sparseX[:, :, sample_][loadPos], sparseY[:, :, sample_][loadPos]
+  end
+  return denseForce
+end
+
+# build sparse force matrices from dense format
+function forceToMat(force)
+  forceXmatrix = zeros(FEAparams.meshMatrixSize)
+  forceYmatrix = zeros(FEAparams.meshMatrixSize)
+  forceXmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 3] # x component of first load
+  forceXmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 3] # x component of second load
+  forceYmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 4] # y component of first load
+  forceYmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 4] # y component of second load
+  return forceXmatrix, forceYmatrix
 end
 
 # print summary statistics of GAN parameters
@@ -288,9 +308,142 @@ function GANparamsStats(metaData)
   return nothing
 end
 
+# Get pixel-wise correlations for each generator
+# input channel in a certain split
+function generatorInterpretation(
+  gen::Chain, split::Symbol, corrType::Symbol; additionalFiles = 6,
+  VFcorrelation = false, perturbation = 0.05, perturbedChannel = 2
+)
+  # initialize arrays
+  input = zeros(Float32, (FEAparams.meshMatrixSize..., 3, 1))
+  fakeTopology = zeros(Float32, (FEAparams.meshMatrixSize .- 1..., 1, 1))
+  realTopology = zeros(Float32, (FEAparams.meshMatrixSize..., 1, 1))
+  perturbFakeTopo = zeros(Float32, (FEAparams.meshMatrixSize .- 1..., 1, 1))
+  iter = 0
+  # batches of data split
+  @inbounds for (genInput, _, realTopo) in dataBatch(split, 200; extraFiles = additionalFiles)[1]
+    iter += 1
+    rand() < 0.1 && println(iter, "  ", timeNow())
+    # store batch input
+    corrType != :perturbation && (input = cat(input, genInput; dims = 4))
+    # if interpreting generator through input perturbation
+    if corrType == :binaryPerturb || corrType == :continuousPerturb
+      realTopology = cat(realTopology, realTopo; dims = 4)
+      perturbInput = deepcopy(genInput)
+      if corrType == :binaryPerturb
+        # binary noise (zero out some elements)
+        perturbInput[:, :, perturbedChannel, :] .*= 
+          rand(Float32, (FEAparams.meshMatrixSize..., size(genInput, 4))) .> perturbation
+      else
+        # pointwise multiply input by random perturbation in [1 - α; 1 + α], α ∈ [0; 1]
+        perturbInput[:, :, perturbedChannel, :] .*= randBetween(
+          1 - perturbation, 1 + perturbation; sizeOut = (FEAparams.meshMatrixSize..., size(genInput, 4))
+        )
+      end
+      # feed perturbed input to generator and store topology suggested
+      perturbFakeTopo = cat(perturbFakeTopo, perturbInput |> gpu |> gen |> cpu; dims = 4)
+    end
+    # feed input to generator and store topology suggested
+    fakeTopology = cat(fakeTopology, genInput |> gpu |> gen |> cpu; dims = 4)
+  end
+  # remove first samples (null initialization)
+  if corrType == :binaryPerturb || corrType == :continuousPerturb
+    fakeTopology, perturbFakeTopo, realTopology = remFirstSample.((fakeTopology, perturbFakeTopo, realTopology))
+  else
+    input, fakeTopology = remFirstSample.((input, fakeTopology))
+  end
+  # if calculating VM and energy pixelwise correlations
+  if !VFcorrelation && corrType in [:flatten, :pixelwise]
+    return VMandEnergyCorrelations(corrType, input, fakeTopology, split)
+  # if interpreting generator through input perturbation
+  elseif corrType == :binaryPerturb || corrType == :continuousPerturb
+    er = [ # topology error with and without perturbation
+      sum((padGen(fakeTopology) .- realTopology) .^ 2),
+      sum((padGen(perturbFakeTopo) .- realTopology) .^ 2)
+    ]
+    println( # print results
+      ["VM\n", "Energy\n"][min(perturbedChannel - 1, 2)],
+      "   Topology error without perturbation: ", sciNotation(er[1], 3),
+      "\n   Topology error with $(perturbation * 100)% perturbation: ", sciNotation(er[2], 3),
+      "\n   Change of ", round((er[2] / er[1] - 1) * 100; digits = 4), "%"
+    )
+    # return error values
+    return er
+  else # if calculating only VF correlations
+    return Statistics.cor(
+      StatsBase.standardize(StatsBase.ZScoreTransform, volFrac(fakeTopology)),
+      StatsBase.standardize(StatsBase.ZScoreTransform, input[1, 1, 1, :])
+    )
+  end
+end
+
+# performance of trained generator is certain data split
+function genPerformance(gen::Chain, dataSplit::Vector{String})
+  if length(dataSplit) == 1
+    sampleAmount = 15504
+  else
+    sampleAmount = numSample(dataSplit)
+  end
+  splitError = Dict(
+    :topoSE => zeros(Float32, sampleAmount),
+    :VFerror => zeros(Float32, sampleAmount),
+    :compError => zeros(Float32, sampleAmount)
+  )
+  fakeVF, realVF, pastSample, globalID = 0f0, 0f0, 0, 0
+  fakeComp, realComp = 0f0, 0f0
+  for (fileIndex, filePath) in enumerate(dataSplit)
+    println(fileIndex, "/", length(dataSplit), " ", timeNow())
+    if length(dataSplit) == 1
+      fileSize = sampleAmount
+    else
+      fileSize = numSample([dataSplit[fileIndex]])
+    end
+    # tensor initializers
+    genInput = zeros(Float32, FEAparams.meshMatrixSize..., 3, 1); FEAinfo = similar(genInput)
+    topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
+    # gather data from multiple files (or test file)
+    denseDataDict, dataDict = denseInfoFromGANdataset(replace(filePath, "LucasK" => "k"), fileSize)
+    # dataDict = readTopologyGANdataset(replace(filePath, "LucasK" => "k"))
+    genInput, FEAinfo, topology = groupGANdata!(
+      genInput, FEAinfo, topology, dataDict
+    )
+    # discard initializers
+    genInput, FEAinfo, realTopology = remFirstSample.((genInput, FEAinfo, topology))
+    for sample in 1:fileSize
+      globalID = pastSample + sample
+      fakeTopology = cpu(genInput[:, :, :, sample] |> dim4 |> gpu |> gen) # use generator
+      splitError[:topoSE][globalID] = sum( # squared topology error
+        (padGen(fakeTopology)[:, :, 1, 1] .- realTopology[:, :, 1, sample]) .^ 2
+      )
+      # relative volume fraction error
+      fakeVF = volFrac(fakeTopology[:, :, 1, 1])[1]
+      realVF = volFrac(realTopology[:, :, 1, sample])[1]
+      splitError[:VFerror][globalID] = abs(fakeVF - realVF) / realVF
+      # relative compliance error
+      @suppress_err fakeComp = topologyCompliance(
+        Float64(denseDataDict[:vf][sample]),
+        Int.(denseDataDict[:denseSupport][:, :, sample]),
+        Float64.(denseDataDict[:force][:, :, sample]),
+        Float64.(fakeTopology[:, :, 1, 1])
+      )
+      realComp = dataDict[:compliance][sample]
+      splitError[:compError][globalID] = abs(fakeComp - realComp) / realComp
+      sample % 350 == 0 && @show sample
+    end
+    pastSample += fileSize
+  end
+  return splitError
+end
+
+# Get section and dataset IDs of sample
+function getIDs(pathing)
+  s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
+  return s[1], s[2]
+end
+
 # Identify non-binary topologies
 function getNonBinaryTopos(forces, supps, vf, disp, top)
-  bound = 0.35 # densities within 0.5 +/- bound are considered intermediate
+  bound = 0.35 # densities within (0.5 +/- bound) are considered intermediate
   boundPercent = 3 # allowed percentage of elements with intermediate densities
   intermQuant = length(filter(
       x -> (x > 0.5 - bound) && (x < 0.5 + bound),
@@ -305,31 +458,7 @@ function getNonBinaryTopos(forces, supps, vf, disp, top)
   end
 end
 
-# Get section and dataset IDs of sample
-function getIDs(pathing)
-  s = parse.(Int, split(pathing[findlast(x->x=='\\', pathing)+1:end]))
-  return s[1], s[2]
-end
-
-# convert loads from dataset to dense format
-function forceMatrixToDense(sparseX, sparseY)::Array{Float32, 3}
-  denseForce = zeros(Float32, (2, 4, size(sparseX, 3)))
-  for sample_ in axes(sparseX, 3), (index, loadPos) in findall(!=(0.0), sparseX[:, :, sample_]) |> enumerate
-    denseForce[index, :, sample_] .= loadPos[1], loadPos[2], sparseX[:, :, sample_][loadPos], sparseY[:, :, sample_][loadPos]
-  end
-  return denseForce
-end
-
-function forceToMat(force)
-  forceXmatrix = zeros(FEAparams.meshMatrixSize)
-  forceYmatrix = zeros(FEAparams.meshMatrixSize)
-  forceXmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 3] # x component of first load
-  forceXmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 3] # x component of second load
-  forceYmatrix[force[1, 1] |> Int, force[1, 2] |> Int] = force[1, 4] # y component of first load
-  forceYmatrix[force[2, 1] |> Int, force[2, 2] |> Int] = force[2, 4] # y component of second load
-  return forceXmatrix, forceYmatrix
-end
-
+# initialize variables used to store loss histories
 function initializeHistories(_metaData)
   if wasserstein # using wgan
     push!(_metaData.discDefinition.nnValues, :criticOutFake, 1, 0f0)
@@ -344,12 +473,6 @@ function initializeHistories(_metaData)
     push!(_metaData.genDefinition.nnValues, :vfMAE, 1, 0f0)
   end
   return nothing
-end
-
-# for wgan-gp loss, interpolate between fake and real topologies
-function interpolateTopologies(realTopology_::Array{Float32, 4}, fakeTopology_::Array{Float32, 4})::Array{Float32, 4}
-  ϵ = reshape(rand(Float32, size(realTopology_, 4)), (1, 1, 1, size(realTopology_, 4)))
-  return @. ϵ * realTopology_ + (1 - ϵ) * fakeTopology_
 end
 
 # test if all "features" (forces and individual supports) aren't isolated (surrounded by void elements)
@@ -437,6 +560,47 @@ function logWGANloss(
   push!(metaData_.discDefinition.nnValues, :mse, newSize, MSEerror)
 end
 
+# compare problem throughput of OT and ML models
+function methodThroughput(nSample::Int, topologyGANgen::Chain, quickTOgen::Chain)
+  for sample in 1:nSample
+    sample % round(Int, nSample/5) == 0 && @show sample
+    # keep trying until sample isn't problematic
+    while true
+      # random problem
+      problem, vf, force = randomFEAproblem(FEAparams)
+      # build solver
+      solver = FEASolver(Direct, problem; xmin = 1e-6, penalty = TopOpt.PowerPenalty(3.0))
+      # obtain FEA solution
+      solver()
+      # determine von Mises field
+      vm, energy, _, _ = calcCondsGAN(deepcopy(solver.u), 210e3 * vf, 0.33; dispShape = :vector)
+      if checkSample(size(force, 1), vm, 3, force) # if sample isn't problematic
+        ## standard TO
+        comp = TopOpt.Compliance(solver) # compliance
+        filter = DensityFilter(solver; rmin = 3.0) # filtering to avoid checkerboard
+        obj = x -> comp(filter(PseudoDensities(x))) # objective
+        x0 = fill(vf, FEAparams.nElements) # starting densities (VF everywhere)
+        volfrac = TopOpt.Volume(solver)
+        constr = x -> volfrac(filter(PseudoDensities(x))) - vf # volume fraction constraint
+        model = Nonconvex.Model(obj) # create optimization model
+        Nonconvex.addvar!( # add optimization variable
+          model, zeros(FEAparams.nElements), ones(FEAparams.nElements), init = x0
+        )
+        Nonconvex.add_ineq_constraint!(model, constr) # add volume constraint
+        # time standard optimization with MMA
+        @timeit to "standard" Nonconvex.optimize(model, NLoptAlg(:LD_MMA), x0; options = NLoptOptions())
+        ## ML models
+        mlInput = solidify(fill(vf, FEAparams.meshMatrixSize), vm, energy) |> dim4 |> gpu
+        # time topologyGAN generator
+        @timeit to "U-SE-ResNet" topologyGANgen(mlInput)
+        # time QuickTO generator
+        @timeit to "QuickTO" quickTOgen(mlInput)
+        break
+      end
+    end
+  end
+end
+
 # estimate total number of lines in project so far
 function numLines()
   sum(
@@ -477,7 +641,7 @@ function numSample(files)
   end
 end
 
-# pad output of generator
+# pad batch of generator outputs
 function padGen(genOut)
   return cat(
     cat(genOut, zeros(Float32, (FEAparams.meshSize[2], 1, 1, size(genOut, 4))); dims = 2),
@@ -518,6 +682,12 @@ function quad(nelx::Int, nely::Int, vec::Vector{<:Real})
     end
   end
   return quadd
+end
+
+# uniformly generate random Float64 between inputs
+function randBetween(lower::Real, upper::Real; sizeOut = 1)::Array{Float32}
+  output = zeros(sizeOut)
+  return [lower + (upper - lower) * rand() for _ in keys(output)]
 end
 
 # generate vector with n random and different integer values from 1 to val
@@ -576,34 +746,6 @@ function sciNotation(num::Real, printDigits::Int)
 end
 
 showVal(x) = println(round.(x; digits = 4)) # auxiliary print function
-
-# print order of layers and variation in data size along Flux chain
-# problem with number print and recursion
-function sizeLayers(myChain, input; currentLayer = 0)
-  @show currentLayer
-  if currentLayer == 0
-    println("Input size: ", size(input))
-    layer = 1
-  else
-    layer = copy(currentLayer)
-  end
-  for _ in 1:length(myChain) # iterate in NN layers
-    if typeof(myChain[layer]) <: SkipConnection # recursion in case of skip connection
-      sizeLayers(
-        myChain[layer].layers,
-        input |> myChain[1 : layer - 1];
-        currentLayer = max(layer - 1, 1)
-      )
-    else # print size of output if not skip connection
-      println(
-        layer + currentLayer, ": ", typeof(myChain[layer]),
-        "   -   output size: ", input |> myChain[1:layer] |> size
-      )
-      layer += 1
-    end
-  end
-  return currentLayer
-end
 
 # concatenate multiple 2D or 3D arrays in the 3rd dimension
 solidify(x...) = cat(x...; dims = 3)
@@ -688,6 +830,55 @@ function trainStats(validFreq, days)
     println(rpad("$(round(Int, dPercent * 100))%", 7),
       round <| (Int, (days * 24) / (dPercent * (2.6 + 1.3/validFreq)))..., " epochs"
     )
+  end
+end
+
+# two ways to calculate VM-topology and energy-topology correlations
+function VMandEnergyCorrelations(
+  corrType::Symbol, input::Array{Float32, 4},
+  fakeTopology::Array{Float32, 4}, split::Symbol
+)
+  # correlation between flattenen input channels and topologies
+  if corrType == :flatten
+    # remove input padding so generator input and output
+    # have equal shapes
+    input = input[1 : end - 1, 1 : end - 1, :, :]
+    # flatten VM, energy and topology
+    flatVM, flatEnergy, fakeTopology = Base.Iterators.flatten.((input[:, :, 2, :], input[:, :, 3, :], fakeTopology)) .|> collect
+    # standardize suggested topologies
+    fakeTopology = StatsBase.standardize(StatsBase.ZScoreTransform, fakeTopology)
+    # correlations
+    return (
+      Statistics.cor(
+        StatsBase.standardize(StatsBase.ZScoreTransform, flatVM),
+        fakeTopology
+      ),
+      Statistics.cor(
+        StatsBase.standardize(StatsBase.ZScoreTransform, flatEnergy),
+        fakeTopology
+      )
+    )
+  elseif corrType == :pixelwise
+    # VM-topology and energy-topology pixelwise correlations
+    channelCorr = [zeros(Float32, (51, 141)) for _ in 1:2]
+    @inbounds for ch in 2:3 # iterate in both channels
+      @inbounds for i in axes(input, 1), j in axes(input, 2)
+        # standardize data and calculate correlation for current "pixel"
+        channelCorr[ch - 1][i, j] = Statistics.cor(
+          StatsBase.standardize(StatsBase.ZScoreTransform, input[i, j, ch, :]),
+          StatsBase.standardize(StatsBase.ZScoreTransform, fakeTopology[i, j, 1, :])
+        )
+      end
+    end
+    # discard last row and column because of difference
+    # in size of generator input and output
+    channelCorr = [corMat[1 : end - 1, 1 : end - 1] for corMat in channelCorr]
+    # in test set, all samples are clamped at the top. these
+    # points are constant in the output, causing NaN correlations
+    if split == :test
+      channelCorr = [corMat[2 : end, :] for corMat in channelCorr]
+    end
+    return channelCorr
   end
 end
 
