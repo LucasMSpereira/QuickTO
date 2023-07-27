@@ -5,21 +5,21 @@ if !packagesInstalled
   map(
     Pkg.add,
     (
-      "TopOpt", "Makie", "Ferrite", "JLD2", "TimerOutputs", "StatsBase",
-      "Parameters", "HDF5", "Statistics", "BSON", "ValueHistories", "ShapML",
-      "Poppler_jll", "MultivariateStats", "Colors", "Suppressor",
-      "CairoMakie", "MLUtils", "Flux", "GLMakie", "ExplainableAI",
-      "Zygote", "Optimisers", "ChainRulesCore", "Interpolations", "DataFrames"
+      "TopOpt", "Ferrite", "JLD2", "TimerOutputs", "StatsBase",
+      "Parameters", "HDF5", "Statistics", "BSON", "ValueHistories",
+      "Poppler_jll", "MultivariateStats", "DataFrames",
+      "MLUtils", "Flux", "ExplainableAI", "ShapML",
+      "Zygote", "Optimisers", "ChainRulesCore", "Interpolations"
     )
   )
 end
 ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
 # Use packages
-using LinearAlgebra, Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs
+using LinearAlgebra, Dates, TopOpt, Ferrite, JLD2, TimerOutputs
 using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
-using CUDA, Poppler_jll, MultivariateStats, Random, Colors
-using StatsBase, CairoMakie, MLUtils, Flux, GLMakie, ExplainableAI
-using Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
+using CUDA, Poppler_jll, MultivariateStats, Random
+using StatsBase, MLUtils, Flux, ExplainableAI, DataFrames
+using Zygote, Optimisers, ChainRulesCore, Interpolations
 using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
 CUDA.allowscalar(false)
 println("\nDEFINITIONS...\n")
