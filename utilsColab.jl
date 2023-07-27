@@ -15,15 +15,12 @@ if !packagesInstalled
 end
 ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
 # Use packages
-using Suppressor
-Suppressor.@suppress_err begin
-  using LinearAlgebra, Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs
-  using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
-  using CUDA, Poppler_jll, MultivariateStats, Random, Colors
-  using StatsBase, CairoMakie, MLUtils, Flux, GLMakie, ExplainableAI
-  using Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
-  using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
-end
+using LinearAlgebra, Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs
+using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
+using CUDA, Poppler_jll, MultivariateStats, Random, Colors
+using StatsBase, CairoMakie, MLUtils, Flux, GLMakie, ExplainableAI
+using Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
+using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
 CUDA.allowscalar(false)
 println("\nDEFINITIONS...\n")
 # function and type definitions in "utilities" folder
