@@ -5,11 +5,11 @@ if !packagesInstalled
   map(
     Pkg.add,
     (
-      Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs,
-      Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML,
-      CUDA, Poppler_jll, MultivariateStats, Random, Colors,
-      StatsBase, CairoMakie, MLUtils, Flux, GLMakie, ExplainableAI,
-      Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
+      "TopOpt", "Makie", "Ferrite", "JLD2", "TimerOutputs",
+      "Parameters", "HDF5", "Statistics", "BSON", "ValueHistories", "ShapML",
+      "Poppler_jll", "MultivariateStats", "Colors",
+      "CairoMakie", "MLUtils", "Flux", "GLMakie", "ExplainableAI",
+      "Zygote", "Optimisers", "ChainRulesCore", "Interpolations", "DataFrames"
     )
   )
 end
