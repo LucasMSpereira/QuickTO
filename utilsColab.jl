@@ -5,7 +5,7 @@ if !packagesInstalled
   map(
     Pkg.add,
     (
-      LinearAlgebra, Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs,
+      Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs,
       Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML,
       CUDA, Poppler_jll, MultivariateStats, Random, Colors,
       StatsBase, CairoMakie, MLUtils, Flux, GLMakie, ExplainableAI,
