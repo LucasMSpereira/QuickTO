@@ -5,7 +5,7 @@ if !packagesInstalled
   map(
     Pkg.add,
     (
-      "TopOpt", "Makie", "Ferrite", "JLD2", "TimerOutputs",
+      "TopOpt", "Makie", "Ferrite", "JLD2", "TimerOutputs", "StatsBase",
       "Parameters", "HDF5", "Statistics", "BSON", "ValueHistories", "ShapML",
       "Poppler_jll", "MultivariateStats", "Colors", "Suppressor",
       "CairoMakie", "MLUtils", "Flux", "GLMakie", "ExplainableAI",
