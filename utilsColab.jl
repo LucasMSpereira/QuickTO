@@ -7,7 +7,7 @@ if !packagesInstalled
     (
       "TopOpt", "Makie", "Ferrite", "JLD2", "TimerOutputs",
       "Parameters", "HDF5", "Statistics", "BSON", "ValueHistories", "ShapML",
-      "Poppler_jll", "MultivariateStats", "Colors", "Suppressor"
+      "Poppler_jll", "MultivariateStats", "Colors", "Suppressor",
       "CairoMakie", "MLUtils", "Flux", "GLMakie", "ExplainableAI",
       "Zygote", "Optimisers", "ChainRulesCore", "Interpolations", "DataFrames"
     )
