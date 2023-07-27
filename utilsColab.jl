@@ -31,6 +31,7 @@ MLutilsPath .|> x -> "." * x[10 : end] .|> include
 IOutilsPath = readdir("./QuickTO/utilities/IO"; join = true)
 IOutilsPath .|> x -> "." * x[10 : end] .|> include
 println("\nCONSTANTS...\n")
+desktop = false
 const datasetPath = "C:/Users/LucasKaoid/Desktop/datasets/" # dataset path
 const datasetNonTestSize = 106_336 # number of samples for training and validation
 # reference number of channels used in TopologyGAN
