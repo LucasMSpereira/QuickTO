@@ -172,7 +172,6 @@ function fixedEpochGANs(metaData)
     if epoch % metaData.trainConfig.validFreq == 0
       switchTraining(metaData, false) # disable model updating during validation
       # validation epoch returning avg losses for both NNs
-      println("validation")
       GANepoch!(metaData, :validate) |> metaData
       switchTraining(metaData, true) # reenable model updating after validation
       GANprints(epoch, metaData) # print information about validation
