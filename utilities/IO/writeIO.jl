@@ -39,8 +39,8 @@ function saveGANs(metaData, currentEpoch; finalSave = false)
     BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "-$(currentEpoch)gen.bson" cpuGenerator
     BSON.@save datasetPath * "data/checkpoints/" * timeNow() * "-$(currentEpoch)disc.bson" cpuDiscriminator
   else # if running in google colab
-    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves" * timeNow() * "-$(currentEpoch)gen.bson" cpuGenerator
-    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves" * timeNow() * "-$(currentEpoch)disc.bson" cpuDiscriminator
+    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves/" * timeNow() * "-$(currentEpoch)gen.bson" cpuGenerator
+    BSON.@save "./gdrive/MyDrive/dataset files/GAN saves/" * timeNow() * "-$(currentEpoch)disc.bson" cpuDiscriminator
   end
   if !finalSave
     # bring models back to gpu, if training will continue
