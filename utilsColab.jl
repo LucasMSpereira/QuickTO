@@ -7,7 +7,7 @@ if !packagesInstalled
     (
       "TopOpt", "Ferrite", "JLD2", "TimerOutputs", "StatsBase",
       "Parameters", "HDF5", "Statistics", "BSON", "ValueHistories",
-      "Poppler_jll", "MultivariateStats", "DataFrames",
+      "Poppler_jll", "MultivariateStats", "DataFrames", "Makie", "CairoMakie"
       "MLUtils", "Flux", "ExplainableAI", "ShapML", "Suppressor",
       "Zygote", "Optimisers", "ChainRulesCore", "Interpolations"
     )
@@ -19,7 +19,7 @@ using LinearAlgebra, Dates, TopOpt, Ferrite, JLD2, TimerOutputs
 using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
 using CUDA, Poppler_jll, MultivariateStats, Random, Suppressor
 using StatsBase, MLUtils, Flux, ExplainableAI, DataFrames
-using Zygote, Optimisers, ChainRulesCore, Interpolations
+using Zygote, Optimisers, ChainRulesCore, Interpolations, Makie, CairoMakie
 using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
 CUDA.allowscalar(false)
 println("\nDEFINITIONS...\n")
