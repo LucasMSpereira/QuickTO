@@ -5,23 +5,24 @@ if !packagesInstalled
   map(
     Pkg.add,
     (
-      "Makie", "CairoMakie", "StatsBase",
-      "Parameters", "HDF5", "MultivariateStats",
-      "MLUtils", "Suppressor", "BSON",
-      "Zygote", "Optimisers", "ChainRulesCore"
+      LinearAlgebra, Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs,
+      Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML,
+      CUDA, Poppler_jll, MultivariateStats, Random, Colors,
+      StatsBase, CairoMakie, MLUtils, Flux, GLMakie, ExplainableAI,
+      Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
     )
   )
 end
-Pkg.add(name = "Flux", version = "0.13.9")
 ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
 # Use packages
 using Suppressor
 @suppress_err begin
-  using LinearAlgebra, Makie, CairoMakie
-  using Parameters, HDF5, Statistics, BSON
-  using Random, CUDA, MultivariateStats
-  using StatsBase, MLUtils, Dates, Flux
-  using Zygote, Optimisers, ChainRulesCore
+  using LinearAlgebra, Dates, TopOpt, Makie, Ferrite, JLD2, TimerOutputs
+  using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
+  using CUDA, Poppler_jll, MultivariateStats, Random, Colors
+  using StatsBase, CairoMakie, MLUtils, Flux, GLMakie, ExplainableAI
+  using Zygote, Optimisers, ChainRulesCore, Interpolations, DataFrames
+  using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
 end
 CUDA.allowscalar(false)
 println("\nDEFINITIONS...\n")
