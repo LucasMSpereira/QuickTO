@@ -1,6 +1,10 @@
 import Pkg
 Pkg.activate(".")
-Pkg. instantiate()
+Pkg.instantiate()
+# setup base path for dataset (ends with "datasets/")
+# datasetPath = ""
+# setup base path for project (ends with "QuickTO/")
+# projPath = ""
 include(projPath * "QTOutils.jl")
 
 const batchSize = 64

@@ -403,7 +403,6 @@ function genPerformance(gen::Chain, dataSplit::Vector{String})
     topology = zeros(Float32, FEAparams.meshMatrixSize..., 1, 1)
     # gather data from multiple files (or test file)
     denseDataDict, dataDict = denseInfoFromGANdataset(replace(filePath, "LucasK" => "k"), fileSize)
-    # dataDict = readTopologyGANdataset(replace(filePath, "LucasK" => "k"))
     genInput, FEAinfo, topology = groupGANdata!(
       genInput, FEAinfo, topology, dataDict
     )

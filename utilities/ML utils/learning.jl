@@ -177,9 +177,8 @@ function fixedEpochGANs(metaData)
       GANprints(epoch, metaData) # print information about validation
       # plot intermediate history of validations
       if length(metaData.lossesVals[:genValHistory]) > 1 && runningInColab == false
-        plotGANValHist(
-        metaData.lossesVals, metaData.trainConfig.validFreq,
-        "intermediate"; midTraining = true
+        plotGANValHist(metaData.lossesVals, metaData.trainConfig.validFreq,
+          "intermediate"; midTraining = true
         )
       end
     end
