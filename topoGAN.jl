@@ -7,6 +7,7 @@ Pkg.instantiate()
 # projPath = ""
 include(projPath * "QTOutils.jl")
 
+const desktop = true
 const batchSize = 64
 const normalizeDataset = false # choose to normalize data in [-1; 1]
 const startTime = timeNow()
