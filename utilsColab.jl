@@ -5,25 +5,28 @@ if !packagesInstalled
   map(
     Pkg.add,
     (
-      "Makie", "CairoMakie", "StatsBase",
-      "Parameters", "HDF5", "MultivariateStats",
-      "MLUtils", "Suppressor", "BSON",
-      "Zygote", "Optimisers", "ChainRulesCore"
+      "TopOpt", "Ferrite", "JLD2", "TimerOutputs", "StatsBase",
+      "Parameters", "HDF5", "Statistics", "BSON", "ValueHistories",
+      "Poppler_jll", "MultivariateStats", "DataFrames",
+      "MLUtils", "Flux", "ExplainableAI", "ShapML", "Suppressor",
+      "Zygote", "Optimisers", "ChainRulesCore", "Interpolations"
     )
   )
 end
-Pkg.add(name = "Flux", version = "0.13.9")
 ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
 # Use packages
-using Suppressor
-@suppress_err begin
-  using LinearAlgebra, Makie, CairoMakie
-  using Parameters, HDF5, Statistics, BSON
-  using Random, CUDA, MultivariateStats
-  using StatsBase, MLUtils, Dates, Flux
-  using Zygote, Optimisers, ChainRulesCore
+using LinearAlgebra, Dates, TopOpt, Ferrite, JLD2, TimerOutputs
+using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
+using Poppler_jll, MultivariateStats, Random, Suppressor
+using StatsBase, MLUtils, Flux, ExplainableAI, DataFrames
+using Zygote, Optimisers, ChainRulesCore, Interpolations
+using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
+# only get and use CUDA if it wasn't installed previously
+if !("CUDA" in keys(Pkg.project().dependencies))
+  Pkg.add("CUDA")
+  using CUDA
+  CUDA.allowscalar(false)
 end
-CUDA.allowscalar(false)
 println("\nDEFINITIONS...\n")
 # function and type definitions in "utilities" folder
 utilsPath = readdir("./QuickTO/utilities"; join = true) |> x -> filter(y -> y[end - 2 : end] == ".jl", x)
@@ -33,7 +36,8 @@ MLutilsPath .|> x -> "." * x[10 : end] .|> include
 IOutilsPath = readdir("./QuickTO/utilities/IO"; join = true)
 IOutilsPath .|> x -> "." * x[10 : end] .|> include
 println("\nCONSTANTS...\n")
-const datasetPath = "C:/Users/LucasKaoid/Desktop/datasets/" # dataset path
+desktop = false
+const datasetPath = "./datasets/" # dataset path
 const datasetNonTestSize = 106_336 # number of samples for training and validation
 # reference number of channels used in TopologyGAN
 const gf_dim = 128

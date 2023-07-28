@@ -118,10 +118,6 @@ function WGANgrads(
     genLossVal = genLoss(gen)
   end
   if logBatch
-    rand() < 0.2 && println("genDoutFake: ", -genDoutFakeMult * genDoutFake,
-      "   mse: ", mseMult * mse, "   discReal: ", discReal,
-      "   discFake: ", discFake
-    )
     logWGANloss(
       metaData_, discFake, discReal,
       -genDoutFakeMult * genDoutFake, mseMult * mse
