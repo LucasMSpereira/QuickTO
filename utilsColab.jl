@@ -17,11 +17,16 @@ ENV["JULIA_CUDA_MEMORY_POOL"] = "none" # avoid GPU OOM issues
 # Use packages
 using LinearAlgebra, Dates, TopOpt, Ferrite, JLD2, TimerOutputs
 using Parameters, HDF5, Statistics, BSON, ValueHistories, ShapML
-using CUDA, Poppler_jll, MultivariateStats, Random, Suppressor
+using Poppler_jll, MultivariateStats, Random, Suppressor
 using StatsBase, MLUtils, Flux, ExplainableAI, DataFrames
 using Zygote, Optimisers, ChainRulesCore, Interpolations
 using TopOpt.TopOptProblems.InputOutput.INP.Parser: InpContent
-CUDA.allowscalar(false)
+# only get and use CUDA if it wasn't installed previously
+if !("CUDA" in keys(Pkg.project().dependencies))
+  Pkg.add("CUDA")
+  using CUDA
+  CUDA.allowscalar(false)
+end
 println("\nDEFINITIONS...\n")
 # function and type definitions in "utilities" folder
 utilsPath = readdir("./QuickTO/utilities"; join = true) |> x -> filter(y -> y[end - 2 : end] == ".jl", x)
